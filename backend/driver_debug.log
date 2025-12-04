@@ -1,0 +1,42 @@
+Checking drivers...
+
+Driver ID: driver_chi_1
+Email: john@blacklivery.us
+Name: John Smith
+Vehicle Type: undefined
+Status: {}
+
+Driver ID: driver_chi_2
+Email: sarah@blacklivery.us
+Name: Sarah Connor
+Vehicle Type: undefined
+Status: {}
+
+Driver ID: driver_ng_1
+Email: musa@blacklivery.ng
+Name: Musa Ibrahim
+Vehicle Type: undefined
+Status: {}
+
+Driver ID: driver_ng_2
+Email: chinedu@blacklivery.ng
+Name: Chinedu Okafor
+Vehicle Type: undefined
+Status: {}
+
+Driver ID: test_1764788129141zipgzf
+Email: driver1@driver.com
+Name: Driver 1
+Vehicle Type: sedan
+Status: {
+  "isOnline": true,
+  "state": "active",
+  "lastKnownLocation": {
+    "lng": 3.3792,
+    "heading": 0,
+    "lat": 6.5244
+  }
+}
+Calculated Geohash (len 5): s14mh
+Stored Geohash4: s14m
+Stored Geohash5: s14mh

@@ -1,0 +1,8 @@
+Testing findNearbyDrivers...
+Searching at 6.5244, 3.3792 radius 5km
+Filters: {
+  "vehicleCategory": "sedan",
+  "region": "nigeria"
+}
+Found 1 drivers.
+- Driver test_1764788129141zipgzf: 0.00km away, Vehicle: sedan

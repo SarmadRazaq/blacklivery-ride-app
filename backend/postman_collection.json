@@ -1,0 +1,319 @@
+{
+	"info": {
+		"_postman_id": "b1a2c3d4-e5f6-7890-a1b2-c3d4e5f67890",
+		"name": "Blacklivery Backend API",
+		"description": "Collection for testing Blacklivery Backend.\n\n**IMPORTANT**: This API uses Firebase Auth. \n\nFor **Email/Password** testing:\n1. Get your **Web API Key** from Firebase Console (Project Settings > General > Web API Key).\n2. Paste it into the `firebaseApiKey` collection variable.\n3. Use the 'Firebase: Sign Up' or 'Firebase: Login' requests to get an `idToken`.\n4. The `idToken` is automatically saved to the `authToken` variable for subsequent backend calls.\n\nFor **Google** or **Phone** auth, you typically get the token from the client SDK, but we have included the backend profile creation steps here.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "http://localhost:5000",
+			"type": "string"
+		},
+		{
+			"key": "authToken",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "firebaseApiKey",
+			"value": "PASTE_YOUR_FIREBASE_WEB_API_KEY_HERE",
+			"type": "string"
+		}
+	],
+	"item": [
+		{
+			"name": "Auth (Email & Password)",
+			"description": "Use these to simulate the Client SDK flow for Email/Password.",
+			"item": [
+				{
+					"name": "1. Firebase: Sign Up (Create User)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = pm.response.json();",
+									"if (jsonData.idToken) {",
+									"    pm.collectionVariables.set(\"authToken\", jsonData.idToken);",
+									"    console.log(\"Token updated\");",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"testrider@example.com\",\n    \"password\": \"password123\",\n    \"returnSecureToken\": true\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": {
+							"raw": "https://identitytoolkit.googleapis.com/v1/accounts:signUp?key={{firebaseApiKey}}",
+							"protocol": "https",
+							"host": ["identitytoolkit", "googleapis", "com"],
+							"path": ["v1", "accounts:signUp"],
+							"query": [{ "key": "key", "value": "{{firebaseApiKey}}" }]
+						},
+						"description": "Creates a user in Firebase Auth. Returns an ID token which is auto-saved to {{authToken}}."
+					}
+				},
+				{
+					"name": "2. Backend: Create Profile (Rider)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{authToken}}" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"testrider@example.com\",\n    \"name\": \"Test Rider\",\n    \"role\": \"rider\",\n    \"country\": \"NG\"\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": { "raw": "{{baseUrl}}/api/v1/auth/register", "host": ["{{baseUrl}}"], "path": ["api", "v1", "auth", "register"] },
+						"description": "Creates the user profile in your MongoDB/Firestore backend after Firebase Auth creation."
+					}
+				},
+				{
+					"name": "2. Backend: Create Profile (Driver)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{authToken}}" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"testdriver@example.com\",\n    \"name\": \"Test Driver\",\n    \"role\": \"driver\",\n    \"country\": \"NG\"\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": { "raw": "{{baseUrl}}/api/v1/auth/register", "host": ["{{baseUrl}}"], "path": ["api", "v1", "auth", "register"] },
+						"description": "Creates the user profile in your MongoDB/Firestore backend after Firebase Auth creation."
+					}
+				},
+				{
+					"name": "3. Firebase: Login",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = pm.response.json();",
+									"if (jsonData.idToken) {",
+									"    pm.collectionVariables.set(\"authToken\", jsonData.idToken);",
+									"    console.log(\"Token updated\");",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"testrider@example.com\",\n    \"password\": \"password123\",\n    \"returnSecureToken\": true\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": {
+							"raw": "https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key={{firebaseApiKey}}",
+							"protocol": "https",
+							"host": ["identitytoolkit", "googleapis", "com"],
+							"path": ["v1", "accounts:signInWithPassword"],
+							"query": [{ "key": "key", "value": "{{firebaseApiKey}}" }]
+						},
+						"description": "Logs in to Firebase Auth. Returns an ID token which is auto-saved to {{authToken}}."
+					}
+				}
+			]
+		},
+		{
+			"name": "Auth (Social & Phone)",
+			"item": [
+				{
+					"name": "Login / Register (Google)",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"idToken\": \"{{authToken}}\",\n    \"role\": \"rider\",\n    \"country\": \"NG\"\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": { "raw": "{{baseUrl}}/api/v1/auth/google", "host": ["{{baseUrl}}"], "path": ["api", "v1", "auth", "google"] }
+					}
+				},
+				{
+					"name": "Start Phone Verification",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"phone\": \"+2348000000001\"\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": { "raw": "{{baseUrl}}/api/v1/auth/phone/start", "host": ["{{baseUrl}}"], "path": ["api", "v1", "auth", "phone", "start"] }
+					}
+				},
+				{
+					"name": "Verify Phone Code",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"phone\": \"+2348000000001\",\n    \"code\": \"123456\"\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": { "raw": "{{baseUrl}}/api/v1/auth/phone/verify", "host": ["{{baseUrl}}"], "path": ["api", "v1", "auth", "phone", "verify"] }
+					}
+				}
+			]
+		},
+		{
+			"name": "Rider Operations",
+			"item": [
+				{
+					"name": "Create Ride",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{authToken}}" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"pickup\": { \"lat\": 6.5244, \"lng\": 3.3792, \"address\": \"Pickup Address\" },\n    \"dropoff\": { \"lat\": 6.6018, \"lng\": 3.3515, \"address\": \"Dropoff Address\" },\n    \"vehicleCategory\": \"sedan\",\n    \"region\": \"nigeria\",\n    \"city\": \"lagos\"\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": { "raw": "{{baseUrl}}/api/v1/rides", "host": ["{{baseUrl}}"], "path": ["api", "v1", "rides"] }
+					}
+				},
+				{
+					"name": "Get Nearby Drivers",
+					"request": {
+						"method": "GET",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{authToken}}" }
+						],
+						"url": { "raw": "{{baseUrl}}/api/v1/rides/drivers/nearby?lat=6.5244&lng=3.3792&radius=5", "host": ["{{baseUrl}}"], "path": ["api", "v1", "rides", "drivers", "nearby"], "query": [{ "key": "lat", "value": "6.5244" }, { "key": "lng", "value": "3.3792" }, { "key": "radius", "value": "5" }] }
+					}
+				},
+				{
+					"name": "Get My Promotions",
+					"request": {
+						"method": "GET",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{authToken}}" }
+						],
+						"url": { "raw": "{{baseUrl}}/api/v1/promotions/mine", "host": ["{{baseUrl}}"], "path": ["api", "v1", "promotions", "mine"] }
+					}
+				}
+			]
+		},
+		{
+			"name": "Driver Operations",
+			"item": [
+				{
+					"name": "Submit Driver Onboarding",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{authToken}}" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"driverLicense\": \"https://example.com/license.jpg\",\n    \"vehicleInsurance\": \"https://example.com/insurance.jpg\",\n    \"vehicleRegistration\": \"https://example.com/reg.jpg\",\n    \"vehiclePhotos\": [\n        \"https://example.com/car1.jpg\",\n        \"https://example.com/car2.jpg\",\n        \"https://example.com/car3.jpg\",\n        \"https://example.com/car4.jpg\"\n    ],\n    \"vehicleType\": \"sedan\",\n    \"bankDetails\": {\n        \"bankName\": \"Access Bank\",\n        \"accountNumber\": \"0123456789\",\n        \"accountName\": \"Driver Name\"\n    }\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": { "raw": "{{baseUrl}}/api/v1/auth/driver/onboarding", "host": ["{{baseUrl}}"], "path": ["api", "v1", "auth", "driver", "onboarding"] }
+					}
+				},
+				{
+					"name": "Go Online (Update Availability)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{authToken}}" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"isAvailable\": true,\n    \"location\": { \"lat\": 6.5244, \"lng\": 3.3792 }\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": { "raw": "{{baseUrl}}/api/driver/availability", "host": ["{{baseUrl}}"], "path": ["api", "driver", "availability"] }
+					}
+				},
+				{
+					"name": "Add Vehicle",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{authToken}}" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"make\": \"Toyota\",\n    \"model\": \"Camry\",\n    \"year\": 2020,\n    \"color\": \"Blue\",\n    \"plateNumber\": \"ABC-123-XY\",\n    \"category\": \"sedan\"\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": { "raw": "{{baseUrl}}/api/v1/vehicles", "host": ["{{baseUrl}}"], "path": ["api", "v1", "vehicles"] }
+					}
+				},
+				{
+					"name": "Get My Vehicles",
+					"request": {
+						"method": "GET",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{authToken}}" }
+						],
+						"url": { "raw": "{{baseUrl}}/api/v1/vehicles", "host": ["{{baseUrl}}"], "path": ["api", "v1", "vehicles"] }
+					}
+				},
+				{
+					"name": "Get Driver Application",
+					"request": {
+						"method": "GET",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{authToken}}" }
+						],
+						"url": { "raw": "{{baseUrl}}/api/driver/application", "host": ["{{baseUrl}}"], "path": ["api", "driver", "application"] }
+					}
+				}
+			]
+		},
+		{
+			"name": "Admin Operations",
+			"item": [
+				{
+					"name": "Get Pricing Config",
+					"request": {
+						"method": "GET",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{authToken}}" }
+						],
+						"url": { "raw": "{{baseUrl}}/api/v1/admin/pricing/nigeria", "host": ["{{baseUrl}}"], "path": ["api", "v1", "admin", "pricing", "nigeria"] }
+					}
+				},
+				{
+					"name": "Update Pricing Config",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{authToken}}" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"baseFare\": 500,\n    \"perKm\": 100,\n    \"perMinute\": 20\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": { "raw": "{{baseUrl}}/api/v1/admin/pricing/nigeria", "host": ["{{baseUrl}}"], "path": ["api", "v1", "admin", "pricing", "nigeria"] }
+					}
+				}
+			]
+		}
+	]
+}
