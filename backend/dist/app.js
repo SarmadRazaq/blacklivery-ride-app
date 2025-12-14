@@ -17,7 +17,12 @@ const driver_routes_1 = __importDefault(require("./routes/driver.routes"));
 const promotion_routes_1 = __importDefault(require("./routes/promotion.routes"));
 const support_routes_1 = __importDefault(require("./routes/support.routes"));
 const cron_routes_1 = __importDefault(require("./routes/cron.routes"));
+const chat_routes_1 = __importDefault(require("./routes/chat.routes"));
+const swagger_ui_express_1 = __importDefault(require("swagger-ui-express"));
+const swagger_1 = require("./config/swagger");
 const app = (0, express_1.default)();
+// Swagger Documentation
+app.use('/api-docs', swagger_ui_express_1.default.serve, swagger_ui_express_1.default.setup(swagger_1.swaggerSpec));
 // FIX: Configure CORS to allow your frontend
 app.use((0, cors_1.default)({
     origin: ['http://localhost:5173', 'http://localhost:3000'], // Allow Vite (5173) and React (3000)
@@ -40,10 +45,11 @@ app.use('/api/v1/payments', payment_routes_1.default);
 app.use('/api/v1/vehicles', vehicle_routes_1.default);
 app.use('/api/v1/payouts', payout_routes_1.default);
 app.use('/api/v1/admin', admin_routes_1.default);
-app.use('/api/driver', driver_routes_1.default);
+app.use('/api/v1/driver', driver_routes_1.default);
 app.use('/api/v1/promotions', promotion_routes_1.default);
 app.use('/api/v1/support', support_routes_1.default);
 app.use('/api/v1/cron', cron_routes_1.default);
+app.use('/api/v1/chat', chat_routes_1.default);
 // Health Check
 app.get('/health', (req, res) => {
     res.status(200).json({ status: 'OK', message: 'Blacklivery Backend API' });

@@ -8,8 +8,7 @@
     "test:watch": "jest --watch",
     "build": "tsc",
     "start": "node dist/server.js",
-    "dev": "nodemon src/server.ts",
-    "verify-flow": "ts-node scripts/verify_full_flow.ts"
+    "dev": "nodemon src/server.ts"
   },
   "keywords": [],
   "author": "",

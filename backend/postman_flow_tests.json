@@ -1,0 +1,2928 @@
+{
+	"info": {
+		"_postman_id": "ca7ae9e8-c124-4d77-8ed5-4892529b56c0",
+		"name": "Blacklivery API - Flow-Based Tests",
+		"description": "Comprehensive flow-wise test collection for Blacklivery Backend.\n\n## Setup Instructions\n1. Get Firebase Web API Key from Firebase Console\n2. Set `firebaseApiKey` collection variable\n3. Run tests in order - each flow builds on previous data\n\n## Test Flows\n- **Flow 1**: Rider Registration & Rides\n- **Flow 2**: Driver Registration & Operations\n- **Flow 3**: Complete Ride Lifecycle\n- **Flow 4**: Delivery Flow\n- **Flow 5**: Payment & Wallet\n- **Flow 6**: Admin Operations",
+		"schema": "https://schema.getpostman.com/json/collection/v2.0.0/collection.json",
+		"_exporter_id": "50720553",
+		"_collection_link": "https://sarmad-gitrex-1283986.postman.co/workspace/Sarmad-Razzaq's-Workspace~41f34ecb-b6bc-4a49-850d-c47dbe65d444/collection/50720553-ca7ae9e8-c124-4d77-8ed5-4892529b56c0?action=share&source=collection_link&creator=50720553"
+	},
+	"item": [
+		{
+			"name": "Flow 1: Rider Registration & Setup",
+			"item": [
+				{
+					"name": "1.1 Firebase: Create Rider Account",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"exec": [
+									"const timestamp = Date.now();",
+									"pm.collectionVariables.set('riderEmail', `testrider_${timestamp}@test.com`);"
+								],
+								"type": "text/javascript",
+								"packages": {},
+								"requests": {}
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"// Save tokens first (before test assertions)",
+									"try {",
+									"    const json = pm.response.json();",
+									"    if (json.idToken) pm.collectionVariables.set('riderToken', json.idToken);",
+									"    if (json.refreshToken) pm.collectionVariables.set('riderRefreshToken', json.refreshToken);",
+									"    if (json.localId) pm.collectionVariables.set('riderId', json.localId);",
+									"} catch(e) { console.log('Token parsing failed:', e); }",
+									"",
+									"pm.test('Rider Firebase signup successful', function() {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								],
+								"type": "text/javascript",
+								"packages": {},
+								"requests": {}
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"{{riderEmail}}\",\n    \"password\": \"TestPassword123!\",\n    \"returnSecureToken\": true\n}"
+						},
+						"url": {
+							"raw": "https://identitytoolkit.googleapis.com/v1/accounts:signUp?key={{firebaseApiKey}}",
+							"protocol": "https",
+							"host": [
+								"identitytoolkit",
+								"googleapis",
+								"com"
+							],
+							"path": [
+								"v1",
+								"accounts:signUp"
+							],
+							"query": [
+								{
+									"key": "key",
+									"value": "{{firebaseApiKey}}"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "1.2 Register Rider Profile",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Rider profile registered', function() {",
+									"    pm.response.to.have.status(201);",
+									"});",
+									"",
+									"pm.test('Response contains user data', function() {",
+									"    const json = pm.response.json();",
+									"    pm.expect(json.role).to.equal('rider');",
+									"});"
+								],
+								"type": "text/javascript",
+								"packages": {},
+								"requests": {}
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{riderToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"{{riderEmail}}\",\n    \"name\": \"Test Rider\",\n    \"role\": \"rider\",\n    \"country\": \"NG\",\n    \"phoneNumber\": \"+23482012345678\"\n}"
+						},
+						"url": "{{baseUrl}}/api/v1/auth/register"
+					},
+					"response": []
+				},
+				{
+					"name": "1.3 Get Rider Profile",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Profile retrieved successfully', function() {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('Profile has correct role', function() {",
+									"    const json = pm.response.json();",
+									"    pm.expect(json.role).to.equal('rider');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{riderToken}}"
+							}
+						],
+						"url": "{{baseUrl}}/api/v1/auth/profile"
+					},
+					"response": []
+				},
+				{
+					"name": "1.4 Phone Verification Start",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"phoneNumber\": \"+2348012345678\"\n}"
+						},
+						"url": "{{baseUrl}}/api/v1/auth/phone/start"
+					},
+					"response": []
+				},
+				{
+					"name": "1.5 Phone Verification Verify",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"phoneNumber\": \"+2348012345678\",\n    \"code\": \"775073\"\n}"
+						},
+						"url": "{{baseUrl}}/api/v1/auth/phone/verify"
+					},
+					"response": []
+				},
+				{
+					"name": "1.6 Google Sign-In",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"idToken\": \"GOOGLE_ID_TOKEN_HERE\"\n}"
+						},
+						"url": "{{baseUrl}}/api/v1/auth/google"
+					},
+					"response": []
+				},
+				{
+					"name": "1.7 Password Reset Request",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"user@example.com\"\n}"
+						},
+						"url": "{{baseUrl}}/api/v1/auth/password/reset"
+					},
+					"response": []
+				},
+				{
+					"name": "1.8 Logout",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{riderToken}}"
+							}
+						],
+						"url": "{{baseUrl}}/api/v1/auth/logout"
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Flow 2: Driver Registration & Onboarding",
+			"item": [
+				{
+					"name": "2.1 Firebase: Create Driver Account",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"exec": [
+									"const timestamp = Date.now();",
+									"pm.collectionVariables.set('driverEmail', `testdriver_${timestamp}@test.com`);"
+								],
+								"type": "text/javascript"
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"// Save token first (before test assertions)",
+									"try {",
+									"    const json = pm.response.json();",
+									"    if (json.idToken) pm.collectionVariables.set('driverToken', json.idToken);",
+									"    if (json.localId) pm.collectionVariables.set('driverId', json.localId);",
+									"} catch(e) { console.log('Token parsing failed:', e); }",
+									"",
+									"pm.test('Driver Firebase signup successful', function() {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"{{driverEmail}}\",\n    \"password\": \"TestPassword123!\",\n    \"returnSecureToken\": true\n}"
+						},
+						"url": {
+							"raw": "https://identitytoolkit.googleapis.com/v1/accounts:signUp?key={{firebaseApiKey}}",
+							"protocol": "https",
+							"host": [
+								"identitytoolkit",
+								"googleapis",
+								"com"
+							],
+							"path": [
+								"v1",
+								"accounts:signUp"
+							],
+							"query": [
+								{
+									"key": "key",
+									"value": "{{firebaseApiKey}}"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "2.2 Register Driver Profile",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Driver profile registered', function() {",
+									"    pm.response.to.have.status(201);",
+									"});",
+									"",
+									"pm.test('Response contains driver role', function() {",
+									"    const json = pm.response.json();",
+									"    pm.expect(json.role).to.equal('driver');",
+									"});"
+								],
+								"type": "text/javascript",
+								"packages": {},
+								"requests": {}
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{driverToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"{{driverEmail}}\",\n    \"name\": \"Test Driver\",\n    \"role\": \"driver\",\n    \"country\": \"NG\",\n    \"phoneNumber\": \"+23480872654321\",\n    \"vehicleType\": \"sedan\"\n}"
+						},
+						"url": "{{baseUrl}}/api/v1/auth/register"
+					},
+					"response": []
+				},
+				{
+					"name": "2.3 Submit Driver Onboarding",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Onboarding submitted', function() {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{driverToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"driverLicense\": \"https://example.com/license.jpg\",\n    \"vehicleInsurance\": \"https://example.com/insurance.jpg\",\n    \"vehicleRegistration\": \"https://example.com/reg.jpg\",\n    \"vehiclePhotos\": [\"https://example.com/car-front.jpg\", \"https://example.com/car-back.jpg\", \"https://example.com/car-left.jpg\", \"https://example.com/car-right.jpg\"],\n    \"vehicleType\": \"sedan\",\n    \"bankDetails\": {\n        \"bankName\": \"Access Bank\",\n        \"accountNumber\": \"0123456789\",\n        \"accountName\": \"Test Driver\",\n        \"bankCode\": \"044\"\n    }\n}"
+						},
+						"url": "{{baseUrl}}/api/v1/auth/driver/onboarding"
+					},
+					"response": []
+				},
+				{
+					"name": "2.4 Add Driver Vehicle",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Vehicle added', function() {",
+									"    pm.response.to.have.status(201);",
+									"    const json = pm.response.json();",
+									"    if (json.id) pm.collectionVariables.set('vehicleId', json.id);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{driverToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"name\": \"Toyota Camry 2020\",\n    \"year\": 2020,\n    \"plateNumber\": \"ABC-123-NG\",\n    \"seats\": 4,\n    \"category\": \"sedan\",\n    \"color\": \"Black\",\n    \"images\": {\n        \"front\": \"https://example.com/front.jpg\",\n        \"back\": \"https://example.com/back.jpg\",\n        \"side\": \"https://example.com/side.jpg\"\n    }\n}"
+						},
+						"url": "{{baseUrl}}/api/v1/vehicles"
+					},
+					"response": []
+				},
+				{
+					"name": "2.5 Get Application Status",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{driverToken}}"
+							}
+						],
+						"url": "{{baseUrl}}/api/v1/driver/application"
+					},
+					"response": []
+				},
+				{
+					"name": "2.5a Upload Driver Documents",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{driverToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"documents\": [\n        {\n            \"type\": \"driver_license\",\n            \"fileUrl\": \"https://example.com/license.jpg\",\n            \"storagePath\": \"documents/license.jpg\",\n            \"fileName\": \"license.jpg\",\n            \"mimeType\": \"image/jpeg\",\n            \"fileSize\": 50000\n        }\n    ]\n}"
+						},
+						"url": "{{baseUrl}}/api/v1/driver/documents"
+					},
+					"response": []
+				},
+				{
+					"name": "2.5b Update Driver Bank Info",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{driverToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"accountName\": \"John Doe\",\n    \"accountNumber\": \"0123456789\",\n    \"bankName\": \"Access Bank\",\n    \"bankCode\": \"044\",\n    \"preferredPayoutCurrency\": \"NGN\"\n}"
+						},
+						"url": "{{baseUrl}}/api/v1/driver/bank"
+					},
+					"response": []
+				},
+				{
+					"name": "2.5c Get Driver Application",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{driverToken}}"
+							}
+						],
+						"url": "{{baseUrl}}/api/v1/driver/application"
+					},
+					"response": []
+				},
+				{
+					"name": "2.5d Get Driver Vehicles",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{driverToken}}"
+							}
+						],
+						"url": "{{baseUrl}}/api/v1/vehicles"
+					},
+					"response": []
+				},
+				{
+					"name": "2.5e Stripe Connect Onboarding",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Application status retrieved', function() {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{driverToken}}"
+							}
+						],
+						"url": "{{baseUrl}}/api/v1/payouts/onboarding/stripe"
+					},
+					"response": []
+				},
+				{
+					"name": "2.6 Driver Go Online",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Driver is now online', function() {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{driverToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"isOnline\": true,\n    \"location\": {\n        \"lat\": 6.5244,\n        \"lng\": 3.3792\n    }\n}"
+						},
+						"url": "{{baseUrl}}/api/v1/driver/availability"
+					},
+					"response": []
+				},
+				{
+					"name": "2.7 Send Driver Heartbeat",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Heartbeat sent', function() {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{driverToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"location\": {\n        \"lat\": 6.5244,\n        \"lng\": 3.3792\n    }\n}"
+						},
+						"url": "{{baseUrl}}/api/v1/driver/heartbeat"
+					},
+					"response": []
+				},
+				{
+					"name": "2.8 Stripe Connect",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{driverToken}}"
+							}
+						],
+						"url": "{{baseUrl}}/api/v1/payouts/onboarding/stripe"
+					},
+					"response": []
+				},
+				{
+					"name": "2.9 Update Vehicle",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{driverToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"color\": \"Black\",\n    \"plateNumber\": \"XYZ-123\"\n}"
+						},
+						"url": "{{baseUrl}}/api/v1/vehicles/{{vehicleId}}"
+					},
+					"response": []
+				},
+				{
+					"name": "2.10 Get Driver Ride History",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{driverToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/driver/rides?page=1&limit=20",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"driver",
+								"rides"
+							],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "limit",
+									"value": "20"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "2.11 Get Driver Active Ride",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{driverToken}}"
+							}
+						],
+						"url": "{{baseUrl}}/api/v1/driver/active-ride"
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Flow 3: Complete Ride Lifecycle",
+			"item": [
+				{
+					"name": "3.1 Get Fare Estimate",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Fare estimate received', function() {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('Estimate contains fare', function() {",
+									"    const json = pm.response.json();",
+									"    pm.expect(json.fare || json.estimatedFare).to.exist;",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{riderToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"pickup\": { \"lat\": 6.5244, \"lng\": 3.3792, \"address\": \"Yaba, Lagos\" },\n    \"dropoff\": { \"lat\": 6.4281, \"lng\": 3.4219, \"address\": \"Victoria Island, Lagos\" },\n    \"vehicleCategory\": \"sedan\",\n    \"region\": \"nigeria\"\n}"
+						},
+						"url": "{{baseUrl}}/api/v1/rides/estimate"
+					},
+					"response": []
+				},
+				{
+					"name": "3.2 Get Nearby Drivers",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Nearby drivers retrieved', function() {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{riderToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/rides/drivers/nearby?lat=6.5244&lng=3.3792",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"rides",
+								"drivers",
+								"nearby"
+							],
+							"query": [
+								{
+									"key": "lat",
+									"value": "6.5244"
+								},
+								{
+									"key": "lng",
+									"value": "3.3792"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "3.3 Create Ride Request",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Ride created', function() {",
+									"    pm.response.to.have.status(201);",
+									"    const json = pm.response.json();",
+									"    if (json.id) pm.collectionVariables.set('rideId', json.id);",
+									"    if (json.rideId) pm.collectionVariables.set('rideId', json.rideId);",
+									"});",
+									"",
+									"pm.test('Ride has pending status', function() {",
+									"    const json = pm.response.json();",
+									"    pm.expect(json.status).to.be.oneOf(['pending', 'searching', 'requested']);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{riderToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Idempotency-Key",
+								"value": "{{$guid}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"pickup\": { \"lat\": 6.5244, \"lng\": 3.3792, \"address\": \"Yaba, Lagos\" },\n    \"dropoff\": { \"lat\": 6.4281, \"lng\": 3.4219, \"address\": \"Victoria Island, Lagos\" },\n    \"vehicleCategory\": \"sedan\",\n    \"region\": \"nigeria\",\n    \"city\": \"lagos\",\n    \"bookingType\": \"on_demand\"\n}"
+						},
+						"url": "{{baseUrl}}/api/v1/rides"
+					},
+					"response": []
+				},
+				{
+					"name": "3.4 Get Ride Details",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Ride details retrieved', function() {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{riderToken}}"
+							}
+						],
+						"url": "{{baseUrl}}/api/v1/rides/{{rideId}}"
+					},
+					"response": []
+				},
+				{
+					"name": "3.5 Driver Accepts Ride",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Ride accepted', function() {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{driverToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"status\": \"accepted\"\n}"
+						},
+						"url": "{{baseUrl}}/api/v1/rides/{{rideId}}/status"
+					},
+					"response": []
+				},
+				{
+					"name": "3.6 Driver Arrives at Pickup",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Arrived at pickup', function() {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{driverToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"status\": \"arrived\"\n}"
+						},
+						"url": "{{baseUrl}}/api/v1/rides/{{rideId}}/status"
+					},
+					"response": []
+				},
+				{
+					"name": "3.7 Start Ride",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Ride started', function() {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{driverToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"status\": \"in_progress\"\n}"
+						},
+						"url": "{{baseUrl}}/api/v1/rides/{{rideId}}/status"
+					},
+					"response": []
+				},
+				{
+					"name": "3.8 Complete Ride",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Ride completed', function() {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{driverToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"status\": \"completed\"\n}"
+						},
+						"url": "{{baseUrl}}/api/v1/rides/{{rideId}}/status"
+					},
+					"response": []
+				},
+				{
+					"name": "3.9 Rider Rates Driver",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Driver rated', function() {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{riderToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"rating\": 5,\n    \"feedback\": \"Excellent driver! Very professional and friendly.\"\n}"
+						},
+						"url": "{{baseUrl}}/api/v1/rides/{{rideId}}/rate"
+					},
+					"response": []
+				},
+				{
+					"name": "3.10 Driver Rates Rider",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Rider rated', function() {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{driverToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"rating\": 5,\n    \"feedback\": \"Great passenger, very polite.\"\n}"
+						},
+						"url": "{{baseUrl}}/api/v1/rides/{{rideId}}/rate-rider"
+					},
+					"response": []
+				},
+				{
+					"name": "3.11 Get Ride History (Rider)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Ride history retrieved', function() {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{riderToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/rides/history?page=1&limit=10",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"rides",
+								"history"
+							],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "limit",
+									"value": "10"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "3.12 Airport Transfer",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{riderToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"pickup\": { \"lat\": 41.87, \"lng\": -87.62, \"address\": \"Chicago\" },\n    \"dropoff\": { \"lat\": 41.97, \"lng\": -87.90, \"address\": \"ORD\" },\n    \"vehicleCategory\": \"business_sedan\",\n    \"region\": \"chicago\",\n    \"bookingType\": \"airport_transfer\",\n    \"airportCode\": \"ORD\"\n}"
+						},
+						"url": "{{baseUrl}}/api/v1/rides"
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Flow 4: Delivery Flow",
+			"item": [
+				{
+					"name": "4.1 Get Delivery Quote",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Delivery quote received', function() {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{riderToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"pickup\": { \"lat\": 6.5244, \"lng\": 3.3792, \"address\": \"Yaba, Lagos\" },\n    \"dropoff\": { \"lat\": 6.4281, \"lng\": 3.4219, \"address\": \"Victoria Island, Lagos\" },\n    \"region\": \"nigeria\",\n    \"deliveryDetails\": {\n        \"packageType\": \"documents\",\n        \"weightKg\": 2,\n        \"serviceType\": \"instant\",\n        \"dropoffContact\": {\n            \"name\": \"Jane Doe\",\n            \"phone\": \"+2348012345678\"\n        }\n    }\n}"
+						},
+						"url": "{{baseUrl}}/api/v1/deliveries/quote"
+					},
+					"response": []
+				},
+				{
+					"name": "4.2 Create Delivery",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Delivery created', function() {",
+									"    pm.response.to.have.status(201);",
+									"    const json = pm.response.json();",
+									"    if (json.id) pm.collectionVariables.set('deliveryId', json.id);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{riderToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Idempotency-Key",
+								"value": "{{$guid}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"pickup\": { \"lat\": 6.5244, \"lng\": 3.3792, \"address\": \"Yaba, Lagos\" },\n    \"dropoff\": { \"lat\": 6.4281, \"lng\": 3.4219, \"address\": \"Victoria Island, Lagos\" },\n    \"vehicleCategory\": \"motorbike\",\n    \"region\": \"nigeria\",\n    \"deliveryDetails\": {\n        \"packageType\": \"documents\",\n        \"weightKg\": 2,\n        \"serviceType\": \"instant\",\n        \"dropoffContact\": {\n            \"name\": \"Jane Doe\",\n            \"phone\": \"+2348012345678\",\n            \"instructions\": \"Leave at reception desk\"\n        }\n    }\n}"
+						},
+						"url": "{{baseUrl}}/api/v1/deliveries"
+					},
+					"response": []
+				},
+				{
+					"name": "4.3 Get Delivery Details",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": ""
+					},
+					"response": []
+				},
+				{
+					"name": "4.4 Upload Proof of Delivery",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Delivery details retrieved', function() {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								],
+								"type": "text/javascript",
+								"packages": {},
+								"requests": {}
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{riderToken}}"
+							}
+						],
+						"url": "{{baseUrl}}/api/v1/deliveries/Vdz5hzLyvEVd5Shv8ULO"
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Flow 5: Payment & Wallet",
+			"item": [
+				{
+					"name": "5.1 Get Wallet Balance",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Wallet balance retrieved', function() {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{riderToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/payments/wallet/balance?currency=NGN",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"payments",
+								"wallet",
+								"balance"
+							],
+							"query": [
+								{
+									"key": "currency",
+									"value": "NGN"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "5.2 Add Money to Wallet",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Wallet top-up initiated', function() {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{riderToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"amount\": 10000,\n    \"currency\": \"NGN\",\n    \"paymentMethod\": \"paystack\"\n}"
+						},
+						"url": "{{baseUrl}}/api/v1/payments/wallet/add"
+					},
+					"response": []
+				},
+				{
+					"name": "5.3 Get Payment Methods",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Payment methods retrieved', function() {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{riderToken}}"
+							}
+						],
+						"url": "{{baseUrl}}/api/v1/payments/methods"
+					},
+					"response": []
+				},
+				{
+					"name": "5.4 Get Payment History",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Payment history retrieved', function() {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{riderToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/payments/history?page=1&limit=20",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"payments",
+								"history"
+							],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "limit",
+									"value": "20"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "5.5 Add Payment Method",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{riderToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"type\": \"bank\",\n    \"details\": {\n        \"bankName\": \"Access Bank\",\n        \"accountNumber\": \"0123456789\",\n        \"bankCode\": \"044\",\n        \"accountName\": \"Test User\"\n    },\n    \"isDefault\": true\n}"
+						},
+						"url": "{{baseUrl}}/api/v1/payments/methods"
+					},
+					"response": []
+				},
+				{
+					"name": "5.6 Initiate Payment",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{riderToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"amount\": 5000,\n    \"currency\": \"NGN\",\n    \"paymentMethod\": \"paystack\",\n    \"rideId\": \"{{rideId}}\"\n}"
+						},
+						"url": "{{baseUrl}}/api/v1/payments/initiate"
+					},
+					"response": []
+				},
+				{
+					"name": "5.7 Verify Payment",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{riderToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"transactionId\": \"{{transactionId}}\",\n    \"provider\": \"paystack\"\n}"
+						},
+						"url": "{{baseUrl}}/api/v1/payments/verify"
+					},
+					"response": []
+				},
+				{
+					"name": "5.5 Driver Earnings",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Earnings retrieved', function() {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{driverToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/driver/earnings?period=week",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"driver",
+								"earnings"
+							],
+							"query": [
+								{
+									"key": "period",
+									"value": "week"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "5.6 Get Banks List",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Banks list retrieved', function() {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{driverToken}}"
+							}
+						],
+						"url": "{{baseUrl}}/api/v1/payouts/banks"
+					},
+					"response": []
+				},
+				{
+					"name": "5.7 Request Payout",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Payout requested', function() {",
+									"    const json = pm.response.json();",
+									"    if (json.id) pm.collectionVariables.set('payoutId', json.id);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{driverToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"amount\": 5000\n}"
+						},
+						"url": "{{baseUrl}}/api/v1/payouts/request"
+					},
+					"response": []
+				},
+				{
+					"name": "5.8 Withdraw from Wallet",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{driverToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"amount\": 5000,\n    \"currency\": \"NGN\"\n}"
+						},
+						"url": "{{baseUrl}}/api/v1/payments/wallet/withdraw"
+					},
+					"response": []
+				},
+				{
+					"name": "5.9 Get Transaction Details",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{riderToken}}"
+							}
+						],
+						"url": "{{baseUrl}}/api/v1/payments/transactions/{{transactionId}}"
+					},
+					"response": []
+				},
+				{
+					"name": "5.10 Get Payout History",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{driverToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/payouts?page=1&limit=20",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"payouts"
+							],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "limit",
+									"value": "20"
+								}
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Flow 6: Support & Promotions",
+			"item": [
+				{
+					"name": "6.1 Apply Promo Code",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Promo code applied or error returned', function() {",
+									"    pm.expect(pm.response.code).to.be.oneOf([200, 400, 404]);",
+									"});"
+								],
+								"type": "text/javascript",
+								"packages": {},
+								"requests": {}
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{riderToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"code\": \"NEWUSER50\"\n}"
+						},
+						"url": "{{baseUrl}}/api/v1/promotions/apply"
+					},
+					"response": []
+				},
+				{
+					"name": "6.2 Get My Promotions",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Promotions retrieved', function() {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{riderToken}}"
+							}
+						],
+						"url": "{{baseUrl}}/api/v1/promotions/mine"
+					},
+					"response": []
+				},
+				{
+					"name": "6.3 Create Support Ticket",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Support ticket created', function() {",
+									"    pm.response.to.have.status(201);",
+									"    const json = pm.response.json();",
+									"    if (json.id) pm.collectionVariables.set('ticketId', json.id);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{riderToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"subject\": \"Payment Issue\",\n    \"description\": \"I was charged twice for my last ride. Please help resolve this.\",\n    \"category\": \"payment\",\n    \"priority\": \"high\"\n}"
+						},
+						"url": "{{baseUrl}}/api/v1/support"
+					},
+					"response": []
+				},
+				{
+					"name": "6.4 Get My Support Tickets",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Tickets retrieved', function() {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{riderToken}}"
+							}
+						],
+						"url": "{{baseUrl}}/api/v1/support"
+					},
+					"response": []
+				},
+				{
+					"name": "6.5 Reply to Support Ticket",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{riderToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"content\": \"Thank you for looking into this.\"\n}"
+						},
+						"url": "{{baseUrl}}/api/v1/support/{{ticketId}}/reply"
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Flow 7: Chat During Ride",
+			"item": [
+				{
+					"name": "7.1 Send Chat Message (Rider)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Message sent', function() {",
+									"    pm.response.to.have.status(201);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{riderToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"message\": \"Hi! I am waiting at the main entrance.\",\n    \"messageType\": \"text\"\n}"
+						},
+						"url": "{{baseUrl}}/api/v1/chat/rides/{{rideId}}/messages"
+					},
+					"response": []
+				},
+				{
+					"name": "7.2 Send Chat Message (Driver)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Driver message sent', function() {",
+									"    pm.response.to.have.status(201);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{driverToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"message\": \"I'm almost there. 2 minutes away!\",\n    \"messageType\": \"text\"\n}"
+						},
+						"url": "{{baseUrl}}/api/v1/chat/rides/{{rideId}}/messages"
+					},
+					"response": []
+				},
+				{
+					"name": "7.3 Get Chat Messages",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": {
+								"token": "{{riderToken}}"
+							}
+						},
+						"method": "GET",
+						"header": [],
+						"url": "{{baseUrl}}/api/v1/chat/rides/{{rideId}}/messages"
+					},
+					"response": []
+				},
+				{
+					"name": "7.4 Mark Messages as Read",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{riderToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"messageIds\": [\"oftmWO4P9PoFLBUSVQtU\",\"nVBob5W9PCXUxiiop6hG\"]\n}"
+						},
+						"url": "{{baseUrl}}/api/v1/chat/rides/{{rideId}}/read"
+					},
+					"response": []
+				},
+				{
+					"name": "7.5 Get Chat Status",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Messages retrieved', function() {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{riderToken}}"
+							}
+						],
+						"url": "{{baseUrl}}/api/v1/chat/rides/{{rideId}}/status"
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Flow 8: Admin Operations",
+			"item": [
+				{
+					"name": "8.0 Admin Login",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"// Save admin token",
+									"try {",
+									"    const json = pm.response.json();",
+									"    if (json.idToken) pm.collectionVariables.set('adminToken', json.idToken);",
+									"    if (json.refreshToken) pm.collectionVariables.set('adminRefreshToken', json.refreshToken);",
+									"} catch(e) { console.log('Token parsing failed:', e); }",
+									"",
+									"pm.test('Admin login successful', function() {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"admin@blacklivery.com\",\n    \"password\": \"password123\",\n    \"returnSecureToken\": true\n}"
+						},
+						"url": {
+							"raw": "https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key={{firebaseApiKey}}",
+							"protocol": "https",
+							"host": [
+								"identitytoolkit",
+								"googleapis",
+								"com"
+							],
+							"path": [
+								"v1",
+								"accounts:signInWithPassword"
+							],
+							"query": [
+								{
+									"key": "key",
+									"value": "{{firebaseApiKey}}"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "8.1 List All Users",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Users listed', function() {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{adminToken}}"
+							}
+						],
+						"url": "{{baseUrl}}/api/v1/admin/users"
+					},
+					"response": []
+				},
+				{
+					"name": "8.2 List Driver Applications",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Applications listed', function() {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{adminToken}}"
+							}
+						],
+						"url": "{{baseUrl}}/api/v1/driver/applications"
+					},
+					"response": []
+				},
+				{
+					"name": "8.3 Approve Driver Application",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Application reviewed', function() {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								],
+								"type": "text/javascript",
+								"packages": {},
+								"requests": {}
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{adminToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"action\": \"approve\",\n    \"notes\": \"Approved via Postman\"\n}"
+						},
+						"url": "{{baseUrl}}/api/v1/driver/applications/5vUR80xRAGNcF3A1LGqqMvu16Mv1/review"
+					},
+					"response": []
+				},
+				{
+					"name": "8.4 Approve Vehicle",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Vehicle approved', function() {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								],
+								"type": "text/javascript",
+								"packages": {},
+								"requests": {}
+							}
+						}
+					],
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{adminToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"isApproved\": \"approved\"\n}"
+						},
+						"url": "{{baseUrl}}/api/v1/admin/vehicles/{{vehicleId}}/status"
+					},
+					"response": []
+				},
+				{
+					"name": "8.5 Get Pricing Config (Nigeria)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Pricing config retrieved', function() {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{adminToken}}"
+							}
+						],
+						"url": "{{baseUrl}}/api/v1/admin/pricing/nigeria"
+					},
+					"response": []
+				},
+				{
+					"name": "8.6 Update Pricing Config",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Pricing updated', function() {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{adminToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"baseFare\": 500,\n    \"perKm\": 100,\n    \"perMinute\": 20\n}"
+						},
+						"url": "{{baseUrl}}/api/v1/admin/pricing/nigeria"
+					},
+					"response": []
+				},
+				{
+					"name": "8.7 Create Promotion",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Promotion created', function() {",
+									"    pm.response.to.have.status(201);",
+									"    const json = pm.response.json();",
+									"    if (json.id) pm.collectionVariables.set('promoId', json.id);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{adminToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"code\": \"NEWUSER50\",\n    \"description\": \"50% off for new users\",\n    \"discountType\": \"percentage\",\n    \"amount\": 50,\n    \"maxRedemptions\": 100,\n    \"regions\": [\"nigeria\"]\n}"
+						},
+						"url": "{{baseUrl}}/api/v1/admin/promotions"
+					},
+					"response": []
+				},
+				{
+					"name": "8.8 List Active Rides",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Active rides listed', function() {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{adminToken}}"
+							}
+						],
+						"url": "{{baseUrl}}/api/v1/admin/rides/active"
+					},
+					"response": []
+				},
+				{
+					"name": "8.9 Get Earnings Analytics",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Analytics retrieved', function() {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{adminToken}}"
+							}
+						],
+						"url": "{{baseUrl}}/api/v1/admin/analytics/earnings"
+					},
+					"response": []
+				},
+				{
+					"name": "8.10 List Support Tickets",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Support tickets listed', function() {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{adminToken}}"
+							}
+						],
+						"url": "{{baseUrl}}/api/v1/admin/support-tickets"
+					},
+					"response": []
+				},
+				{
+					"name": "8.11 Update Support Ticket",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{adminToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"status\": \"resolved\",\n    \"assignee\": \"admin@blacklivery.com\",\n    \"resolutionNotes\": \"Issue resolved.\"\n}"
+						},
+						"url": "{{baseUrl}}/api/v1/admin/support-tickets/{{ticketId}}"
+					},
+					"response": []
+				},
+				{
+					"name": "8.12 Create Dispute",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{adminToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"rideId\": \"{{rideId}}\",\n    \"reporterId\": \"{{riderId}}\",\n    \"reporterRole\": \"rider\",\n    \"reason\": \"Driver issue\",\n    \"details\": \"Description\"\n}"
+						},
+						"url": "{{baseUrl}}/api/v1/admin/disputes"
+					},
+					"response": []
+				},
+				{
+					"name": "8.13 Resolve Dispute",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{adminToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"resolutionNotes\": \"Resolved\",\n    \"resolutionType\": \"warning\",\n    \"issueRefund\": false\n}"
+						},
+						"url": "{{baseUrl}}/api/v1/admin/disputes/AvSpjXmgoD4PayJ1tMHS/resolve"
+					},
+					"response": []
+				},
+				{
+					"name": "8.14 List Disputes",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{adminToken}}"
+							}
+						],
+						"url": "{{baseUrl}}/api/v1/admin/disputes"
+					},
+					"response": []
+				},
+				{
+					"name": "8.15 Cancel Ride",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{adminToken}}"
+							}
+						],
+						"url": "{{baseUrl}}/api/v1/admin/rides/{{rideId}}/cancel"
+					},
+					"response": []
+				},
+				{
+					"name": "8.16 List All Rides",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{adminToken}}"
+							}
+						],
+						"url": "{{baseUrl}}/api/v1/admin/rides"
+					},
+					"response": []
+				},
+				{
+					"name": "8.17 Get Ride Details",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{adminToken}}"
+							}
+						],
+						"url": "{{baseUrl}}/api/v1/admin/rides/{{rideId}}"
+					},
+					"response": []
+				},
+				{
+					"name": "8.18 List Driver Applications",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{adminToken}}"
+							}
+						],
+						"url": "{{baseUrl}}/api/v1/driver/applications"
+					},
+					"response": []
+				},
+				{
+					"name": "8.19 Review Driver Application",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{adminToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"action\": \"approve\",\n    \"notes\": \"All verified\"\n}"
+						},
+						"url": "{{baseUrl}}/api/v1/driver/applications/{{driverId}}/review"
+					},
+					"response": []
+				},
+				{
+					"name": "8.20 Get Surge Config",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{adminToken}}"
+							}
+						],
+						"url": "{{baseUrl}}/api/v1/admin/surge/nigeria"
+					},
+					"response": []
+				},
+				{
+					"name": "8.21 Update Surge Config",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{adminToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"enabled\": true,\n    \"maxMultiplier\": 3.0\n}"
+						},
+						"url": "{{baseUrl}}/api/v1/admin/surge/nigeria"
+					},
+					"response": []
+				},
+				{
+					"name": "8.22 List Promotions",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{adminToken}}"
+							}
+						],
+						"url": "{{baseUrl}}/api/v1/admin/promotions"
+					},
+					"response": []
+				},
+				{
+					"name": "8.23 Create Bonus Program",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{adminToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"name\": \"Peak Hour Bonus\",\n    \"description\": \"Extra 500 for peak rides\",\n    \"criteria\": {},\n    \"reward\": {},\n    \"regions\": [\"nigeria\"]\n}"
+						},
+						"url": "{{baseUrl}}/api/v1/admin/bonuses"
+					},
+					"response": []
+				},
+				{
+					"name": "8.24 List Bonuses",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{adminToken}}"
+							}
+						],
+						"url": "{{baseUrl}}/api/v1/admin/bonuses"
+					},
+					"response": []
+				},
+				{
+					"name": "8.25 Chicago Pricing + Airport",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{adminToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"rates\": { \"business_sedan\": { \"base\": 35 } },\n    \"airportTransfers\": { \"ORD\": { \"business_sedan\": 95 } },\n    \"hourlyRates\": { \"business_sedan\": { \"hourly\": 80, \"minHours\": 2 } },\n    \"currency\": \"USD\"\n}"
+						},
+						"url": "{{baseUrl}}/api/v1/admin/pricing/chicago"
+					},
+					"response": []
+				},
+				{
+					"name": "8.26 Hourly Booking",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{riderToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"pickup\": {\n        \"lat\": 41.87,\n        \"lng\": -87.62\n    },\n    \"dropoff\": {\n        \"lat\": 41.90,\n        \"lng\": -87.65,\n        \"address\": \"Navy Pier, Chicago\"\n    },\n    \"vehicleCategory\": \"business_sedan\",\n    \"region\": \"chicago\",\n    \"bookingType\": \"hourly\",\n    \"hoursBooked\": 2\n}"
+						},
+						"url": "{{baseUrl}}/api/v1/rides"
+					},
+					"response": []
+				},
+				{
+					"name": "8.29 Delete Payment Method",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{riderToken}}"
+							}
+						],
+						"url": "{{baseUrl}}/api/v1/payments/methods/{{paymentMethodId}}"
+					},
+					"response": []
+				},
+				{
+					"name": "8.36 Approve Payout (Admin)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{adminToken}}"
+							}
+						],
+						"url": "{{baseUrl}}/api/v1/payouts/{{payoutId}}/approve"
+					},
+					"response": []
+				},
+				{
+					"name": "8.38 Get Chicago Pricing",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{adminToken}}"
+							}
+						],
+						"url": "{{baseUrl}}/api/v1/admin/pricing/chicago"
+					},
+					"response": []
+				},
+				{
+					"name": "8.39 Update User Status",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{adminToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"isActive\": false\n}"
+						},
+						"url": "{{baseUrl}}/api/v1/admin/users/{{riderId}}/status"
+					},
+					"response": []
+				},
+				{
+					"name": "8.40 Update Promotion",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{adminToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"active\": false,\n    \"description\": \"Updated promo\"\n}"
+						},
+						"url": "{{baseUrl}}/api/v1/admin/promotions/{{promoId}}"
+					},
+					"response": []
+				},
+				{
+					"name": "8.41 Update Bonus Program",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{adminToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"active\": false\n}"
+						},
+						"url": "{{baseUrl}}/api/v1/admin/bonuses/{{bonusId}}"
+					},
+					"response": []
+				},
+				{
+					"name": "8.42 Get Pricing History",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{adminToken}}"
+							}
+						],
+						"url": "{{baseUrl}}/api/v1/admin/history/pricing"
+					},
+					"response": []
+				},
+				{
+					"name": "8.43 Update User Documents",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{adminToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"action\": \"approve\",\n    \"notes\": \"All documents verified\"\n}"
+						},
+						"url": "{{baseUrl}}/api/v1/driver/applications/{{driverId}}/review"
+					},
+					"response": []
+				},
+				{
+					"name": "8.44 Request Document Resubmission",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{adminToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"documents\": [\"driver_license\"],\n    \"note\": \"Please resubmit clearer photo\"\n}"
+						},
+						"url": "{{baseUrl}}/api/v1/driver/applications/{{driverId}}/resubmit"
+					},
+					"response": []
+				},
+				{
+					"name": "8.45 Get Driver Application Details",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{adminToken}}"
+							}
+						],
+						"url": "{{baseUrl}}/api/v1/driver/applications/{{driverId}}"
+					},
+					"response": []
+				},
+				{
+					"name": "8.46 Create Support Ticket (Admin)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{adminToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"subject\": \"Issue reported via phone\",\n    \"description\": \"User called about login issue\",\n    \"userId\": \"{{riderId}}\",\n    \"role\": \"rider\",\n    \"priority\": \"high\"\n}"
+						},
+						"url": "{{baseUrl}}/api/v1/admin/support-tickets"
+					},
+					"response": []
+				}
+			],
+			"description": "Note: Run 8.0 first to get admin token."
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"packages": {},
+				"requests": {},
+				"exec": [
+					""
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"packages": {},
+				"requests": {},
+				"exec": [
+					""
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "http://localhost:5000"
+		},
+		{
+			"key": "firebaseApiKey",
+			"value": "YOUR_FIREBASE_WEB_API_KEY"
+		},
+		{
+			"key": "riderToken",
+			"value": ""
+		},
+		{
+			"key": "riderRefreshToken",
+			"value": ""
+		},
+		{
+			"key": "driverToken",
+			"value": ""
+		},
+		{
+			"key": "driverRefreshToken",
+			"value": ""
+		},
+		{
+			"key": "adminToken",
+			"value": ""
+		},
+		{
+			"key": "riderId",
+			"value": ""
+		},
+		{
+			"key": "driverId",
+			"value": ""
+		},
+		{
+			"key": "rideId",
+			"value": ""
+		},
+		{
+			"key": "deliveryId",
+			"value": ""
+		},
+		{
+			"key": "vehicleId",
+			"value": ""
+		},
+		{
+			"key": "ticketId",
+			"value": ""
+		},
+		{
+			"key": "promoId",
+			"value": ""
+		},
+		{
+			"key": "payoutId",
+			"value": ""
+		},
+		{
+			"key": "riderEmail",
+			"value": "testrider_{{$timestamp}}@test.com"
+		},
+		{
+			"key": "driverEmail",
+			"value": "testdriver_{{$timestamp}}@test.com"
+		},
+		{
+			"key": "adminRefreshToken",
+			"value": ""
+		},
+		{
+			"key": "bonusId",
+			"value": "",
+			"type": "default"
+		}
+	]
+}
