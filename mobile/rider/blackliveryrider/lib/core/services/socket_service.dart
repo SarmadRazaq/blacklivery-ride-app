@@ -1,0 +1,279 @@
+import 'package:socket_io_client/socket_io_client.dart' as IO;
+import 'package:flutter/foundation.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import '../services/auth_service.dart';
+import '../network/api_client.dart';
+
+class SocketService extends ChangeNotifier {
+  // Singleton pattern — ensures all providers share the same socket connection
+  static final SocketService _instance = SocketService._internal();
+  factory SocketService() => _instance;
+  SocketService._internal();
+
+  bool _disposed = false;
+
+  @override
+  void notifyListeners() {
+    if (!_disposed) {
+      super.notifyListeners();
+    }
+  }
+
+  IO.Socket? _socket;
+  final AuthService _authService = AuthService();
+  bool _isConnected = false;
+  int _reconnectAttempts = 0;
+  static const int _maxReconnectAttempts = 5;
+  static const Duration _reconnectBaseDelay = Duration(seconds: 2);
+
+  // Driver location tracking
+  Function(Map<String, dynamic>)? _onDriverLocationUpdate;
+  // Chat message callback
+  Function(Map<String, dynamic>)? _onChatMessage;
+
+  bool get isConnected => _isConnected;
+  int get reconnectAttempts => _reconnectAttempts;
+  bool get isReconnecting => _reconnectAttempts > 0 && !_isConnected;
+
+  // Initialize and connect socket
+  Future<void> initSocket() async {
+    if (_socket != null && _socket!.connected) return;
+
+    final token = await _authService.refreshToken(); // Get valid token
+    if (token == null) {
+      debugPrint('SocketService: No token found. Cannot connect.');
+      return;
+    }
+
+    // Use baseUrl from ApiClient to ensure consistency (Android/Web/iOS)
+    final String baseUrl = ApiClient().dio.options.baseUrl;
+
+    debugPrint('SocketService: Connecting to $baseUrl');
+
+    _socket = IO.io(
+      baseUrl,
+      IO.OptionBuilder()
+          .setTransports(['websocket'])
+          .disableAutoConnect() // We manage connection manually
+          .disableReconnection() // We handle reconnection ourselves
+          .setAuth({'token': token})
+          .setExtraHeaders({'Authorization': 'Bearer $token'})
+          .build(),
+    );
+
+    _socket!.onConnect((_) {
+      debugPrint('SocketService: Connected');
+      _isConnected = true;
+      _reconnectAttempts = 0; // Reset on successful connection
+
+      // Join rider room so backend can send targeted notifications
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid != null) {
+        _socket!.emit('join:rider', uid);
+        debugPrint('SocketService: Joined rider room rider:$uid');
+      }
+
+      notifyListeners();
+    });
+
+    _socket!.onDisconnect((_) {
+      debugPrint('SocketService: Disconnected');
+      _isConnected = false;
+      notifyListeners();
+      _attemptReconnect();
+    });
+
+    _socket!.onError((data) => debugPrint('SocketService Error: $data'));
+    _socket!.onConnectError((data) {
+      debugPrint('SocketService Connect Error: $data');
+      _isConnected = false;
+      notifyListeners();
+      _attemptReconnect();
+    });
+
+    _socket!.connect();
+  }
+
+  /// Exponential backoff reconnection
+  Future<void> _attemptReconnect() async {
+    if (_reconnectAttempts >= _maxReconnectAttempts) {
+      debugPrint('SocketService: Max reconnect attempts reached ($_maxReconnectAttempts)');
+      return;
+    }
+
+    _reconnectAttempts++;
+    final delay = _reconnectBaseDelay * (1 << (_reconnectAttempts - 1)); // 2s, 4s, 8s, 16s, 32s
+    debugPrint('SocketService: Reconnecting in ${delay.inSeconds}s (attempt $_reconnectAttempts/$_maxReconnectAttempts)');
+
+    await Future.delayed(delay);
+
+    // Re-fetch token in case it expired
+    final token = await _authService.refreshToken();
+    if (token == null) {
+      debugPrint('SocketService: Cannot reconnect - no valid token');
+      return;
+    }
+
+    // Rebuild socket with fresh token
+    _socket?.clearListeners();
+    _socket?.dispose();
+    _socket = null;
+    await initSocket();
+  }
+
+  // Bind ride events
+  void listenToRideUpdates(
+    String rideId,
+    Function(Map<String, dynamic>) onUpdate,
+  ) {
+    if (_socket == null) return;
+
+    debugPrint(
+      'SocketService: Listening to ride:update and specific ride events for $rideId',
+    );
+
+    // Generic update
+    _socket!.on('ride:update', (data) {
+      if (data['id'] == rideId) {
+        debugPrint('SocketService: Received ride:update: $data');
+        onUpdate(data);
+      }
+    });
+
+    // Specific events matching SocketService.ts
+    // 'ride:accepted'
+    _socket!.on('ride:accepted', (data) {
+      if (data['rideId'] == rideId) {
+        debugPrint('SocketService: ride:accepted');
+        onUpdate({'status': 'accepted', ...data});
+      }
+    });
+
+    // 'ride:driver_arrived'
+    _socket!.on('ride:driver_arrived', (data) {
+      if (data['rideId'] == rideId) {
+        debugPrint('SocketService: ride:driver_arrived');
+        onUpdate({'status': 'arrived', ...data});
+      }
+    });
+
+    // 'ride:started'
+    _socket!.on('ride:started', (data) {
+      if (data['rideId'] == rideId) {
+        debugPrint('SocketService: ride:started');
+        onUpdate({'status': 'in_progress', ...data});
+      }
+    });
+
+    // 'ride:completed'
+    _socket!.on('ride:completed', (data) {
+      if (data['rideId'] == rideId) {
+        debugPrint('SocketService: ride:completed');
+        onUpdate({'status': 'completed', ...data});
+      }
+    });
+
+    // 'ride:cancelled'
+    _socket!.on('ride:cancelled', (data) {
+      if (data['rideId'] == rideId) {
+        debugPrint('SocketService: ride:cancelled');
+        onUpdate({
+          'status': 'cancelled',
+          ...data,
+        }); // BookingState should handle the status transition
+      }
+    });
+
+    // 'ride:no_driver' — no driver found after all matching attempts
+    _socket!.on('ride:no_driver', (data) {
+      if (data['rideId'] == rideId) {
+        debugPrint('SocketService: ride:no_driver');
+        onUpdate({'status': 'no_driver', ...data});
+      }
+    });
+  }
+
+  /// Stop listening to ride-specific events (call when ride ends or screen disposes)
+  void stopListeningToRideUpdates() {
+    _socket?.off('ride:update');
+    _socket?.off('ride:accepted');
+    _socket?.off('ride:driver_arrived');
+    _socket?.off('ride:started');
+    _socket?.off('ride:completed');
+    _socket?.off('ride:cancelled');
+    _socket?.off('ride:no_driver');
+    _socket?.off('driver:location');
+    _onDriverLocationUpdate = null;
+    debugPrint('SocketService: Stopped listening to ride updates');
+  }
+
+  /// Listen for real-time driver location updates
+  void listenToDriverLocation(Function(Map<String, dynamic>) onUpdate) {
+    if (_socket == null) return;
+    _onDriverLocationUpdate = onUpdate;
+    _socket!.on('driver:location', (data) {
+      debugPrint('SocketService: driver:location update received');
+      _onDriverLocationUpdate?.call(Map<String, dynamic>.from(data));
+    });
+  }
+
+  /// Emit rider's current location to the backend.
+  /// Called during active rides so the driver (and admin) can track the rider.
+  void emitRiderLocation({
+    required double latitude,
+    required double longitude,
+    String? rideId,
+  }) {
+    if (_socket == null || !_isConnected) return;
+    _socket!.emit('rider_location', {
+      'latitude': latitude,
+      'longitude': longitude,
+      if (rideId != null) 'rideId': rideId,
+    });
+  }
+
+  /// Listen for incoming chat messages via socket
+  void listenToChatMessages(Function(Map<String, dynamic>) onMessage) {
+    if (_socket == null) return;
+    _onChatMessage = onMessage;
+    _socket!.on('chat:message', (data) {
+      debugPrint('SocketService: chat:message received');
+      _onChatMessage?.call(Map<String, dynamic>.from(data));
+    });
+    _socket!.on('chat:new_message', (data) {
+      debugPrint('SocketService: chat:new_message received');
+      _onChatMessage?.call(Map<String, dynamic>.from(data));
+    });
+    _socket!.on('ride:chat', (data) {
+      debugPrint('SocketService: ride:chat received');
+      _onChatMessage?.call(Map<String, dynamic>.from(data));
+    });
+  }
+
+  /// Stop listening for chat messages
+  void stopListeningToChat() {
+    _socket?.off('chat:message');
+    _socket?.off('chat:new_message');
+    _socket?.off('ride:chat');
+    _onChatMessage = null;
+  }
+
+  void disconnect() {
+    _reconnectAttempts = _maxReconnectAttempts; // Prevent reconnect after intentional disconnect
+    _onDriverLocationUpdate = null;
+    _onChatMessage = null;
+    _socket?.clearListeners();
+    _socket?.disconnect();
+    _socket?.dispose();
+    _socket = null;
+    _isConnected = false;
+    notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    disconnect();
+    _disposed = true;
+    super.dispose();
+  }
+}

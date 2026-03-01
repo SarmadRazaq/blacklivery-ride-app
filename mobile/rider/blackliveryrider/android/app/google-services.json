@@ -1,0 +1,99 @@
+{
+  "project_info": {
+    "project_number": "384768177166",
+    "firebase_url": "https://share-ride-app-25e6c-default-rtdb.firebaseio.com",
+    "project_id": "share-ride-app-25e6c",
+    "storage_bucket": "share-ride-app-25e6c.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:384768177166:android:08188e5ed397ee6e14b85f",
+        "android_client_info": {
+          "package_name": "com.blacklivery.driver"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "384768177166-rr9oq0hefl6b8ki3666r9rhgetpjf6ue.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.blacklivery.driver",
+            "certificate_hash": "3f5e369f65a8874211e423a69d6a655e3114bcb9"
+          }
+        },
+        {
+          "client_id": "384768177166-79hl5lh708csr19lmfjsodvts70qanrs.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDzlm4OF6DM-hXEWEKpAhbyeCbK-Gr5gss"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "384768177166-79hl5lh708csr19lmfjsodvts70qanrs.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "384768177166-67sv0hlt8hkc5she4k6de85hf98vqp7g.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.blacklivery.rider"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:384768177166:android:fe3c49feccbe773514b85f",
+        "android_client_info": {
+          "package_name": "com.blacklivery.rider"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "384768177166-f9ti1nrkuoa1f1tri6lahe10lb5q3deb.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.blacklivery.rider",
+            "certificate_hash": "3f5e369f65a8874211e423a69d6a655e3114bcb9"
+          }
+        },
+        {
+          "client_id": "384768177166-79hl5lh708csr19lmfjsodvts70qanrs.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDzlm4OF6DM-hXEWEKpAhbyeCbK-Gr5gss"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "384768177166-79hl5lh708csr19lmfjsodvts70qanrs.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "384768177166-67sv0hlt8hkc5she4k6de85hf98vqp7g.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.blacklivery.rider"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

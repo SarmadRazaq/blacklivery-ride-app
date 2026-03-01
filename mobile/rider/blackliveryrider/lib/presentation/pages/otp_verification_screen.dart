@@ -1,0 +1,278 @@
+import 'dart:async';
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../../core/providers/auth_provider.dart';
+import '../../core/theme/app_colors.dart';
+import '../../core/theme/app_text_styles.dart';
+import '../widgets/custom_numpad.dart';
+import '../widgets/otp_input_box.dart';
+import 'home_screen.dart';
+
+class OtpVerificationScreen extends StatefulWidget {
+  final String? phoneNumber;
+  final String? email;
+
+  const OtpVerificationScreen({super.key, this.phoneNumber, this.email});
+
+  @override
+  State<OtpVerificationScreen> createState() => _OtpVerificationScreenState();
+}
+
+class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
+  String _otpCode = '';
+  int _remainingSeconds = 59;
+  Timer? _timer;
+  bool _isVerified = false;
+  bool get _isEmailFlow => widget.email != null && widget.phoneNumber == null;
+
+  @override
+  void initState() {
+    super.initState();
+    _startTimer();
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  void _startTimer() {
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (_remainingSeconds > 0) {
+        setState(() {
+          _remainingSeconds--;
+        });
+      } else {
+        timer.cancel();
+      }
+    });
+  }
+
+  void _onKeyPressed(String key) {
+    if (key == 'backspace') {
+      if (_otpCode.isNotEmpty) {
+        setState(() {
+          _otpCode = _otpCode.substring(0, _otpCode.length - 1);
+        });
+      }
+    } else if (key == 'clear') {
+      // Clear entire OTP field
+      setState(() {
+        _otpCode = '';
+      });
+    } else if (key == 'check') {
+      _verifyOtp();
+    } else if (_otpCode.length < 6) {
+      setState(() {
+        _otpCode += key;
+      });
+
+      // Auto verify when 6 digits entered
+      if (_otpCode.length == 6) {
+        _verifyOtp();
+      }
+    }
+  }
+
+  Future<void> _verifyOtp() async {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    try {
+      if (widget.phoneNumber != null) {
+        // Phone verification
+        await authProvider.verifyPhone(widget.phoneNumber!, _otpCode);
+      } else if (widget.email != null) {
+        // Email verification
+        await authProvider.verifyEmailOtp(widget.email!, _otpCode);
+      }
+
+      setState(() {
+        _isVerified = true;
+      });
+
+      if (mounted) {
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (context) => const HomeScreen()),
+          (route) => false,
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Verification Failed: ${e.toString()}')),
+        );
+      }
+    }
+  }
+
+  String get _formattedTime {
+    final minutes = _remainingSeconds ~/ 60;
+    final seconds = _remainingSeconds % 60;
+    return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.bgPri,
+      body: SafeArea(
+        child: Column(
+          children: [
+            // Header
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: Row(
+                children: [
+                  GestureDetector(
+                    onTap: () => Navigator.pop(context),
+                    child: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: Colors.transparent,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(
+                        Icons.chevron_left,
+                        color: Colors.white,
+                        size: 28,
+                      ),
+                    ),
+                  ),
+                  const Expanded(
+                    child: Text(
+                      'OTP Verification',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                  const SizedBox(width: 40), // Balance the back button
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 40),
+
+            // OTP Box
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 28),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: AppColors.inputBg,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: AppColors.inputBorder, width: 1),
+                ),
+                child: Column(
+                  children: [
+                    if (!_isVerified) ...[
+                      // Instructions
+                      RichText(
+                        textAlign: TextAlign.center,
+                        text: TextSpan(
+                          style: AppTextStyles.bodySmall,
+                          children: [
+                            TextSpan(
+                              text: _isEmailFlow
+                                  ? 'Enter the 6-digit OTP sent to '
+                                  : 'Enter the OTP sent to ',
+                            ),
+                            TextSpan(
+                              text:
+                                  widget.phoneNumber ??
+                                  widget.email ??
+                                  '+234 702 2345 678',
+                              style: AppTextStyles.bodySmall.copyWith(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      const SizedBox(height: 32),
+
+                      // OTP Input Display
+                      OtpInputBox(code: _otpCode),
+
+                      const SizedBox(height: 24),
+
+                      // Timer
+                      Text(
+                        _formattedTime,
+                        style: AppTextStyles.body.copyWith(color: Colors.white),
+                      ),
+                    ] else ...[
+                      // Success Message
+                      const SizedBox(height: 40),
+                      Text(
+                        'Changes Saved!',
+                        style: AppTextStyles.body.copyWith(
+                          color: AppColors.yellow90,
+                        ),
+                      ),
+                      const SizedBox(height: 40),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+
+            const Spacer(),
+
+            // Number Pad
+            CustomNumpad(onKeyPressed: _onKeyPressed),
+
+            TextButton(
+              onPressed: _remainingSeconds > 0
+                  ? null
+                  : () async {
+                      try {
+                        if (_isEmailFlow) {
+                          await context
+                              .read<AuthProvider>()
+                              .resendEmailVerification();
+                        } else {
+                          await context.read<AuthProvider>().startPhoneVerification(
+                            widget.phoneNumber!,
+                          );
+                        }
+
+                        setState(() {
+                          _remainingSeconds = 59;
+                          _otpCode = '';
+                        });
+                        _timer?.cancel();
+                        _startTimer();
+                      } catch (e) {
+                        if (!mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Resend failed: $e')),
+                        );
+                      }
+                    },
+              child: Text(
+                _remainingSeconds > 0
+                    ? _isEmailFlow
+                          ? 'Resend email OTP in $_formattedTime'
+                          : 'Resend OTP in $_formattedTime'
+                    : _isEmailFlow
+                    ? 'Resend Email OTP'
+                    : 'Resend OTP',
+              ),
+            ),
+
+            const SizedBox(height: 20),
+          ],
+        ),
+      ),
+    );
+  }
+}
