@@ -1,0 +1,8 @@
+# Release Keystore Configuration
+# Generate a keystore: keytool -genkey -v -keystore blacklivery-driver.jks -keyalg RSA -keysize 2048 -validity 10000 -alias blacklivery-driver
+# DO NOT commit this file to version control.
+
+storePassword=YOUR_STORE_PASSWORD
+keyPassword=YOUR_KEY_PASSWORD
+keyAlias=blacklivery-driver
+storeFile=../keystore/blacklivery-driver.jks

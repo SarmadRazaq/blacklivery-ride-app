@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CLIENT_ID</key>
+	<string>384768177166-vamdfo2mq9o1f5ghalmua8elvdkd1dgq.apps.googleusercontent.com</string>
+	<key>REVERSED_CLIENT_ID</key>
+	<string>com.googleusercontent.apps.384768177166-vamdfo2mq9o1f5ghalmua8elvdkd1dgq</string>
+	<key>ANDROID_CLIENT_ID</key>
+	<string>384768177166-f9ti1nrkuoa1f1tri6lahe10lb5q3deb.apps.googleusercontent.com</string>
+	<key>API_KEY</key>
+	<string>AIzaSyD5wSzqv-YyBE3Q8JfSN6CXZpJ-ODes8BI</string>
+	<key>GCM_SENDER_ID</key>
+	<string>384768177166</string>
+	<key>PLIST_VERSION</key>
+	<string>1</string>
+	<key>BUNDLE_ID</key>
+	<string>com.blacklivery.driver</string>
+	<key>PROJECT_ID</key>
+	<string>share-ride-app-25e6c</string>
+	<key>STORAGE_BUCKET</key>
+	<string>share-ride-app-25e6c.firebasestorage.app</string>
+	<key>IS_ADS_ENABLED</key>
+	<false></false>
+	<key>IS_ANALYTICS_ENABLED</key>
+	<false></false>
+	<key>IS_APPINVITE_ENABLED</key>
+	<true></true>
+	<key>IS_GCM_ENABLED</key>
+	<true></true>
+	<key>IS_SIGNIN_ENABLED</key>
+	<true></true>
+	<key>GOOGLE_APP_ID</key>
+	<string>1:384768177166:ios:ac351b232c10d03514b85f</string>
+	<key>DATABASE_URL</key>
+	<string>https://share-ride-app-25e6c-default-rtdb.firebaseio.com</string>
+</dict>
+</plist>

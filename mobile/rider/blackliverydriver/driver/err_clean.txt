@@ -1,0 +1,155 @@
+--- MATCH AT INDEX 6 ---
+FCM: Token registered with backend
+|
+SocketService: Connected
+|
+SocketService: Joined driver room driver:L3Cz930AJeYvEyjO9kFt0obt5bq1
+|
+FlutterError: BoxConstraints forces an infinite width.
+|
+These invalid constraints were provided to RenderPhysicalShape's layou
+t() function by the following function, which probably computed the in
+valid constraints in question:
+|
+RenderConstrainedBox.performLayout (package:flutter/src/rendering/prox
+y_box.dart:296:14)
+|
+The offending constraints were:
+|
+BoxConstraints(w=Infinity, 56.0<=h<=Infinity)
+|
+Stack: #0      BoxConstraints.debugAssertIsValid.<anonymous closure>.t
+hrowError (package:flutter/src/rendering/box.dart:549:9)
+|
+#1      BoxConstraints.debugAssertIsValid.<anonymous closure> (package
+:flutter/src/rendering/box.dart:611:11)
+|
+#2      BoxConstraints.debugAssertIsValid (package:flutter/src/renderi
+ng/box.dart:619:6)
+|
+#3      RenderObject.layout (package:flutter/src/rendering/object.dart
+:2668:19)
+|
+#4      RenderConstrainedBox.performLayout (package:flutter/src/render
+ing/proxy_box.dart:296:14)
+|
+#5      RenderObject.layout (package:flutter/src/rendering/object.dart
+:2768:7)
+|
+#6      ChildLayoutHelper.layoutChild (package:flutter/src/rendering/l
+ayout_helper.dart:62:11)
+|
+#7      _RenderInputPadding._computeSize (package:flutter/src/material
+/button_style_button.dart:698:41)
+|
+#8      _RenderInputPadding.performLayout (package:flutter/src/materia
+l/button_style_button.dart:728:12)
+|
+#9      RenderObject.layout (package:flutter/src/rendering/object.dart
+:2768:7)
+|
+#10     RenderProxyBoxMixin.performLayout (package:flutter/src/renderi
+ng/proxy_box.dart:118:18)
+|
+#11     RenderObject.layout (package:flutter/src/rendering/object.dart
+:2768:7)
+|
+#12     ChildLayoutHelper.layoutChild (package:flutter/src/rendering/l
+ayout_helper.dart:62:11)
+|
+#13     RenderFlex._computeSizes (package:flutter/src/rendering/flex.d
+art:1237:28)
+|
+#14     RenderFlex.performLayout (package:flutter/src/rendering/flex.d
+art:1329:32)
+|
+#15     RenderObject.layout (package:flutter/src/rendering/object.dart
+:2768:7)
+|
+#16     ChildLayoutHelper.layoutChild (package:flutter/src/rendering/l
+ayout_helper.dart:62:11)
+|
+#17     RenderFlex._computeSizes (package:flutter/src/rendering/flex.d
+art:1237:28)
+|
+#18     RenderFlex.performLayout (package:flutter/src/rendering/flex.d
+art:1329:32)
+|
+#19     RenderObject.layout (package:flutter/src/rendering/object.dart
+:2768:7)
+|
+#20     ChildLayoutHelper.layoutChild (package:flutter/src/rendering/l
+ayout_helper.dart:62:11)
+|
+#21     RenderFlex._computeSizes (package:flutter/src/rendering/flex.d
+art:1237:28)
+|
+#22     RenderFlex.performLayout (package:flutter/src/rendering/flex.d
+art:1329:32)
+|
+#23     RenderObject.layout (package:flutter/src/rendering/object.dart
+:2768:7)
+|
+#24     RenderProxyBoxMixin.performLayout (package:flutter/src/renderi
+ng/proxy_box.dart:118:18)
+|
+#25     RenderObject.layout (package:flutter/src/rendering/object.dart
+:2768:7)
+|
+#26     RenderProxyBoxMixin.performLayout (package:flutter/src/renderi
+ng/proxy_box.dart:118:18)
+|
+#27     RenderObject.layout (package:flutter/src/rendering/object.dart
+:2768:7)
+|
+#28     RenderSliverList.performLayout (package:flutter/src/rendering/
+sliver_list.dart:209:28)
+|
+#29     RenderObject.layout (package:flutter/src/rendering/object.dart
+:2768:7)
+|
+#30     RenderSliverEdgeInsetsPadding.performLayout (package:flutter/s
+rc/rendering/sliver_padding.dart:133:12)
+|
+#31     RenderSliverPadding.performLayout (package:flutter/src/renderi
+ng/sliver_padding.dart:368:11)
+|
+#32     RenderObject.layout (package:flutter/src/rendering/object.dart
+:2768:7)
+|
+#33     RenderViewportBase.layoutChildSequence (package:flutter/src/re
+ndering/viewport.dart:673:13)
+|
+#34     RenderViewport._attemptLayout (package:flutter/src/rendering/v
+iewport.dart:1684:12)
+|
+#35     RenderViewport.performLayout (package:flutter/src/rendering/vi
+ewport.dart:1575:20)
+|
+#36     RenderObject.layout (package:flutter/src/rendering/object.dart
+:2768:7)
+|
+#37     RenderProxyBoxMixin.performLayout (package:flutter/src/renderi
+ng/proxy_box.dart:118:18)
+|
+#38     RenderObject.layout (package:flutter/src/rendering/object.dart
+:2768:7)
+|
+#39     RenderProxyBoxMixin.performLayout (package:flutter/src/renderi
+ng/proxy_box.dart:118:18)
+|
+#40     RenderObject.layout (package:flutter/src/rendering/object.dart
+:2768:7)
+|
+#41     RenderProxyBoxMixin.performLayout (package:flutter/src/renderi
+ng/proxy_box.dart:118:18)
+|
+#42     RenderObject.layout (package:flutter/src/rendering/object.dart
+:2768:7)
+|
+#43     RenderProxyBoxMixin.performLayout (package:flutter/src/renderi
+ng/proxy_box.dart:118:18)
+|
+#44     RenderObject.layout (package:flutter/src/rendering/object.dart
+:2768:7)
+|

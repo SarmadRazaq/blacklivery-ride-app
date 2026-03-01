@@ -1,0 +1,6 @@
+00:00 +0: loading F:/BlackLivery/mobile/rider/blackliverydriver/driver/test/features/earnings/earnings_dashboard_test.dart
+00:00 +0: Earnings Dashboard Currency Tests Nigeria Region: Displays balance in NGN (₦)
+00:00 +1: Earnings Dashboard Currency Tests USA Region: Displays balance in USD ($)
+00:00 +2: Withdrawal Flow Navigation Nigeria: Tapping Request Payout opens PayoutScreen with Bank Dropdown
+00:00 +3: Withdrawal Flow Navigation Chicago: Tapping Request Payout opens PayoutScreen with Stripe Button
+00:01 +4: All tests passed!

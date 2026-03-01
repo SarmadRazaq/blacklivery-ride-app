@@ -1,0 +1,3 @@
+#include "Generated.xcconfig"
+// Secrets.xcconfig is gitignored — copy Secrets.xcconfig.example to create it
+#include? "Secrets.xcconfig"

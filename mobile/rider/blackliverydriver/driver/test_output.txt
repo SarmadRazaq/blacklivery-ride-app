@@ -1,0 +1,254 @@
+00:00 +0: loading F:/BlackLivery/mobile/rider/blackliverydriver/driver/test/features/earnings/earnings_dashboard_test.dart
+00:00 +0: Earnings Dashboard Currency Tests Nigeria Region: Displays balance in NGN (₦)
+00:00 +1: Earnings Dashboard Currency Tests USA Region: Displays balance in USD ($)
+00:00 +2: Withdrawal Flow Navigation Tapping Request Payout opens PayoutScreen with Bank Details tab
+══╡ EXCEPTION CAUGHT BY WIDGETS LIBRARY ╞═══════════════════════════════════════════════════════════
+The following ProviderNotFoundException was thrown building Consumer<EarningsProvider>(dirty):
+Error: Could not find the correct Provider<EarningsProvider> above this Consumer<EarningsProvider>
+Widget
+
+This happens because you used a `BuildContext` that does not include the provider
+of your choice. There are a few common scenarios:
+
+- You added a new provider in your `main.dart` and performed a hot-reload.
+  To fix, perform a hot-restart.
+
+- The provider you are trying to read is in a different route.
+
+  Providers are "scoped". So if you insert of provider inside a route, then
+  other routes will not be able to access that provider.
+
+- You used a `BuildContext` that is an ancestor of the provider you are trying to read.
+
+  Make sure that Consumer<EarningsProvider> is under your MultiProvider/Provider<EarningsProvider>.
+  This usually happens when you are creating a provider and trying to read it immediately.
+
+  For example, instead of:
+
+  ```
+  Widget build(BuildContext context) {
+    return Provider<Example>(
+      create: (_) => Example(),
+      // Will throw a ProviderNotFoundError, because `context` is associated
+      // to the widget that is the parent of `Provider<Example>`
+      child: Text(context.watch<Example>().toString()),
+    );
+  }
+  ```
+
+  consider using `builder` like so:
+
+  ```
+  Widget build(BuildContext context) {
+    return Provider<Example>(
+      create: (_) => Example(),
+      // we use `builder` to obtain a new `BuildContext` that has access to the provider
+      builder: (context, child) {
+        // No longer throws
+        return Text(context.watch<Example>().toString());
+      }
+    );
+  }
+  ```
+
+If none of these solutions work, consider asking for help on StackOverflow:
+https://stackoverflow.com/questions/tagged/flutter
+
+The relevant error-causing widget was:
+  Consumer<EarningsProvider>
+  Consumer:file:///F:/BlackLivery/mobile/rider/blackliverydriver/driver/lib/features/earnings/payout_screen.dart:137:11
+
+When the exception was thrown, this was the stack:
+#0      Provider._inheritedElementOf (package:provider/src/provider.dart:377:7)
+#1      Provider.of (package:provider/src/provider.dart:327:30)
+#2      Consumer.buildWithChild (package:provider/src/consumer.dart:181:16)
+#3      SingleChildStatelessWidget.build (package:nested/nested.dart:259:41)
+#4      StatelessElement.build (package:flutter/src/widgets/framework.dart:5889:49)
+#5      SingleChildStatelessElement.build (package:nested/nested.dart:279:18)
+#6      ComponentElement.performRebuild (package:flutter/src/widgets/framework.dart:5817:15)
+#7      Element.rebuild (package:flutter/src/widgets/framework.dart:5529:7)
+#8      ComponentElement._firstBuild (package:flutter/src/widgets/framework.dart:5799:5)
+#9      ComponentElement.mount (package:flutter/src/widgets/framework.dart:5793:5)
+#10     SingleChildWidgetElementMixin.mount (package:nested/nested.dart:222:11)
+#11     Element.inflateWidget (package:flutter/src/widgets/framework.dart:4587:20)
+#12     MultiChildRenderObjectElement.inflateWidget (package:flutter/src/widgets/framework.dart:7264:36)
+#13     MultiChildRenderObjectElement.mount (package:flutter/src/widgets/framework.dart:7279:32)
+...     Normal element mounting (53 frames)
+#66     Element.inflateWidget (package:flutter/src/widgets/framework.dart:4587:20)
+#67     Element.updateChild (package:flutter/src/widgets/framework.dart:4059:18)
+#68     SliverMultiBoxAdaptorElement.updateChild (package:flutter/src/widgets/sliver.dart:1086:37)
+#69     SliverMultiBoxAdaptorElement.createChild.<anonymous closure> (package:flutter/src/widgets/sliver.dart:1071:20)
+#70     BuildOwner.buildScope (package:flutter/src/widgets/framework.dart:3101:19)
+#71     SliverMultiBoxAdaptorElement.createChild (package:flutter/src/widgets/sliver.dart:1061:12)
+#72     RenderSliverMultiBoxAdaptor._createOrObtainChild.<anonymous closure> (package:flutter/src/rendering/sliver_multi_box_adaptor.dart:368:23)
+#73     RenderObject.invokeLayoutCallback.<anonymous closure> (package:flutter/src/rendering/object.dart:2887:17)
+#74     PipelineOwner._enableMutationsToDirtySubtrees (package:flutter/src/rendering/object.dart:1223:15)
+#75     RenderObject.invokeLayoutCallback (package:flutter/src/rendering/object.dart:2886:14)
+#76     RenderSliverMultiBoxAdaptor._createOrObtainChild (package:flutter/src/rendering/sliver_multi_box_adaptor.dart:357:5)
+#77     RenderSliverMultiBoxAdaptor.addInitialChild (package:flutter/src/rendering/sliver_multi_box_adaptor.dart:455:5)
+#78     RenderSliverFixedExtentBoxAdaptor.performLayout (package:flutter/src/rendering/sliver_fixed_extent_list.dart:319:12)
+#79     RenderObject.layout (package:flutter/src/rendering/object.dart:2768:7)
+#80     RenderSliverEdgeInsetsPadding.performLayout (package:flutter/src/rendering/sliver_padding.dart:133:12)
+#81     _RenderSliverFractionalPadding.performLayout (package:flutter/src/widgets/sliver_fill.dart:162:11)
+#82     RenderObject.layout (package:flutter/src/rendering/object.dart:2768:7)
+#83     RenderViewportBase.layoutChildSequence (package:flutter/src/rendering/viewport.dart:673:13)
+#84     RenderViewport._attemptLayout (package:flutter/src/rendering/viewport.dart:1684:12)
+#85     RenderViewport.performLayout (package:flutter/src/rendering/viewport.dart:1575:20)
+#86     RenderObject.layout (package:flutter/src/rendering/object.dart:2768:7)
+#87     RenderProxyBoxMixin.performLayout (package:flutter/src/rendering/proxy_box.dart:118:18)
+#88     RenderObject.layout (package:flutter/src/rendering/object.dart:2768:7)
+#89     RenderProxyBoxMixin.performLayout (package:flutter/src/rendering/proxy_box.dart:118:18)
+#90     RenderObject.layout (package:flutter/src/rendering/object.dart:2768:7)
+#91     RenderProxyBoxMixin.performLayout (package:flutter/src/rendering/proxy_box.dart:118:18)
+#92     RenderObject.layout (package:flutter/src/rendering/object.dart:2768:7)
+#93     RenderProxyBoxMixin.performLayout (package:flutter/src/rendering/proxy_box.dart:118:18)
+#94     RenderObject.layout (package:flutter/src/rendering/object.dart:2768:7)
+#95     RenderProxyBoxMixin.performLayout (package:flutter/src/rendering/proxy_box.dart:118:18)
+#96     RenderObject.layout (package:flutter/src/rendering/object.dart:2768:7)
+#97     RenderProxyBoxMixin.performLayout (package:flutter/src/rendering/proxy_box.dart:118:18)
+#98     RenderObject.layout (package:flutter/src/rendering/object.dart:2768:7)
+#99     RenderProxyBoxMixin.performLayout (package:flutter/src/rendering/proxy_box.dart:118:18)
+#100    RenderObject.layout (package:flutter/src/rendering/object.dart:2768:7)
+#101    RenderProxyBoxMixin.performLayout (package:flutter/src/rendering/proxy_box.dart:118:18)
+#102    _RenderCustomClip.performLayout (package:flutter/src/rendering/proxy_box.dart:1549:11)
+#103    RenderObject.layout (package:flutter/src/rendering/object.dart:2768:7)
+#104    MultiChildLayoutDelegate.layoutChild (package:flutter/src/rendering/custom_layout.dart:180:12)
+#105    _ScaffoldLayout.performLayout (package:flutter/src/material/scaffold.dart:1111:7)
+#106    MultiChildLayoutDelegate._callPerformLayout (package:flutter/src/rendering/custom_layout.dart:246:7)
+#107    RenderCustomMultiChildLayoutBox.performLayout (package:flutter/src/rendering/custom_layout.dart:417:14)
+#108    RenderObject.layout (package:flutter/src/rendering/object.dart:2768:7)
+#109    RenderProxyBoxMixin.performLayout (package:flutter/src/rendering/proxy_box.dart:118:18)
+#110    RenderObject.layout (package:flutter/src/rendering/object.dart:2768:7)
+#111    RenderProxyBoxMixin.performLayout (package:flutter/src/rendering/proxy_box.dart:118:18)
+#112    _RenderCustomClip.performLayout (package:flutter/src/rendering/proxy_box.dart:1549:11)
+#113    RenderObject.layout (package:flutter/src/rendering/object.dart:2768:7)
+#114    RenderProxyBoxMixin.performLayout (package:flutter/src/rendering/proxy_box.dart:118:18)
+#115    RenderObject.layout (package:flutter/src/rendering/object.dart:2768:7)
+#116    RenderProxyBoxMixin.performLayout (package:flutter/src/rendering/proxy_box.dart:118:18)
+#117    RenderObject.layout (package:flutter/src/rendering/object.dart:2768:7)
+#118    RenderProxyBoxMixin.performLayout (package:flutter/src/rendering/proxy_box.dart:118:18)
+#119    RenderObject.layout (package:flutter/src/rendering/object.dart:2768:7)
+#120    RenderProxyBoxMixin.performLayout (package:flutter/src/rendering/proxy_box.dart:118:18)
+#121    RenderObject.layout (package:flutter/src/rendering/object.dart:2768:7)
+#122    RenderProxyBoxMixin.performLayout (package:flutter/src/rendering/proxy_box.dart:118:18)
+#123    RenderObject.layout (package:flutter/src/rendering/object.dart:2768:7)
+#124    RenderProxyBoxMixin.performLayout (package:flutter/src/rendering/proxy_box.dart:118:18)
+#125    RenderObject.layout (package:flutter/src/rendering/object.dart:2768:7)
+#126    RenderProxyBoxMixin.performLayout (package:flutter/src/rendering/proxy_box.dart:118:18)
+#127    RenderObject.layout (package:flutter/src/rendering/object.dart:2768:7)
+#128    RenderProxyBoxMixin.performLayout (package:flutter/src/rendering/proxy_box.dart:118:18)
+#129    RenderObject.layout (package:flutter/src/rendering/object.dart:2768:7)
+#130    RenderProxyBoxMixin.performLayout (package:flutter/src/rendering/proxy_box.dart:118:18)
+#131    RenderObject.layout (package:flutter/src/rendering/object.dart:2768:7)
+#132    RenderProxyBoxMixin.performLayout (package:flutter/src/rendering/proxy_box.dart:118:18)
+#133    RenderObject.layout (package:flutter/src/rendering/object.dart:2768:7)
+#134    RenderProxyBoxMixin.performLayout (package:flutter/src/rendering/proxy_box.dart:118:18)
+#135    RenderObject.layout (package:flutter/src/rendering/object.dart:2768:7)
+#136    RenderProxyBoxMixin.performLayout (package:flutter/src/rendering/proxy_box.dart:118:18)
+#137    RenderObject.layout (package:flutter/src/rendering/object.dart:2768:7)
+#138    RenderProxyBoxMixin.performLayout (package:flutter/src/rendering/proxy_box.dart:118:18)
+#139    RenderObject.layout (package:flutter/src/rendering/object.dart:2768:7)
+#140    RenderProxyBoxMixin.performLayout (package:flutter/src/rendering/proxy_box.dart:118:18)
+#141    RenderObject.layout (package:flutter/src/rendering/object.dart:2768:7)
+#142    RenderProxyBoxMixin.performLayout (package:flutter/src/rendering/proxy_box.dart:118:18)
+#143    RenderObject.layout (package:flutter/src/rendering/object.dart:2768:7)
+#144    RenderOffstage.performLayout (package:flutter/src/rendering/proxy_box.dart:3921:14)
+#145    RenderObject.layout (package:flutter/src/rendering/object.dart:2768:7)
+#146    RenderProxyBoxMixin.performLayout (package:flutter/src/rendering/proxy_box.dart:118:18)
+#147    RenderObject.layout (package:flutter/src/rendering/object.dart:2768:7)
+#148    _RenderTheaterMixin.layoutChild (package:flutter/src/widgets/overlay.dart:1084:13)
+#149    _RenderTheater.performLayout (package:flutter/src/widgets/overlay.dart:1429:9)
+#150    RenderObject._layoutWithoutResize (package:flutter/src/rendering/object.dart:2616:7)
+#151    PipelineOwner.flushLayout (package:flutter/src/rendering/object.dart:1174:18)
+#152    PipelineOwner.flushLayout (package:flutter/src/rendering/object.dart:1187:15)
+#153    AutomatedTestWidgetsFlutterBinding.drawFrame (package:flutter_test/src/binding.dart:2133:27)
+#154    RendererBinding._handlePersistentFrameCallback (package:flutter/src/rendering/binding.dart:495:5)
+#155    SchedulerBinding._invokeFrameCallback (package:flutter/src/scheduler/binding.dart:1430:15)
+#156    SchedulerBinding.handleDrawFrame (package:flutter/src/scheduler/binding.dart:1345:9)
+#157    AutomatedTestWidgetsFlutterBinding.pump.<anonymous closure> (package:flutter_test/src/binding.dart:1960:9)
+#160    TestAsyncUtils.guard (package:flutter_test/src/test_async_utils.dart:74:41)
+#161    AutomatedTestWidgetsFlutterBinding.pump (package:flutter_test/src/binding.dart:1949:27)
+#162    WidgetTester.pumpAndSettle.<anonymous closure> (package:flutter_test/src/widget_tester.dart:719:23)
+#165    TestAsyncUtils.guard (package:flutter_test/src/test_async_utils.dart:74:41)
+#166    WidgetTester.pumpAndSettle (package:flutter_test/src/widget_tester.dart:712:27)
+#167    main.<anonymous closure>.<anonymous closure> (file:///F:/BlackLivery/mobile/rider/blackliverydriver/driver/test/features/earnings/earnings_dashboard_test.dart:109:22)
+<asynchronous suspension>
+#168    testWidgets.<anonymous closure>.<anonymous closure> (package:flutter_test/src/widget_tester.dart:192:15)
+<asynchronous suspension>
+#169    TestWidgetsFlutterBinding._runTestBody (package:flutter_test/src/binding.dart:1682:5)
+<asynchronous suspension>
+<asynchronous suspension>
+(elided 5 frames from dart:async and package:stack_trace)
+
+════════════════════════════════════════════════════════════════════════════════════════════════════
+══╡ EXCEPTION CAUGHT BY RENDERING LIBRARY ╞═════════════════════════════════════════════════════════
+The following assertion was thrown during layout:
+A RenderFlex overflowed by 99741 pixels on the bottom.
+
+The relevant error-causing widget was:
+  Column
+  Column:file:///F:/BlackLivery/mobile/rider/blackliverydriver/driver/lib/features/earnings/payout_screen.dart:134:14
+
+The overflowing RenderFlex has an orientation of Axis.vertical.
+The edge of the RenderFlex that is overflowing has been marked in the rendering with a yellow and
+black striped pattern. This is usually caused by the contents being too big for the RenderFlex.
+Consider applying a flex factor (e.g. using an Expanded widget) to force the children of the
+RenderFlex to fit within the available space instead of being sized to their natural size.
+This is considered an error condition because it indicates that there is content that cannot be
+seen. If the content is legitimately bigger than the available space, consider clipping it with a
+ClipRect widget before putting it in the flex, or using a scrollable container rather than a Flex,
+like a ListView.
+The specific RenderFlex in question is: RenderFlex#35be2 OVERFLOWING:
+  needs compositing
+  creator: Column ← Padding ← Semantics ← KeyedSubtree-[<0>] ← RepaintBoundary ← IndexedSemantics ←
+    _SelectionKeepAlive ← NotificationListener<KeepAliveNotification> ← KeepAlive ← AutomaticKeepAlive
+    ← KeyedSubtree-[Key <[<0>]>] ← _SliverFillViewportRenderObjectWidget ← ⋯
+  parentData: offset=Offset(16.0, 16.0) (can use size)
+  constraints: BoxConstraints(w=768.0, h=464.0)
+  size: Size(768.0, 464.0)
+  direction: vertical
+  mainAxisAlignment: start
+  mainAxisSize: max
+  crossAxisAlignment: start
+  textDirection: ltr
+  verticalDirection: down
+  spacing: 0.0
+◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤
+════════════════════════════════════════════════════════════════════════════════════════════════════
+══╡ EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK ╞════════════════════════════════════════════════════
+The following TestFailure was thrown running a test:
+Expected: exactly one matching candidate
+  Actual: _TextWidgetFinder:<Found 2 widgets with text "Request Payout": [
+            Text("Request Payout", inherit: true, color: Color(alpha: 1.0000, red: 0.0000, green:
+0.0000, blue: 0.0000, colorSpace: ColorSpace.sRGB), size: 16.0, weight: 700, dependencies:
+[DefaultSelectionStyle, DefaultTextStyle, MediaQuery]),
+            Text("Request Payout", softWrap: no wrapping except at line break characters, overflow:
+fade, dependencies: [DefaultSelectionStyle, DefaultTextStyle, MediaQuery]),
+          ]>
+   Which: is too many
+
+When the exception was thrown, this was the stack:
+#4      main.<anonymous closure>.<anonymous closure> (file:///F:/BlackLivery/mobile/rider/blackliverydriver/driver/test/features/earnings/earnings_dashboard_test.dart:116:9)
+<asynchronous suspension>
+#5      testWidgets.<anonymous closure>.<anonymous closure> (package:flutter_test/src/widget_tester.dart:192:15)
+<asynchronous suspension>
+#6      TestWidgetsFlutterBinding._runTestBody (package:flutter_test/src/binding.dart:1682:5)
+<asynchronous suspension>
+<asynchronous suspension>
+(elided one frame from package:stack_trace)
+
+This was caught by the test expectation on the following line:
+  file:///F:/BlackLivery/mobile/rider/blackliverydriver/driver/test/features/earnings/earnings_dashboard_test.dart line 116
+The test description was:
+  Tapping Request Payout opens PayoutScreen with Bank Details tab
+════════════════════════════════════════════════════════════════════════════════════════════════════
+══╡ EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK ╞════════════════════════════════════════════════════
+The following message was thrown:
+Multiple exceptions (3) were detected during the running of the current test, and at least one was
+unexpected.
+════════════════════════════════════════════════════════════════════════════════════════════════════
+00:01 +2 -1: Withdrawal Flow Navigation Tapping Request Payout opens PayoutScreen with Bank Details tab [E]
+  Test failed. See exception logs above.
+  The test description was: Tapping Request Payout opens PayoutScreen with Bank Details tab
+  
+00:01 +2 -1: Some tests failed.
