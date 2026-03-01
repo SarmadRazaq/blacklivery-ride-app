@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { verifyToken } from '../middlewares/auth.middleware';
-import { createDelivery, getDeliveryQuote, getDelivery } from '../controllers/delivery.controller';
+import { validate } from '../middlewares/validate.middleware';
+import { createDeliverySchema, deliveryQuoteSchema, proofOfDeliverySchema } from '../schemas/delivery.schema';
+import { createDelivery, getDeliveryQuote, getDelivery, uploadProofOfDelivery, getDeliveryHistory } from '../controllers/delivery.controller';
 
 const router = Router();
 
@@ -38,7 +40,7 @@ router.use(verifyToken);
  *       201:
  *         description: Delivery created
  */
-router.post('/', createDelivery as any);
+router.post('/', validate(createDeliverySchema), createDelivery as any);
 
 /**
  * @swagger
@@ -63,7 +65,30 @@ router.post('/', createDelivery as any);
  *       200:
  *         description: Delivery quote
  */
-router.post('/quote', getDeliveryQuote as any);
+router.post('/quote', validate(deliveryQuoteSchema), getDeliveryQuote as any);
+
+/**
+ * @swagger
+ * /deliveries/history:
+ *   get:
+ *     summary: Get delivery history for current user
+ *     tags: [Deliveries]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: List of past deliveries
+ */
+router.get('/history', getDeliveryHistory as any);
 
 /**
  * @swagger
@@ -86,4 +111,38 @@ router.post('/quote', getDeliveryQuote as any);
  */
 router.get('/:id', getDelivery as any);
 
+/**
+ * @swagger
+ * /deliveries/{rideId}/proof:
+ *   post:
+ *     summary: Upload proof of delivery (photo or signature)
+ *     tags: [Deliveries]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: rideId
+ *         schema:
+ *           type: string
+ *         required: true
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               photoBase64:
+ *                 type: string
+ *               signatureBase64:
+ *                 type: string
+ *               notes:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Proof uploaded
+ */
+router.post('/:rideId/proof', validate(proofOfDeliverySchema), uploadProofOfDelivery as any);
+
 export default router;
+

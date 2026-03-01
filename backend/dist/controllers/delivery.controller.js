@@ -83,6 +83,8 @@ const createDelivery = (req, res) => __awaiter(void 0, void 0, void 0, function*
             region: payload.region === 'chicago' ? 'US-CHI' : 'NG',
             bookingType: 'delivery',
             city: payload.city,
+            pickupLocation: payload.pickup,
+            dropoffLocation: payload.dropoff,
             deliveryDetails: {
                 packageType: payload.deliveryDetails.packageType,
                 requiresReturn: payload.deliveryDetails.requiresReturn,
@@ -146,6 +148,8 @@ const getDeliveryQuote = (req, res) => __awaiter(void 0, void 0, void 0, functio
             region: payload.region === 'chicago' ? 'US-CHI' : 'NG',
             bookingType: 'delivery',
             city: payload.city,
+            pickupLocation: payload.pickup,
+            dropoffLocation: payload.dropoff,
             deliveryDetails: {
                 serviceType: payload.deliveryDetails.serviceType,
                 requiresReturn: payload.deliveryDetails.requiresReturn,

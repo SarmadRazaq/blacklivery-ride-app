@@ -85,6 +85,22 @@ class SocketService {
             this.activeRideRooms.set(rideId, room);
         }
     }
+    emitChatMessage(rideId, message, recipientId, recipientRole) {
+        if (!this.io)
+            return;
+        // Emit to ride room
+        this.io.to(`ride:${rideId}`).emit('chat:message', message);
+        // Emit directly to recipient
+        const recipientRoom = recipientRole === 'rider' ? `rider:${recipientId}` : `driver:${recipientId}`;
+        this.io.to(recipientRoom).emit('chat:new_message', message);
+        // Send push notification
+        NotificationService_1.notificationService.sendPush(recipientId, 'New Message', message.message, { type: 'chat:message', rideId, messageId: message.id }).catch(err => logger_1.logger.warn({ err, recipientId }, 'Failed to send chat push notification'));
+    }
+    emitTypingIndicator(rideId, userId, userRole, isTyping) {
+        if (!this.io)
+            return;
+        this.io.to(`ride:${rideId}`).emit('chat:typing', { userId, userRole, isTyping });
+    }
     shouldSyncDriver(driverId, intervalMs = 3000) {
         var _a;
         const last = (_a = this.driverSyncTracker.get(driverId)) !== null && _a !== void 0 ? _a : 0;

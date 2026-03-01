@@ -42,23 +42,23 @@ class NigeriaPricingStrategy {
     }
     calculateRideFare(ride, distanceKm, durationMinutes) {
         return __awaiter(this, void 0, void 0, function* () {
-            var _a, _b, _c, _d;
+            var _a, _b, _c, _d, _e, _f, _g;
             const config = yield PricingConfigService_1.pricingConfigService.getNigeriaConfig();
-            const cityKey = (ride.city && ((config === null || config === void 0 ? void 0 : config.pricing[ride.city]) || this.DEFAULTS.CITIES[ride.city])) ? ride.city : 'default';
-            const cityConfig = (config === null || config === void 0 ? void 0 : config.pricing[cityKey]) || this.DEFAULTS.CITIES[cityKey] || this.DEFAULTS.CITIES.default;
-            const category = ((_a = ride.vehicleCategory) === null || _a === void 0 ? void 0 : _a.toLowerCase()) || 'sedan';
-            const vehicleConfig = (config === null || config === void 0 ? void 0 : config.categories[category]) || this.DEFAULTS.RIDE_RATES[category] || this.DEFAULTS.RIDE_RATES.sedan;
+            const cityKey = (ride.city && (((_a = config === null || config === void 0 ? void 0 : config.pricing) === null || _a === void 0 ? void 0 : _a[ride.city]) || this.DEFAULTS.CITIES[ride.city])) ? ride.city : 'default';
+            const cityConfig = ((_b = config === null || config === void 0 ? void 0 : config.pricing) === null || _b === void 0 ? void 0 : _b[cityKey]) || this.DEFAULTS.CITIES[cityKey] || this.DEFAULTS.CITIES.default;
+            const category = ((_c = ride.vehicleCategory) === null || _c === void 0 ? void 0 : _c.toLowerCase()) || 'sedan';
+            const vehicleConfig = ((_d = config === null || config === void 0 ? void 0 : config.categories) === null || _d === void 0 ? void 0 : _d[category]) || this.DEFAULTS.RIDE_RATES[category] || this.DEFAULTS.RIDE_RATES.sedan;
             // Use config values or defaults
             const baseFare = cityConfig.baseFare;
-            const minuteRate = (_b = cityConfig.perMinute) !== null && _b !== void 0 ? _b : cityConfig.minuteRate; // Safe access
+            const minuteRate = (_e = cityConfig.perMinute) !== null && _e !== void 0 ? _e : cityConfig.minuteRate; // Safe access
             const distanceFare = distanceKm * vehicleConfig.perKm;
             const timeFare = durationMinutes * minuteRate;
             let surgeMultiplier = ride.pricing.surgeMultiplier || 1.0;
             const subtotal = baseFare + (distanceFare + timeFare) * surgeMultiplier;
             let addOnsFare = 0;
-            if ((_c = ride.addOns) === null || _c === void 0 ? void 0 : _c.premiumVehicle)
+            if ((_f = ride.addOns) === null || _f === void 0 ? void 0 : _f.premiumVehicle)
                 addOnsFare += 1500;
-            if ((_d = ride.addOns) === null || _d === void 0 ? void 0 : _d.extraLuggage)
+            if ((_g = ride.addOns) === null || _g === void 0 ? void 0 : _g.extraLuggage)
                 addOnsFare += 1000;
             const surgeFare = (distanceFare + timeFare) * (surgeMultiplier - 1);
             let totalFare = baseFare + distanceFare + timeFare + surgeFare + addOnsFare;

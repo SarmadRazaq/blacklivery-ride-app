@@ -18,6 +18,7 @@ export interface IIncentive {
     peakHourBonus: number;
     airportBonus: number;
     weatherBonus: number;
+    deliveryBonus?: number;
     weatherBonusTrips?: number;
     totalEarned: number;
 
@@ -39,6 +40,7 @@ export interface IWeeklyIncentive {
     totalRides: number;
     totalDeliveries: number;
     weeklyBonus: number;
+    weeklyEarnings?: number; // Cumulative driver earnings for the week
     guaranteeEarnings?: number; // Chicago weekly guarantee
 
     isPaid: boolean;

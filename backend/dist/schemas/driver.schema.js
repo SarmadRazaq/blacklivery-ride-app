@@ -86,7 +86,7 @@ exports.listDriverApplicationsSchema = zod_1.z.object({
         status: zod_1.z.enum(['pending_documents', 'pending_review', 'needs_resubmission', 'approved', 'rejected']).optional(),
         vehicleType: zod_1.z.string().optional()
     }),
-    body: zod_1.z.object({}),
+    body: zod_1.z.object({}).optional(),
     params: zod_1.z.object({})
 });
 exports.adminReviewDriverApplicationSchema = zod_1.z.object({

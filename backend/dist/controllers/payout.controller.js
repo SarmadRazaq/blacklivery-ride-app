@@ -9,7 +9,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
     });
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.monnifyWebhook = exports.getBanks = exports.approvePayout = exports.createStripeConnectAccount = exports.requestPayout = void 0;
+exports.getPayoutHistory = exports.monnifyWebhook = exports.getBanks = exports.approvePayout = exports.createStripeConnectAccount = exports.requestPayout = void 0;
 const WalletService_1 = require("../services/WalletService");
 const PaymentService_1 = require("../services/payment/PaymentService");
 const firebase_1 = require("../config/firebase");
@@ -27,19 +27,28 @@ const getPaymentsConfig = () => __awaiter(void 0, void 0, void 0, function* () {
 });
 const appendHistory = (history, entry) => [...(history !== null && history !== void 0 ? history : []), entry];
 const requestPayout = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _j;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l;
     const { uid } = req.user;
     const rawCurrency = ((_a = req.body.currency) !== null && _a !== void 0 ? _a : 'NGN').toString().toUpperCase();
     const currency = (['NGN', 'USD'].includes(rawCurrency) ? rawCurrency : 'NGN');
     const amount = Number(req.body.amount);
-    const accountNumber = req.body.accountNumber;
-    const bankCode = req.body.bankCode;
+    let accountNumber = req.body.accountNumber;
+    let bankCode = req.body.bankCode;
+    const bankAccountId = req.body.bankAccountId;
+    if (bankAccountId) {
+        const methodDoc = yield firebase_1.db.collection('payment_methods').doc(bankAccountId).get();
+        if (methodDoc.exists && ((_b = methodDoc.data()) === null || _b === void 0 ? void 0 : _b.userId) === uid) {
+            const details = (_c = methodDoc.data()) === null || _c === void 0 ? void 0 : _c.details;
+            accountNumber = details === null || details === void 0 ? void 0 : details.accountNumber;
+            bankCode = details === null || details === void 0 ? void 0 : details.bankCode;
+        }
+    }
     try {
         if (!amount || amount <= 0) {
             return res.status(400).json({ error: 'Invalid payout amount' });
         }
         const config = yield getPaymentsConfig();
-        const minimum = (_c = (_b = config.payoutMinimums) === null || _b === void 0 ? void 0 : _b[currency]) !== null && _c !== void 0 ? _c : 0;
+        const minimum = (_e = (_d = config.payoutMinimums) === null || _d === void 0 ? void 0 : _d[currency]) !== null && _e !== void 0 ? _e : 0;
         if (amount < minimum) {
             return res.status(400).json({ error: `Minimum payout for ${currency} is ${minimum}` });
         }
@@ -48,8 +57,8 @@ const requestPayout = (req, res) => __awaiter(void 0, void 0, void 0, function* 
             return res.status(400).json({ error: 'Insufficient balance' });
         }
         const userDoc = yield firebase_1.db.collection('users').doc(uid).get();
-        const userData = (_d = userDoc.data()) !== null && _d !== void 0 ? _d : {};
-        const stripeConnectAccountId = (_j = (_g = (_e = userData.stripeConnectAccountId) !== null && _e !== void 0 ? _e : (_f = userData.payouts) === null || _f === void 0 ? void 0 : _f.stripeConnectAccountId) !== null && _g !== void 0 ? _g : (_h = userData.driverProfile) === null || _h === void 0 ? void 0 : _h.stripeConnectAccountId) !== null && _j !== void 0 ? _j : null;
+        const userData = (_f = userDoc.data()) !== null && _f !== void 0 ? _f : {};
+        const stripeConnectAccountId = (_l = (_j = (_g = userData.stripeConnectAccountId) !== null && _g !== void 0 ? _g : (_h = userData.payouts) === null || _h === void 0 ? void 0 : _h.stripeConnectAccountId) !== null && _j !== void 0 ? _j : (_k = userData.driverProfile) === null || _k === void 0 ? void 0 : _k.stripeConnectAccountId) !== null && _l !== void 0 ? _l : null;
         if (currency === 'USD' && !stripeConnectAccountId) {
             return res.status(400).json({ error: 'Stripe Connect account required for USD payouts' });
         }
@@ -302,4 +311,37 @@ const monnifyWebhook = (req, res) => __awaiter(void 0, void 0, void 0, function*
     res.status(200).json({ received: true });
 });
 exports.monnifyWebhook = monnifyWebhook;
+/**
+ * Get payout history for authenticated driver
+ */
+const getPayoutHistory = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const { uid } = req.user;
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 20;
+        const offset = (page - 1) * limit;
+        const countSnap = yield firebase_1.db.collection('payouts')
+            .where('driverId', '==', uid)
+            .count()
+            .get();
+        const total = countSnap.data().count;
+        const snapshot = yield firebase_1.db.collection('payouts')
+            .where('driverId', '==', uid)
+            .orderBy('requestedAt', 'desc')
+            .offset(offset)
+            .limit(limit)
+            .get();
+        const payouts = snapshot.docs.map((doc) => (Object.assign({ id: doc.id }, doc.data())));
+        res.status(200).json({
+            success: true,
+            data: payouts,
+            pagination: { total, page, limit, totalPages: Math.ceil(total / limit) }
+        });
+    }
+    catch (error) {
+        logger_1.logger.error({ err: error }, 'Error getting payout history');
+        res.status(500).json({ error: 'Failed to get payout history' });
+    }
+});
+exports.getPayoutHistory = getPayoutHistory;
 //# sourceMappingURL=payout.controller.js.map

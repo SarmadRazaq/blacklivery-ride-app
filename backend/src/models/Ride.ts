@@ -18,7 +18,13 @@ export interface IRide {
     riderId: string;
     driverId?: string;
     status: RideStatus;
-    bookingType: 'on_demand' | 'hourly' | 'delivery';
+    bookingType: 'on_demand' | 'hourly' | 'delivery' | 'airport_transfer';
+    pickup?: {
+        coordinates?: {
+            lat: number;
+            lng: number;
+        };
+    };
     pickupLocation: {
         lat: number;
         lng: number;
@@ -109,4 +115,10 @@ export interface IRide {
     completedAt?: Date;
     cancelledAt?: Date;
     cancellationReason?: string;
+
+    // Rating fields
+    driverRating?: number;
+    driverFeedback?: string;
+    riderRating?: number;
+    riderFeedback?: string;
 }

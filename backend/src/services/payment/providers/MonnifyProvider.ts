@@ -1,5 +1,6 @@
 import axios from 'axios';
 import crypto from 'crypto';
+import { logger } from '../../../utils/logger';
 import { IPaymentProvider, PaymentInitResult, PaymentVerificationResult } from '../IPaymentProvider';
 
 export class MonnifyProvider implements IPaymentProvider {
@@ -42,7 +43,7 @@ export class MonnifyProvider implements IPaymentProvider {
                 authorizationUrl: data?.responseBody?.checkoutUrl
             };
         } catch (error: any) {
-            console.error('Monnify init error:', error.response?.data || error.message);
+            logger.error({ err: error }, 'Monnify init error');
             throw new Error('Payment initialization failed');
         }
     }
@@ -77,10 +78,16 @@ export class MonnifyProvider implements IPaymentProvider {
     }
 
     async verifyWebhook(payload: any, signature: string): Promise<PaymentVerificationResult | null> {
+        const webhookSecret = process.env.MONNIFY_WEBHOOK_SECRET;
+        if (!webhookSecret) {
+            throw new Error('MONNIFY_WEBHOOK_SECRET is not configured');
+        }
         const raw = typeof payload === 'string' ? payload : JSON.stringify(payload);
-        const computed = crypto.createHmac('sha512', this.apiSecret).update(raw).digest('hex');
+        const computed = crypto.createHmac('sha512', webhookSecret).update(raw).digest('hex');
 
-        if (computed !== signature) return null;
+        const computedBuf = Buffer.from(computed, 'hex');
+        const sigBuf = Buffer.from(signature, 'hex');
+        if (computedBuf.length !== sigBuf.length || !crypto.timingSafeEqual(computedBuf, sigBuf)) return null;
 
         const eventData = typeof payload === 'string' ? JSON.parse(payload) : payload;
         // Monnify webhook structure might vary, assuming standard event
@@ -100,24 +107,39 @@ export class MonnifyProvider implements IPaymentProvider {
     }
 
     async createRecipient(name: string, accountNumber: string, bankCode: string): Promise<string> {
-        // Monnify doesn't strictly use "recipient codes" like Paystack.
-        // We can return a JSON string of the details to be used in transfer
+        if (!accountNumber || !bankCode) {
+            throw new Error('accountNumber and bankCode are required');
+        }
+        // Validate account exists via Monnify account resolution
+        try {
+            const token = await this.getAuthToken();
+            await axios.get(
+                `${this.baseUrl}/api/v1/disbursements/account/validate?accountNumber=${accountNumber}&bankCode=${bankCode}`,
+                { headers: { Authorization: `Bearer ${token}` } }
+            );
+        } catch (error: any) {
+            logger.error({ err: error }, 'Monnify account validation failed');
+            throw new Error('Invalid bank account details');
+        }
         return JSON.stringify({ name, accountNumber, bankCode });
     }
 
-    async transfer(recipientCode: string, amount: number, currency: string, reason: string): Promise<string> {
+    async transfer(recipientCode: string, amount: number, currency: string, reason: string, reference?: string): Promise<string> {
         try {
             const recipient = JSON.parse(recipientCode);
+            if (!recipient.accountNumber || !recipient.bankCode || !recipient.name) {
+                throw new Error('Invalid recipient data');
+            }
             const token = await this.getAuthToken();
 
             const payload = {
                 amount,
-                reference: `TRF-${Date.now()}`, // Generate a unique ref
+                reference: reference || `TRF-${Date.now()}`,
                 narration: reason,
                 destinationBankCode: recipient.bankCode,
                 destinationAccountNumber: recipient.accountNumber,
                 currency,
-                sourceAccountNumber: process.env.MONNIFY_WALLET_ACCOUNT_NUMBER, // Required for Monnify disbursements
+                sourceAccountNumber: process.env.MONNIFY_WALLET_ACCOUNT_NUMBER,
                 destinationAccountName: recipient.name
             };
 
@@ -127,7 +149,7 @@ export class MonnifyProvider implements IPaymentProvider {
 
             return data?.responseBody?.reference;
         } catch (error: any) {
-            console.error('Monnify transfer error:', error.response?.data || error.message);
+            logger.error({ err: error }, 'Monnify transfer error');
             throw new Error('Transfer failed');
         }
     }

@@ -1,5 +1,6 @@
 import * as admin from 'firebase-admin';
 import * as dotenv from 'dotenv';
+import { logger } from '../utils/logger';
 
 dotenv.config();
 
@@ -7,14 +8,19 @@ if (!admin.apps.length) {
     try {
         admin.initializeApp({
             credential: admin.credential.applicationDefault(),
-            databaseURL: process.env.FIREBASE_DATABASE_URL
+            databaseURL: process.env.FIREBASE_DATABASE_URL,
+            storageBucket: process.env.FIREBASE_STORAGE_BUCKET
         });
-        console.log('Firebase Admin Initialized');
+        logger.info('Firebase Admin Initialized');
     } catch (error) {
-        console.error('Firebase Admin Initialization Error:', error);
+        logger.fatal({ err: error }, 'Firebase Admin Initialization Error');
+        process.exit(1); // Cannot run without Firebase
     }
 }
 
-export const db = admin.firestore();
+const db = admin.firestore();
+db.settings({ ignoreUndefinedProperties: true });
+
+export { db };
 export const auth = admin.auth();
 export const rtdb = admin.database();

@@ -1,0 +1,34 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Environment files
+.env
+.env.local
+.env.production
+!.env.example
+!.env.production.example
+
+# Firebase service account keys
+*-firebase-adminsdk-*.json
+share-ride-app-*.json
+
+# Coverage
+coverage/
+
+# Compiled migration scripts
+scripts/migrations/*.js
+
+# IDE
+.idea/
+.vscode/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db

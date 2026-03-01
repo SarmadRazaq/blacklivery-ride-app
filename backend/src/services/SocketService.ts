@@ -44,9 +44,21 @@ export class SocketService {
     private io?: Server;
     private activeRideRooms = new Map<string, ActiveRideRoom>();
     private driverSyncTracker = new Map<string, number>();
+    private syncCleanupTimer?: ReturnType<typeof setInterval>;
 
     public register(io: Server): void {
         this.io = io;
+        // Periodically purge stale driverSyncTracker entries to prevent memory leak
+        if (!this.syncCleanupTimer) {
+            this.syncCleanupTimer = setInterval(() => {
+                const staleThreshold = Date.now() - 30_000; // 30 seconds
+                for (const [driverId, lastSync] of this.driverSyncTracker) {
+                    if (lastSync < staleThreshold) {
+                        this.driverSyncTracker.delete(driverId);
+                    }
+                }
+            }, 60_000); // Run every 60 seconds
+        }
     }
 
     public attachServer(io: Server): void {
@@ -107,6 +119,30 @@ export class SocketService {
             room.lastBroadcast = Date.now();
             this.activeRideRooms.set(rideId, room);
         }
+    }
+
+    public emitChatMessage(rideId: string, message: any, recipientId: string, recipientRole: 'rider' | 'driver'): void {
+        if (!this.io) return;
+        
+        // Emit to ride room
+        this.io.to(`ride:${rideId}`).emit('chat:message', message);
+        
+        // Emit directly to recipient
+        const recipientRoom = recipientRole === 'rider' ? `rider:${recipientId}` : `driver:${recipientId}`;
+        this.io.to(recipientRoom).emit('chat:new_message', message);
+        
+        // Send push notification
+        notificationService.sendPush(
+            recipientId,
+            'New Message',
+            message.message,
+            { type: 'chat:message', rideId, messageId: message.id }
+        ).catch(err => logger.warn({ err, recipientId }, 'Failed to send chat push notification'));
+    }
+
+    public emitTypingIndicator(rideId: string, userId: string, userRole: 'rider' | 'driver', isTyping: boolean): void {
+        if (!this.io) return;
+        this.io.to(`ride:${rideId}`).emit('chat:typing', { userId, userRole, isTyping });
     }
 
     public shouldSyncDriver(driverId: string, intervalMs = 3000): boolean {

@@ -7,6 +7,7 @@ import { pricingService } from '../services/pricing/PricingService';
 import { googleMapsService } from '../services/GoogleMapsService';
 import { socketService } from '../services/SocketService';
 import { db } from '../config/firebase';
+import { b2bPricingService } from '../services/pricing/B2BPricingService';
 import { logger } from '../utils/logger';
 
 const deliveryRequestSchema = z.object({
@@ -79,6 +80,8 @@ export const createDelivery = async (req: AuthRequest, res: Response): Promise<v
             region: payload.region === 'chicago' ? 'US-CHI' : 'NG',
             bookingType: 'delivery',
             city: payload.city,
+            pickupLocation: payload.pickup,
+            dropoffLocation: payload.dropoff,
             deliveryDetails: {
                 packageType: payload.deliveryDetails.packageType,
                 requiresReturn: payload.deliveryDetails.requiresReturn,
@@ -159,6 +162,8 @@ export const getDeliveryQuote = async (req: AuthRequest, res: Response): Promise
             region: payload.region === 'chicago' ? 'US-CHI' : 'NG',
             bookingType: 'delivery',
             city: payload.city,
+            pickupLocation: payload.pickup,
+            dropoffLocation: payload.dropoff,
             deliveryDetails: {
                 serviceType: payload.deliveryDetails.serviceType,
                 requiresReturn: payload.deliveryDetails.requiresReturn,
@@ -175,12 +180,27 @@ export const getDeliveryQuote = async (req: AuthRequest, res: Response): Promise
             durationMinutes
         );
 
+        // Check for B2B pricing discount
+        let b2bDiscount = null;
+        const b2bAccount = await b2bPricingService.getAccount(req.user.uid);
+        if (b2bAccount) {
+            const result = b2bPricingService.applyBusinessDiscount(estimatedFare.totalFare, b2bAccount);
+            b2bDiscount = {
+                originalFare: estimatedFare.totalFare,
+                discount: result.discount,
+                discountedFare: result.discountedFare,
+                discountRate: result.discountRate,
+                tier: result.tier,
+            };
+        }
+
         res.status(200).json({
-            estimatedFare: estimatedFare.totalFare,
+            estimatedFare: b2bDiscount ? b2bDiscount.discountedFare : estimatedFare.totalFare,
             currency: mockRide.region === 'NG' ? 'NGN' : 'USD',
             distanceKm: Number(distanceKm.toFixed(2)),
             durationMinutes: Number(durationMinutes.toFixed(1)),
-            breakdown: estimatedFare
+            breakdown: estimatedFare,
+            ...(b2bDiscount && { b2bDiscount }),
         });
     } catch (error) {
         logger.error({ err: error }, 'getDeliveryQuote failed');
@@ -202,6 +222,17 @@ export const uploadProofOfDelivery = async (req: AuthRequest, res: Response): Pr
             return;
         }
 
+        // Validate base64 payload sizes to prevent DoS/OOM (max 10MB per field)
+        const MAX_BASE64_SIZE = 10 * 1024 * 1024; // 10MB
+        if (photoBase64 && Buffer.byteLength(photoBase64, 'utf8') > MAX_BASE64_SIZE) {
+            res.status(400).json({ message: 'Photo too large. Maximum size is 10MB.' });
+            return;
+        }
+        if (signatureBase64 && Buffer.byteLength(signatureBase64, 'utf8') > MAX_BASE64_SIZE) {
+            res.status(400).json({ message: 'Signature too large. Maximum size is 10MB.' });
+            return;
+        }
+
         const rideSnapshot = await db.collection('rides').doc(rideId).get();
         if (!rideSnapshot.exists) {
             res.status(404).json({ message: 'Ride not found' });
@@ -210,6 +241,12 @@ export const uploadProofOfDelivery = async (req: AuthRequest, res: Response): Pr
         const ride = rideSnapshot.data();
         if (ride?.bookingType !== 'delivery') {
             res.status(400).json({ message: 'Proof uploads only apply to delivery rides.' });
+            return;
+        }
+
+        // Auth check: only the assigned driver or the rider can upload proof
+        if (req.user.uid !== ride?.driverId && req.user.uid !== ride?.riderId) {
+            res.status(403).json({ message: 'Not authorized to upload proof for this delivery' });
             return;
         }
 
@@ -255,9 +292,10 @@ export const uploadProofOfDelivery = async (req: AuthRequest, res: Response): Pr
             proof.signatureUrl = url;
         }
 
+        const deliveryCompletionStatuses = ['in_progress', 'delivery_en_route_dropoff', 'delivery_picked_up', 'delivery_delivered'];
         await rideSnapshot.ref.update({
             proofOfDelivery: proof,
-            status: ride?.status === 'in_progress' ? 'completed' : ride?.status,
+            status: deliveryCompletionStatuses.includes(ride?.status) ? 'completed' : ride?.status,
             deliveryTimeline: admin.firestore.FieldValue.arrayUnion({
                 at: new Date(),
                 event: 'proof_uploaded',
@@ -289,9 +327,50 @@ export const getDelivery = async (req: AuthRequest, res: Response): Promise<void
             res.status(404).json({ message: 'Delivery not found' });
             return;
         }
+
+        // Auth check: only rider, driver, or admin can view delivery details
+        const isAdmin = req.user.role === 'admin';
+        if (!isAdmin && req.user.uid !== ride?.riderId && req.user.uid !== ride?.driverId) {
+            res.status(403).json({ message: 'Not authorized to view this delivery' });
+            return;
+        }
+
         res.status(200).json({ id: rideSnap.id, ...ride });
     } catch (error) {
         logger.error({ err: error }, 'getDelivery failed');
         res.status(500).json({ message: 'Failed to fetch delivery' });
+    }
+};
+
+export const getDeliveryHistory = async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const userId = req.user.uid;
+        const page = parseInt(req.query.page as string) || 1;
+        const limit = parseInt(req.query.limit as string) || 10;
+
+        let query = db.collection('rides')
+            .where('riderId', '==', userId)
+            .where('bookingType', '==', 'delivery')
+            .orderBy('createdAt', 'desc');
+
+        if (page > 1) {
+            const skipCount = (page - 1) * limit;
+            const skipSnap = await query.limit(skipCount).get();
+            if (!skipSnap.empty) {
+                const lastDoc = skipSnap.docs[skipSnap.docs.length - 1];
+                query = query.startAfter(lastDoc);
+            }
+        }
+
+        const snapshot = await query.limit(limit).get();
+        const deliveries = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+        }));
+
+        res.status(200).json({ data: deliveries });
+    } catch (error) {
+        logger.error({ err: error }, 'getDeliveryHistory failed');
+        res.status(500).json({ message: 'Failed to fetch delivery history' });
     }
 };

@@ -585,7 +585,14 @@ const createPromotion = (req, res) => __awaiter(void 0, void 0, void 0, function
             discountType: req.body.discountType,
             amount: req.body.amount,
             maxRedemptions: req.body.maxRedemptions,
-            regions: (_a = req.body.regions) !== null && _a !== void 0 ? _a : [],
+            regions: ((_a = req.body.regions) !== null && _a !== void 0 ? _a : []).map((r) => {
+                const normalized = r.toLowerCase().trim();
+                if (normalized.includes('nigeria') || normalized === 'ng')
+                    return 'NG';
+                if (normalized.includes('chicago') || normalized.includes('us') || normalized === 'us-chi')
+                    return 'US-CHI';
+                return normalized;
+            }),
             startsAt: req.body.startsAt ? new Date(req.body.startsAt) : new Date(),
             endsAt: req.body.endsAt ? new Date(req.body.endsAt) : null,
             bonuses: (_b = req.body.bonuses) !== null && _b !== void 0 ? _b : [],
@@ -775,6 +782,11 @@ const updateVehicleStatus = (req, res) => __awaiter(void 0, void 0, void 0, func
     try {
         const { vehicleId } = req.params;
         const { isApproved, rejectionReason } = req.body;
+        // Validate isApproved is provided
+        if (isApproved === undefined || isApproved === null) {
+            res.status(400).json({ message: 'isApproved is required (true or false)' });
+            return;
+        }
         const vehicleRef = firebase_1.db.collection('vehicles').doc(vehicleId);
         const vehicleSnap = yield vehicleRef.get();
         if (!vehicleSnap.exists) {

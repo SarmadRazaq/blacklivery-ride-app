@@ -1,8 +1,8 @@
 import { db, rtdb } from '../config/firebase';
 import { logger } from '../utils/logger';
 
-const DRIVER_AUTO_OFFLINE_MS = 12 * 60 * 60 * 1000; // 12 hours
-const DRIVER_STATUS_SCAN_INTERVAL_MS = 15 * 60 * 1000; // 15 minutes
+const DRIVER_AUTO_OFFLINE_MS = 5 * 60 * 1000; // 5 minutes
+const DRIVER_STATUS_SCAN_INTERVAL_MS = 1 * 60 * 1000; // 1 minute
 
 const enforceDriverOffline = async () => {
     try {

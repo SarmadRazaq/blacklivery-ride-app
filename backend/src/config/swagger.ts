@@ -9,7 +9,7 @@ const options = {
             description: 'API documentation for the Blacklivery backend services',
             contact: {
                 name: 'API Support',
-                email: 'support@blacklivery.com',
+                email: 'blackliveryinc@gmail.com',
             },
         },
         servers: [

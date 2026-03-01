@@ -64,6 +64,19 @@ Follow these steps to get the API keys required for your `.env` file.
 3.  **Create a key** (e.g., name it "Blacklivery Backend").
 4.  **Copy the Key** (`OPENWEATHER_API_KEY`).
 
+## 6. Monnify (For Nigeria Payments)
+**Website:** [app.monnify.com](https://app.monnify.com/)
+
+1.  **Log in** to your Monnify Dashboard.
+2.  Go to **Settings** > **API Keys & Webhooks**.
+3.  **API Key & Secret:**
+    *   Copy **API Key** (`MONNIFY_API_KEY`) and **Secret Key** (`MONNIFY_SECRET_KEY`).
+4.  **Contract Code:**
+    *   Copy your **Contract Code** (`MONNIFY_CONTRACT_CODE`).
+5.  **Webhook Secret (`MONNIFY_WEBHOOK_SECRET`):**
+    *   Scroll down to the **Webhooks** section.
+    *   You will see your **Webhook Secret** there. Copy it.
+
 ---
 
 ### Summary of Keys to Add to `.env`

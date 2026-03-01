@@ -11,6 +11,8 @@ import { pricingService } from './pricing/PricingService';
 import { pricingConfigService } from './pricing/PricingConfigService';
 import { walletService } from './WalletService';
 import { incentiveService } from './driver/IncentiveService';
+import { loyaltyService } from './LoyaltyService';
+import { emailService } from './EmailService';
 import { googleMapsService } from './GoogleMapsService';
 
 interface DriverSearchFilters {
@@ -65,6 +67,43 @@ export class RideService {
     private matchTimers = new Map<string, NodeJS.Timeout>();
     private paymentConfigCache?: { data: PaymentsConfigDoc; expiresAt: number };
 
+    private getDriverRatingPolicy(region?: IRide['region']): { priorityMin: number; neutralMin: number } {
+        const key = String(region || '').toUpperCase();
+        if (key === 'US-CHI' || key === 'CHICAGO') {
+            return { priorityMin: 4.9, neutralMin: 4.7 };
+        }
+        return { priorityMin: 4.8, neutralMin: 4.5 };
+    }
+
+    private normalizeVehicleCategory(raw?: string): string | null {
+        if (!raw) return null;
+        const value = String(raw).toLowerCase().trim();
+        if (!value) return null;
+
+        if (value.includes('moto') || value.includes('bike') || value.includes('okada')) return 'motorbike';
+        if (value.includes('first') || value.includes('premium') || value.includes('lux')) return 'first_class';
+        if (value.includes('xl') || value.includes('van') || value.includes('minivan') || value.includes('mpv')) return 'xl';
+        if (value.includes('suv') || value.includes('suburban') || value.includes('crossover') || value.includes('jeep')) return 'suv';
+        if (value.includes('sedan') || value.includes('standard') || value.includes('compact') || value.includes('economy')) return 'sedan';
+
+        const canonical = new Set(['sedan', 'suv', 'xl', 'first_class', 'motorbike']);
+        return canonical.has(value) ? value : null;
+    }
+
+    private isVehicleCategoryCompatible(requested: string, offered: string): boolean {
+        if (requested === offered) return true;
+
+        const compatible: Record<string, Set<string>> = {
+            sedan: new Set(['sedan', 'suv', 'xl', 'first_class']),
+            suv: new Set(['suv', 'xl', 'first_class']),
+            xl: new Set(['xl']),
+            first_class: new Set(['first_class']),
+            motorbike: new Set(['motorbike'])
+        };
+
+        return compatible[requested]?.has(offered) ?? false;
+    }
+
     public async getRide(rideId: string): Promise<IRide | null> {
         const doc = await db.collection('rides').doc(rideId).get();
         if (!doc.exists) return null;
@@ -78,22 +117,31 @@ export class RideService {
         const pickupLocation = requestData.pickup || requestData.pickupLocation;
         const dropoffLocation = requestData.dropoff || requestData.dropoffLocation;
 
-        if (!pickupLocation || !dropoffLocation) {
-            throw new Error('Pickup and Dropoff locations are required');
+        if (!pickupLocation) {
+            throw new Error('Pickup location is required');
         }
 
-        // Validate Distance/Pricing
-        const routeData = await googleMapsService.getDistanceAndDuration(
-            pickupLocation,
-            dropoffLocation
-        );
+        if (requestData.bookingType !== 'hourly' && !dropoffLocation) {
+            throw new Error('Dropoff location is required');
+        }
 
-        const distanceKm = routeData.distanceMeters / 1000;
-        const durationMinutes = routeData.durationSeconds / 60;
+        let distanceKm = 0;
+        let durationMinutes = 0;
+
+        if (dropoffLocation) {
+            const routeData = await googleMapsService.getDistanceAndDuration(
+                pickupLocation,
+                dropoffLocation
+            );
+            distanceKm = routeData.distanceMeters / 1000;
+            durationMinutes = routeData.durationSeconds / 60;
+        } else if (requestData.bookingType === 'hourly' && requestData.hoursBooked) {
+            durationMinutes = requestData.hoursBooked * 60;
+        }
 
         const mockRide = {
             ...requestData,
-            pickupLocation,   // Ensure these are set for pricing calculation
+            pickupLocation,
             dropoffLocation,
             riderId,
             createdAt: now
@@ -101,8 +149,25 @@ export class RideService {
 
         const authoritativePrice = await pricingService.calculateFare(mockRide, distanceKm, durationMinutes);
 
+        // Apply promo discount if user has an active promotion
+        let promoDiscount = 0;
+        let appliedPromoId: string | undefined;
+        let promoRef: FirebaseFirestore.DocumentReference | undefined;
+        if (requestData.promoCode || requestData.promotionId) {
+            try {
+                const promoResult = await this.applyPromoDiscount(riderId, authoritativePrice.totalFare, authoritativePrice.currency, requestData.promoCode, requestData.promotionId);
+                promoDiscount = promoResult.discount;
+                appliedPromoId = promoResult.promotionId;
+                promoRef = promoResult.promoRef;
+            } catch (err) {
+                logger.warn({ err, riderId }, 'Failed to apply promo discount, proceeding without');
+            }
+        }
+
+        const finalFare = Math.max(0, authoritativePrice.totalFare - promoDiscount);
+
         const pickupGeohash = encodeGeohash(pickupLocation.lat, pickupLocation.lng, 7);
-        const dropoffGeohash = encodeGeohash(dropoffLocation.lat, dropoffLocation.lng, 7);
+        const dropoffGeohash = dropoffLocation ? encodeGeohash(dropoffLocation.lat, dropoffLocation.lng, 7) : undefined;
 
         const rideRecord: IRide = {
             riderId,
@@ -120,22 +185,37 @@ export class RideService {
             ...(requestData.deliveryDetails && { deliveryDetails: requestData.deliveryDetails }),
             ...(requestData.addOns && { addOns: requestData.addOns }),
             pricing: {
-                estimatedFare: authoritativePrice.totalFare,
+                estimatedFare: finalFare,
                 currency: authoritativePrice.currency as 'NGN' | 'USD',
-                surgeMultiplier: requestData.pricing?.surgeMultiplier ?? 1.0, // Should be server-calculated ideally
-                breakdown: authoritativePrice
+                surgeMultiplier: authoritativePrice.surgeMultiplier ?? 1.0,
+                breakdown: authoritativePrice,
+                ...(promoDiscount > 0 && { promoDiscount, originalFare: authoritativePrice.totalFare }),
+                ...(appliedPromoId && { promotionId: appliedPromoId }),
+                ...(requestData.paymentReference && { paymentReference: requestData.paymentReference })
+            },
+            ...(requestData.paymentMethod && { paymentMethod: requestData.paymentMethod }),
+            payment: {
+                ...(requestData.paymentReference && { reference: requestData.paymentReference }),
+                ...(requestData.paymentReference && { holdReference: requestData.paymentReference }),
+                holdStatus: requestData.paymentReference ? 'held' : 'none'
             },
             requestedDriverIds: [],
             createdAt: now,
             updatedAt: now,
             pickupGeohash,
             pickupGeohash5: pickupGeohash.substring(0, 5),
-            dropoffGeohash5: dropoffGeohash.substring(0, 5),
+            ...(dropoffGeohash && { dropoffGeohash5: dropoffGeohash.substring(0, 5) }),
             matching: { radiusKm: this.INITIAL_RADIUS_KM, batch: 0 }
         };
 
         const rideDoc = await db.collection('rides').add(rideRecord);
         const ride: IRide = { ...rideRecord, id: rideDoc.id };
+
+        // Finalize promo usage AFTER ride is successfully created
+        if (promoRef && appliedPromoId && promoDiscount > 0) {
+            this.finalizePromoUsage(promoRef, riderId, appliedPromoId, promoDiscount, authoritativePrice.currency, rideDoc.id)
+                .catch(err => logger.error({ err, rideId: rideDoc.id }, 'Failed to finalize promo usage'));
+        }
 
         rideEvents.emit('ride.created', { rideId: rideDoc.id, riderId, requestedDriverIds: [] });
         socketService.notifyAdmin('ride:created', ride);
@@ -144,7 +224,14 @@ export class RideService {
     }
 
     public async startDriverMatching(rideId: string): Promise<void> {
-        this.matchState.set(rideId, { radius: this.INITIAL_RADIUS_KM, batch: 0 });
+        const state = { radius: this.INITIAL_RADIUS_KM, batch: 0 };
+        this.matchState.set(rideId, state);
+
+        // Persist matching state to Firestore for crash recovery
+        await db.collection('rides').doc(rideId).update({
+            matching: { radiusKm: state.radius, batch: state.batch }
+        });
+
         await this.dispatchDriverBatch(rideId);
     }
 
@@ -153,6 +240,47 @@ export class RideService {
         if (timer) clearTimeout(timer);
         this.matchTimers.delete(rideId);
         this.matchState.delete(rideId);
+    }
+
+    /**
+     * Recover matching state for rides stuck in 'finding_driver' after server restart
+     */
+    public async recoverActiveMatching(): Promise<void> {
+        try {
+            const staleRides = await db.collection('rides')
+                .where('status', '==', 'finding_driver')
+                .get();
+
+            for (const doc of staleRides.docs) {
+                const ride = doc.data() as IRide;
+                const matching = ride.matching || { radiusKm: this.INITIAL_RADIUS_KM, batch: 0 };
+
+                // Only recover rides less than 10 min old
+                const createdAt = ride.createdAt instanceof Date ? ride.createdAt : new Date((ride.createdAt as any)?.toDate?.() || ride.createdAt);
+                if (Date.now() - createdAt.getTime() > 10 * 60 * 1000) continue;
+
+                this.matchState.set(doc.id, { radius: matching.radiusKm || this.INITIAL_RADIUS_KM, batch: matching.batch || 0 });
+                await this.dispatchDriverBatch(doc.id);
+                logger.info({ rideId: doc.id }, 'Recovered matching for ride after restart');
+            }
+        } catch (error) {
+            logger.error({ err: error }, 'Failed to recover active matching');
+        }
+    }
+
+    /**
+     * Record that a driver declined a ride, adding to exclusion list
+     */
+    public async recordDriverDecline(rideId: string, driverId: string): Promise<void> {
+        try {
+            await db.collection('rides').doc(rideId).update({
+                requestedDriverIds: FieldValue.arrayUnion(driverId),
+                updatedAt: new Date()
+            });
+            logger.info({ rideId, driverId }, 'Driver decline recorded, added to exclusion list');
+        } catch (error) {
+            logger.error({ err: error, rideId, driverId }, 'Failed to record driver decline');
+        }
     }
 
     public async findNearbyDrivers(
@@ -189,24 +317,47 @@ export class RideService {
 
                 if (filters.excludeDriverIds?.includes(driverId)) return false;
 
-                // Check vehicle type in both profile and onboarding
-                const vehicleType = (driver.driverProfile as any)?.vehicleType ?? driver.driverOnboarding?.vehicleType;
-                if (filters.vehicleCategory && vehicleType !== filters.vehicleCategory) return false;
+                if ((driver.driverOnboarding?.status ?? '').toLowerCase() !== 'approved') return false;
 
-                // Handle region matching (map 'nigeria' -> 'ng', 'chicago' -> 'us')
-                if (filters.region && driver.countryCode) {
-                    const driverRegion = driver.countryCode.toLowerCase();
-                    const filterRegion = filters.region.toLowerCase();
+                // Match vehicle categories using normalized profile/onboarding values.
+                if (filters.vehicleCategory) {
+                    const requestedCategory = this.normalizeVehicleCategory(filters.vehicleCategory);
+                    const driverCategoryCandidates = [
+                        (driver.driverProfile as any)?.vehicleCategory,
+                        (driver.driverProfile as any)?.vehicleType,
+                        driver.driverOnboarding?.vehicleCategory,
+                        driver.driverOnboarding?.vehicleType
+                    ];
 
-                    const isMatch =
-                        driverRegion === filterRegion ||
-                        (filterRegion === 'nigeria' && driverRegion === 'ng') ||
-                        (filterRegion === 'chicago' && driverRegion === 'us');
+                    const offeredCategory = driverCategoryCandidates
+                        .map((candidate) => this.normalizeVehicleCategory(candidate))
+                        .find((category): category is string => !!category);
 
-                    if (!isMatch) return false;
+                    if (requestedCategory && offeredCategory) {
+                        if (!this.isVehicleCategoryCompatible(requestedCategory, offeredCategory)) {
+                            return false;
+                        }
+                    }
                 }
 
-                if (driver.driverDetails?.rating && driver.driverDetails.rating < this.MIN_DRIVER_RATING) return false;
+                // Handle region matching across aliases/canonical values.
+                if (filters.region && driver.countryCode) {
+                    const driverCountry = String(driver.countryCode).toLowerCase().trim();
+                    const rawFilter = String(filters.region).toLowerCase().trim();
+
+                    const normalizedFilter =
+                        rawFilter === 'us-chi' || rawFilter === 'us' || rawFilter === 'chicago'
+                            ? 'us'
+                            : rawFilter === 'ng' || rawFilter === 'nigeria'
+                                ? 'ng'
+                                : rawFilter;
+
+                    if (driverCountry !== normalizedFilter) return false;
+                }
+
+                const rating = Number(driver.driverDetails?.rating ?? 0);
+                const ratingPolicy = this.getDriverRatingPolicy(filters.region);
+                if (rating > 0 && rating < ratingPolicy.neutralMin) return false;
                 if (!driver.driverStatus?.lastKnownLocation) return false;
                 if (driver.driverStatus?.currentRideId) return false;
 
@@ -231,7 +382,16 @@ export class RideService {
                 };
             })
             .filter((driver) => driver.distanceKm <= radiusKm)
-            .sort((a, b) => a.distanceKm - b.distanceKm);
+            .sort((a, b) => {
+                // Rating tiers: 4.8+ = priority, 4.5-4.7 = neutral, <4.5 = deprioritized
+                const ratingPolicy = this.getDriverRatingPolicy(filters.region);
+                const ratingA = a.profile.rating ?? ratingPolicy.neutralMin;
+                const ratingB = b.profile.rating ?? ratingPolicy.neutralMin;
+                const tierA = ratingA >= ratingPolicy.priorityMin ? 0 : ratingA >= ratingPolicy.neutralMin ? 1 : 2;
+                const tierB = ratingB >= ratingPolicy.priorityMin ? 0 : ratingB >= ratingPolicy.neutralMin ? 1 : 2;
+                if (tierA !== tierB) return tierA - tierB; // Higher-rated tier first
+                return a.distanceKm - b.distanceKm;        // Same tier → closer first
+            });
     }
 
     public async transitionRideStatus(input: RideStatusTransitionInput): Promise<IRide> {
@@ -270,6 +430,12 @@ export class RideService {
                 case 'in_progress': {
                     if (input.actor.role !== 'driver') throw new Error('Drivers only');
                     if (ride.driverId !== input.actor.uid) throw new Error('Driver mismatch');
+                    if (input.status === 'arrived' && ride.status !== 'accepted') {
+                        throw new Error('Ride must be accepted before marking arrived');
+                    }
+                    if (input.status === 'in_progress' && !['accepted', 'arrived'].includes(ride.status)) {
+                        throw new Error('Ride must be accepted or arrived before starting');
+                    }
 
                     const updates = {
                         status: input.status,
@@ -298,6 +464,18 @@ export class RideService {
                     break;
                 }
                 case 'cancelled': {
+                    if (ride.status === 'completed') throw new Error('Completed rides cannot be cancelled');
+                    if (ride.status === 'cancelled') throw new Error('Ride is already cancelled');
+
+                    // Ownership check: only rider, assigned driver, or admin can cancel
+                    if (input.actor.role !== 'admin') {
+                        const isRider = ride.riderId === input.actor.uid;
+                        const isDriver = ride.driverId === input.actor.uid;
+                        if (!isRider && !isDriver) {
+                            throw new Error('Only the rider, assigned driver, or admin can cancel this ride');
+                        }
+                    }
+
                     const cancelledBy: 'driver' | 'rider' | 'admin' =
                         input.actor.role === 'driver'
                             ? 'driver'
@@ -318,6 +496,61 @@ export class RideService {
                     tx.update(rideRef, updates);
                     updatedRide = { ...ride, ...updates, pricing: { ...ride.pricing, cancellationFee: fee } };
                     this.stopDriverMatching(ride.id!);
+                    break;
+                }
+                // ─── Delivery-specific statuses ───────────────────────────
+                case 'delivery_en_route_pickup': {
+                    if (input.actor.role !== 'driver') throw new Error('Drivers only');
+                    if (ride.driverId !== input.actor.uid) throw new Error('Driver mismatch');
+                    if (ride.status !== 'accepted' && ride.status !== 'arrived') throw new Error('Ride must be accepted or arrived for delivery pickup');
+
+                    const updates = {
+                        status: 'delivery_en_route_pickup' as RideStatus,
+                        updatedAt: now
+                    };
+                    tx.update(rideRef, updates);
+                    updatedRide = { ...ride, ...updates };
+                    break;
+                }
+                case 'delivery_picked_up': {
+                    if (input.actor.role !== 'driver') throw new Error('Drivers only');
+                    if (ride.driverId !== input.actor.uid) throw new Error('Driver mismatch');
+                    if (ride.status !== 'delivery_en_route_pickup' && ride.status !== 'arrived') throw new Error('Must be en route to pickup or arrived');
+
+                    const updates = {
+                        status: 'delivery_picked_up' as RideStatus,
+                        deliveryPickedUpAt: now,
+                        updatedAt: now
+                    };
+                    tx.update(rideRef, updates);
+                    updatedRide = { ...ride, ...updates };
+                    break;
+                }
+                case 'delivery_en_route_dropoff': {
+                    if (input.actor.role !== 'driver') throw new Error('Drivers only');
+                    if (ride.driverId !== input.actor.uid) throw new Error('Driver mismatch');
+                    if (ride.status !== 'delivery_picked_up') throw new Error('Package must be picked up first');
+
+                    const updates = {
+                        status: 'delivery_en_route_dropoff' as RideStatus,
+                        updatedAt: now
+                    };
+                    tx.update(rideRef, updates);
+                    updatedRide = { ...ride, ...updates };
+                    break;
+                }
+                case 'delivery_delivered': {
+                    if (!['driver', 'admin'].includes(input.actor.role)) throw new Error('Only drivers or admins can mark as delivered');
+                    if (ride.status !== 'delivery_en_route_dropoff') throw new Error('Must be en route to dropoff');
+
+                    const updates = {
+                        status: 'delivery_delivered' as RideStatus,
+                        deliveredAt: now,
+                        completedAt: now,
+                        updatedAt: now
+                    };
+                    tx.update(rideRef, updates);
+                    updatedRide = { ...ride, ...updates };
                     break;
                 }
                 default:
@@ -362,20 +595,44 @@ export class RideService {
                 }
 
                 this.matchState.set(rideId, { radius: state.radius + this.RADIUS_STEP_KM, batch: state.batch + 1 });
+
+                // Persist updated matching state to Firestore
+                await db.collection('rides').doc(rideId).update({
+                    matching: { radiusKm: state.radius + this.RADIUS_STEP_KM, batch: state.batch + 1 }
+                });
+
                 this.scheduleNextBatch(rideId);
                 return;
             }
 
             const batch = drivers.slice(0, this.DRIVER_BATCH_SIZE);
             const driverIds = batch.map((driver) => driver.id);
+
+            // Fetch rider info to include in ride offer
+            let riderInfo: Record<string, any> = {};
+            try {
+                const riderDoc = await db.collection('users').doc(ride.riderId).get();
+                const rd = riderDoc.data() ?? {};
+                riderInfo = {
+                    riderId: ride.riderId,
+                    riderName: rd.fullName || rd.displayName || 'Rider',
+                    riderPhone: rd.phone || rd.phoneNumber || ''
+                };
+            } catch (err) {
+                logger.warn({ err, riderId: ride.riderId }, 'Failed to fetch rider info for ride:offer');
+            }
+
             batch.forEach((driver) => {
                 socketService.notifyDriver(driver.id, 'ride:offer', {
                     rideId,
+                    id: rideId,
                     pickupLocation: ride.pickupLocation,
                     dropoffLocation: ride.dropoffLocation,
                     pricing: ride.pricing,
+                    estimatedFare: ride.pricing?.estimatedFare,
                     etaSeconds: driver.etaSeconds,
-                    distanceKm: driver.distanceKm
+                    distanceKm: driver.distanceKm,
+                    ...riderInfo
                 });
             });
 
@@ -403,17 +660,41 @@ export class RideService {
     }
 
     private async handleNoDrivers(ride: IRide): Promise<void> {
-        await db
-            .collection('rides')
-            .doc(ride.id!)
-            .update({
+        const rideRef = db.collection('rides').doc(ride.id!);
+
+        const wasUpdated = await db.runTransaction(async (transaction) => {
+            const snap = await transaction.get(rideRef);
+            const current = snap.data();
+            // Only cancel if still in finding_driver status (guard against race)
+            if (!current || !['finding_driver', 'requested'].includes(current.status)) {
+                return false;
+            }
+            transaction.update(rideRef, {
                 status: 'cancelled',
                 cancellationReason: 'no_driver_available',
                 cancelledAt: new Date()
             });
+            return true;
+        });
 
-        socketService.notifyRider(ride.riderId, 'ride:no_driver', { rideId: ride.id });
-        rideEvents.emit('ride.cancelled', { rideId: ride.id, riderId: ride.riderId });
+        if (wasUpdated) {
+            socketService.notifyRider(ride.riderId, 'ride:no_driver', { rideId: ride.id });
+            rideEvents.emit('ride.cancelled', { rideId: ride.id, riderId: ride.riderId });
+            // Release escrow hold if present
+            if (ride.payment?.holdReference) {
+                await walletService.releaseEscrowHold(
+                    ride.payment.holdReference,
+                    'no_driver_available',
+                    { rideId: ride.id }
+                ).catch(err => logger.error({ err, rideId: ride.id }, 'Failed to release escrow on no_driver'));
+            }
+            // Safety: clear currentRideId on any driver that may have been partially assigned
+            if (ride.driverId) {
+                await db.collection('users').doc(ride.driverId).update({
+                    'driverStatus.currentRideId': FieldValue.delete()
+                }).catch(err => logger.warn({ err }, 'Failed to clear driver currentRideId in handleNoDrivers'));
+            }
+        }
         this.stopDriverMatching(ride.id!);
     }
 
@@ -421,10 +702,39 @@ export class RideService {
         switch (ride.status) {
             case 'accepted':
                 rideTrackingService.startTracking(ride);
-                socketService.notifyRider(ride.riderId, 'ride:accepted', {
-                    rideId: ride.id,
-                    driverId: ride.driverId
-                });
+                // Set currentRideId on driver so they can't accept another ride
+                if (ride.driverId) {
+                    await db.collection('users').doc(ride.driverId).update({
+                        'driverStatus.currentRideId': ride.id
+                    }).catch(err => logger.warn({ err, driverId: ride.driverId }, 'Failed to set driver currentRideId'));
+                }
+                // Enrich with driver profile so rider UI can display driver info
+                {
+                    let driverInfo: Record<string, any> = {};
+                    if (ride.driverId) {
+                        try {
+                            const driverDoc = await db.collection('users').doc(ride.driverId).get();
+                            const dd = driverDoc.data() ?? {};
+                            const dp = dd.driverProfile ?? {};
+                            driverInfo = {
+                                driverName: dd.fullName || dd.displayName || 'Driver',
+                                driverPhoto: dd.photoURL || dp.photoURL || '',
+                                driverRating: dp.rating ?? dd.rating ?? 5.0,
+                                driverPhone: dd.phone || dd.phoneNumber || '',
+                                vehicleModel: dp.vehicleModel || dp.vehicle?.model || '',
+                                vehicleColor: dp.vehicleColor || dp.vehicle?.color || '',
+                                vehiclePlate: dp.licensePlate || dp.vehicle?.plateNumber || ''
+                            };
+                        } catch (err) {
+                            logger.warn({ err, driverId: ride.driverId }, 'Failed to fetch driver profile for ride:accepted');
+                        }
+                    }
+                    socketService.notifyRider(ride.riderId, 'ride:accepted', {
+                        rideId: ride.id,
+                        driverId: ride.driverId,
+                        ...driverInfo
+                    });
+                }
                 rideEvents.emit('ride.accepted', {
                     rideId: ride.id!,
                     riderId: ride.riderId,
@@ -446,7 +756,16 @@ export class RideService {
                 await this.settleRidePayment(ride);
                 if (ride.driverId) {
                     await incentiveService.processTripCompletion(ride).catch(err => logger.error({ err, rideId: ride.id }, 'Failed to award incentives'));
+                    // Clear driver's currentRideId
+                    await db.collection('users').doc(ride.driverId).update({
+                        'driverStatus.currentRideId': FieldValue.delete()
+                    }).catch(err => logger.warn({ err, driverId: ride.driverId }, 'Failed to clear driver currentRideId on completion'));
                 }
+                // Award loyalty points to rider (fire-and-forget)
+                loyaltyService.awardPoints(ride.riderId, ride.pricing.estimatedFare, ride.pricing.currency)
+                    .catch(err => logger.warn({ err, rideId: ride.id }, 'Failed to award loyalty points'));
+                // Send receipt email (fire-and-forget)
+                this.sendRideReceiptEmail(ride).catch(err => logger.warn({ err, rideId: ride.id }, 'Failed to send ride receipt email'));
                 break;
             case 'cancelled':
                 rideTrackingService.stopTracking(ride.id!);
@@ -459,10 +778,58 @@ export class RideService {
                         rideId: ride.id,
                         reason: ride.cancellationReason
                     });
+                    // Clear driver's currentRideId
+                    await db.collection('users').doc(ride.driverId).update({
+                        'driverStatus.currentRideId': FieldValue.delete()
+                    }).catch(err => logger.warn({ err, driverId: ride.driverId }, 'Failed to clear driver currentRideId'));
+                }
+                // Release escrow hold so rider's funds are not locked
+                if (ride.payment?.holdReference) {
+                    await walletService.releaseEscrowHold(
+                        ride.payment.holdReference,
+                        `Ride cancelled: ${ride.cancellationReason ?? 'user_cancelled'}`,
+                        { rideId: ride.id }
+                    ).catch(err => logger.error({ err, rideId: ride.id }, 'Failed to release escrow on cancellation'));
+                }
+                // Debit cancellation fee from rider if applicable
+                {
+                    const cancellationFee = ride.pricing?.cancellationFee ?? 0;
+                    if (cancellationFee > 0) {
+                        walletService.processTransaction(
+                            ride.riderId,
+                            cancellationFee,
+                            'debit',
+                            'cancellation_fee',
+                            'Ride Cancellation Fee',
+                            `CANCEL-FEE-${ride.id}-${Date.now()}`,
+                            {
+                                walletCurrency: (ride.pricing?.currency as 'NGN' | 'USD') || 'NGN',
+                                metadata: { rideId: ride.id, cancellationReason: ride.cancellationReason }
+                            }
+                        ).catch(err => logger.error({ err, rideId: ride.id }, 'Failed to debit cancellation fee'));
+                    }
                 }
                 break;
             default:
                 break;
+        }
+    }
+
+    /**
+     * Public entry point: re-run settlement after a late payment webhook.
+     * Safe to call multiple times — `captureEscrowHold` is idempotent and
+     * `settleRidePayment` early-returns when holdStatus is already 'captured'.
+     */
+    async triggerSettlementIfComplete(rideId: string): Promise<void> {
+        try {
+            const snap = await db.collection('rides').doc(rideId).get();
+            if (!snap.exists) return;
+            const ride = { id: snap.id, ...snap.data() } as IRide;
+            if (ride.status === 'completed' && (ride as any).payment?.holdStatus !== 'captured') {
+                await this.settleRidePayment(ride);
+            }
+        } catch (error) {
+            logger.error({ err: error, rideId }, 'triggerSettlementIfComplete failed');
         }
     }
 
@@ -488,7 +855,10 @@ export class RideService {
                 subscription?.status === 'active' && (!subscriptionExpiry || subscriptionExpiry > new Date());
 
             // Fetch dynamic commission from pricing config
-            const pricingConfig = await pricingConfigService.getConfig<any>(ride.region);
+            const regionKey = String(ride.region || '').toLowerCase().trim();
+            const pricingConfig = regionKey === 'ng' || regionKey === 'nigeria'
+                ? await pricingConfigService.getNigeriaConfig()
+                : await pricingConfigService.getChicagoConfig();
             const dynamicCommission = pricingConfig?.platformCommission;
 
             let commissionRate =
@@ -570,8 +940,8 @@ export class RideService {
     private async getPaymentsConfig(region?: string): Promise<PaymentsConfigDoc> {
         // Default config if none found
         const defaults: PaymentsConfigDoc = {
-            commissionRate: 0.2,
-            defaultCommissionRate: 0.2,
+            commissionRate: 0.25,
+            defaultCommissionRate: 0.25,
             microDeductions: { flatFee: 0, percentage: 0 },
             subscription: {
                 discountRate: 0,
@@ -582,11 +952,23 @@ export class RideService {
 
         if (!region) return defaults;
 
-        const configSnap = await db.collection('config').doc('payments').get();
-        if (!configSnap.exists) return defaults;
+        // Use TTL cache to avoid hitting Firestore on every ride completion
+        if (this.paymentConfigCache && this.paymentConfigCache.expiresAt > Date.now()) {
+            const cached = this.paymentConfigCache.data;
+            return (cached as any)?.[region] ?? defaults;
+        }
 
-        const data = configSnap.data();
-        return (data?.[region] as PaymentsConfigDoc) ?? defaults;
+        try {
+            const configSnap = await db.collection('config').doc('payments').get();
+            if (!configSnap.exists) return defaults;
+
+            const data = configSnap.data() as PaymentsConfigDoc;
+            this.paymentConfigCache = { data, expiresAt: Date.now() + 5 * 60 * 1000 };
+            return (data as any)?.[region] ?? defaults;
+        } catch (error) {
+            logger.error({ err: error, region }, 'Failed to fetch payments config, using defaults');
+            return defaults;
+        }
     }
 
     private parseTimestamp(value: any): Date | null {
@@ -620,6 +1002,347 @@ export class RideService {
 
     private deg2rad(deg: number): number {
         return deg * (Math.PI / 180);
+    }
+
+    /**
+     * Estimate fare without creating a ride
+     */
+    public async estimateFare(requestData: {
+        pickup: { lat: number; lng: number; address?: string };
+        dropoff: { lat: number; lng: number; address?: string };
+        vehicleCategory: string;
+        region: string;
+        bookingType?: string;
+    }): Promise<{
+        estimatedFare: number;
+        currency: string;
+        distanceKm: number;
+        durationMinutes: number;
+        breakdown: any;
+        surgeMultiplier: number;
+    }> {
+        const routeData = await googleMapsService.getDistanceAndDuration(
+            requestData.pickup,
+            requestData.dropoff
+        );
+
+        const distanceKm = routeData.distanceMeters / 1000;
+        const durationMinutes = routeData.durationSeconds / 60;
+
+        const mockRide = {
+            pickupLocation: requestData.pickup,
+            dropoffLocation: requestData.dropoff,
+            vehicleCategory: requestData.vehicleCategory,
+            region: requestData.region,
+            bookingType: requestData.bookingType ?? 'on_demand',
+            createdAt: new Date()
+        } as IRide;
+
+        const priceBreakdown = await pricingService.calculateFare(mockRide, distanceKm, durationMinutes);
+
+        return {
+            estimatedFare: priceBreakdown.totalFare,
+            currency: priceBreakdown.currency,
+            distanceKm,
+            durationMinutes,
+            breakdown: priceBreakdown,
+            surgeMultiplier: priceBreakdown.surgeMultiplier ?? 1.0
+        };
+    }
+
+    /**
+     * Get ride history for a user (rider or driver)
+     */
+    public async getRideHistory(
+        userId: string,
+        role: 'rider' | 'driver',
+        options: { page?: number; limit?: number; status?: string } = {}
+    ): Promise<{ rides: IRide[]; total: number; page: number; limit: number }> {
+        const { page = 1, limit = 20, status } = options;
+        const offset = (page - 1) * limit;
+
+        const field = role === 'rider' ? 'riderId' : 'driverId';
+        let query: FirebaseFirestore.Query = db.collection('rides')
+            .where(field, '==', userId)
+            .orderBy('createdAt', 'desc');
+
+        if (status) {
+            query = query.where('status', '==', status);
+        }
+
+        // Get total count (approximate via a separate query)
+        const countSnap = await db.collection('rides').where(field, '==', userId).count().get();
+        const total = countSnap.data().count;
+
+        // Get paginated results
+        const snapshot = await query.offset(offset).limit(limit).get();
+        const rides = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as IRide));
+
+        return { rides, total, page, limit };
+    }
+
+    /**
+     * Rate a driver after ride completion
+     */
+    public async rateDriver(
+        rideId: string,
+        riderId: string,
+        rating: number,
+        feedback?: string
+    ): Promise<IRide> {
+        if (rating < 1 || rating > 5) {
+            throw new Error('Rating must be between 1 and 5');
+        }
+
+        const rideRef = db.collection('rides').doc(rideId);
+        const rideSnap = await rideRef.get();
+
+        if (!rideSnap.exists) {
+            throw new Error('Ride not found');
+        }
+
+        const ride = { id: rideSnap.id, ...rideSnap.data() } as IRide;
+
+        if (ride.riderId !== riderId) {
+            throw new Error('You can only rate drivers for your own rides');
+        }
+
+        if (ride.status !== 'completed') {
+            throw new Error('Can only rate completed rides');
+        }
+
+        if (ride.driverRating) {
+            throw new Error('Driver already rated for this ride');
+        }
+
+        // Update ride with rating
+        await rideRef.update({
+            driverRating: rating,
+            driverFeedback: feedback ?? null,
+            updatedAt: new Date()
+        });
+
+        // Update driver's average rating
+        if (ride.driverId) {
+            await this.updateDriverAverageRating(ride.driverId);
+        }
+
+        return { ...ride, driverRating: rating, driverFeedback: feedback };
+    }
+
+    /**
+     * Rate a rider after ride completion (by driver)
+     */
+    public async rateRider(
+        rideId: string,
+        driverId: string,
+        rating: number,
+        feedback?: string
+    ): Promise<IRide> {
+        if (rating < 1 || rating > 5) {
+            throw new Error('Rating must be between 1 and 5');
+        }
+
+        const rideRef = db.collection('rides').doc(rideId);
+        const rideSnap = await rideRef.get();
+
+        if (!rideSnap.exists) {
+            throw new Error('Ride not found');
+        }
+
+        const ride = { id: rideSnap.id, ...rideSnap.data() } as IRide;
+
+        if (ride.driverId !== driverId) {
+            throw new Error('You can only rate riders for your own rides');
+        }
+
+        if (ride.status !== 'completed') {
+            throw new Error('Can only rate completed rides');
+        }
+
+        if (ride.riderRating) {
+            throw new Error('Rider already rated for this ride');
+        }
+
+        // Update ride with rating
+        await rideRef.update({
+            riderRating: rating,
+            riderFeedback: feedback ?? null,
+            updatedAt: new Date()
+        });
+
+        // Update rider's average rating
+        await this.updateRiderAverageRating(ride.riderId);
+
+        return { ...ride, riderRating: rating, riderFeedback: feedback };
+    }
+
+    /**
+     * Update driver's average rating
+     */
+    private async updateDriverAverageRating(driverId: string): Promise<void> {
+        const ridesSnap = await db.collection('rides')
+            .where('driverId', '==', driverId)
+            .where('driverRating', '>', 0)
+            .limit(100)
+            .get();
+
+        if (ridesSnap.empty) return;
+
+        const ratings = ridesSnap.docs.map(doc => doc.data().driverRating as number);
+        const avgRating = ratings.reduce((a, b) => a + b, 0) / ratings.length;
+
+        await db.collection('users').doc(driverId).update({
+            'driverDetails.rating': Math.round(avgRating * 10) / 10,
+            'driverDetails.totalRatings': ratings.length
+        });
+    }
+
+    /**
+     * Update rider's average rating
+     */
+    private async updateRiderAverageRating(riderId: string): Promise<void> {
+        const ridesSnap = await db.collection('rides')
+            .where('riderId', '==', riderId)
+            .where('riderRating', '>', 0)
+            .limit(100)
+            .get();
+
+        if (ridesSnap.empty) return;
+
+        const ratings = ridesSnap.docs.map(doc => doc.data().riderRating as number);
+        const avgRating = ratings.reduce((a, b) => a + b, 0) / ratings.length;
+
+        await db.collection('users').doc(riderId).update({
+            'riderDetails.rating': Math.round(avgRating * 10) / 10,
+            'riderDetails.totalRatings': ratings.length
+        });
+    }
+
+    /**
+     * Get driver's active ride
+     */
+    public async getDriverActiveRide(driverId: string): Promise<IRide | null> {
+        const snapshot = await db.collection('rides')
+            .where('driverId', '==', driverId)
+            .where('status', 'in', ['accepted', 'arrived', 'in_progress'])
+            .limit(1)
+            .get();
+
+        if (snapshot.empty) return null;
+
+        const doc = snapshot.docs[0];
+        return { id: doc.id, ...doc.data() } as IRide;
+    }
+
+    /**
+     * Apply promo discount to a ride fare
+     */
+    private async applyPromoDiscount(
+        riderId: string,
+        totalFare: number,
+        currency: string,
+        promoCode?: string,
+        promotionId?: string
+    ): Promise<{ discount: number; promotionId: string; promoRef: FirebaseFirestore.DocumentReference }> {
+        let promoSnap;
+
+        if (promotionId) {
+            // Look up from user's applied promotions
+            const userPromoSnap = await db.collection('user_promotions')
+                .where('userId', '==', riderId)
+                .where('promotionId', '==', promotionId)
+                .where('status', '==', 'active')
+                .limit(1)
+                .get();
+
+            if (userPromoSnap.empty) {
+                throw new Error('Promotion not found or already used');
+            }
+            promoSnap = userPromoSnap.docs[0];
+        } else if (promoCode) {
+            // Look up from user's applied promotions by code
+            const userPromoSnap = await db.collection('user_promotions')
+                .where('userId', '==', riderId)
+                .where('code', '==', promoCode)
+                .where('status', '==', 'active')
+                .limit(1)
+                .get();
+
+            if (userPromoSnap.empty) {
+                throw new Error('Promotion code not applied or already used');
+            }
+            promoSnap = userPromoSnap.docs[0];
+        } else {
+            throw new Error('No promo code or promotion ID provided');
+        }
+
+        const promo = promoSnap.data();
+        let discount = 0;
+
+        if (promo.discountType === 'percentage') {
+            discount = Math.round(totalFare * (promo.amount / 100) * 100) / 100;
+        } else {
+            // flat discount
+            discount = Math.min(promo.amount, totalFare);
+        }
+
+        // Return ref — caller marks as used AFTER ride creation succeeds
+        return { discount, promotionId: promo.promotionId, promoRef: promoSnap.ref };
+    }
+
+    /** Mark a promo as used after ride was successfully created */
+    private async finalizePromoUsage(
+        promoRef: FirebaseFirestore.DocumentReference,
+        riderId: string,
+        promoPromotionId: string,
+        discount: number,
+        currency: string,
+        rideId: string
+    ): Promise<void> {
+        await promoRef.update({ status: 'used', usedAt: new Date() });
+        await db.collection('promotion_usages').add({
+            userId: riderId,
+            promotionId: promoPromotionId,
+            userPromotionId: promoRef.id,
+            discountAmount: discount,
+            currency,
+            rideId,
+            usedAt: new Date()
+        });
+        logger.info({ riderId, promotionId: promoPromotionId, discount, rideId }, 'Promo discount applied to ride');
+    }
+
+    /**
+     * Send ride receipt email to the rider (fire-and-forget)
+     */
+    private async sendRideReceiptEmail(ride: IRide): Promise<void> {
+        try {
+            const riderSnap = await db.collection('users').doc(ride.riderId).get();
+            if (!riderSnap.exists) return;
+            const rider = riderSnap.data();
+            if (!rider?.email) return;
+
+            let driverName: string | undefined;
+            if (ride.driverId) {
+                const driverSnap = await db.collection('users').doc(ride.driverId).get();
+                driverName = driverSnap.data()?.displayName || driverSnap.data()?.firstName;
+            }
+
+            await emailService.sendRideReceipt(rider.email, {
+                riderName: rider.displayName || rider.firstName || 'Rider',
+                rideId: ride.id || '',
+                pickup: ride.pickupLocation?.address || `${ride.pickupLocation?.lat}, ${ride.pickupLocation?.lng}`,
+                dropoff: ride.dropoffLocation?.address || `${ride.dropoffLocation?.lat}, ${ride.dropoffLocation?.lng}`,
+                fare: ride.pricing?.estimatedFare || 0,
+                currency: ride.pricing?.currency || 'NGN',
+                date: new Date(ride.createdAt).toLocaleDateString('en-US', { dateStyle: 'medium' }),
+                driverName,
+                paymentMethod: (ride as any).paymentMethod
+            });
+        } catch (err) {
+            logger.warn({ err, rideId: ride.id }, 'Failed to send ride receipt');
+        }
     }
 }
 

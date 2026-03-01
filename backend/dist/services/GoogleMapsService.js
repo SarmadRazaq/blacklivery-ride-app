@@ -27,6 +27,13 @@ class GoogleMapsService {
     getDistanceAndDuration(origin_1, destination_1) {
         return __awaiter(this, arguments, void 0, function* (origin, destination, mode = 'driving') {
             var _a;
+            // Validate inputs
+            if (!origin || origin.lat === undefined || origin.lng === undefined) {
+                throw new Error('Invalid origin: lat and lng are required');
+            }
+            if (!destination || destination.lat === undefined || destination.lng === undefined) {
+                throw new Error('Invalid destination: lat and lng are required');
+            }
             if (!this.apiKey) {
                 // Fallback to haversine calculation
                 return this.fallbackCalculation(origin, destination);

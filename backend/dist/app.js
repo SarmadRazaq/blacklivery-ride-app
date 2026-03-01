@@ -28,7 +28,7 @@ app.use((0, cors_1.default)({
     origin: ['http://localhost:5173', 'http://localhost:3000'], // Allow Vite (5173) and React (3000)
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization']
+    allowedHeaders: ['Content-Type', 'Authorization', 'Idempotency-Key']
 }));
 app.use(express_1.default.json({
     verify: (req, res, buf) => {

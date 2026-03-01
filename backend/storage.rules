@@ -1,0 +1,32 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // ─── Driver Documents (Server-only writes) ────────────────────────
+    // Driver KYC docs must be uploaded through backend endpoint only.
+    // Client SDK writes are denied in production; Admin SDK writes bypass rules.
+    match /drivers/{driverId}/documents/{document} {
+      allow write: if false;
+      allow read: if false;
+    }
+
+    // ─── Vehicle Photos ────────────────────────────────────────────────
+    // Front, back, interior vehicle images uploaded during onboarding.
+    match /vehicles/{driverId}/{photo} {
+      allow write: if request.auth != null && request.auth.uid == driverId;
+      allow read: if false;
+    }
+
+    // ─── Profile Images ────────────────────────────────────────────────
+    // Riders/Drivers can upload profile photos to their own UID path.
+    // Read remains denied via rules; apps should use download URLs.
+    match /profiles/{uid}/{image} {
+      allow write: if request.auth != null && request.auth.uid == uid;
+      allow read: if false;
+    }
+
+    // ─── Default Deny ──────────────────────────────────────────────────
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

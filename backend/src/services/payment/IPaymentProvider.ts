@@ -24,7 +24,7 @@ export interface IPaymentProvider {
 
     // Payouts
     createRecipient(name: string, accountNumber: string, bankCode: string): Promise<string>;
-    transfer(recipientCode: string, amount: number, currency: string, reason: string): Promise<string>;
+    transfer(recipientCode: string, amount: number, currency: string, reason: string, reference?: string): Promise<string>;
     
     // Optional Onboarding (Stripe)
     generateOnboardingLink?(recipientCode: string, refreshUrl: string, returnUrl: string): Promise<string>;

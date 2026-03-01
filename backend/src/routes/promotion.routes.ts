@@ -1,6 +1,8 @@
 import { Router, RequestHandler } from 'express';
 import { verifyToken } from '../middlewares/auth.middleware';
-import { applyPromotion, listMyPromotions } from '../controllers/promotion.controller';
+import { validate } from '../middlewares/validate.middleware';
+import { applyPromotionSchema } from '../schemas/promotion.schema';
+import { applyPromotion, listMyPromotions, getAvailablePromotions } from '../controllers/promotion.controller';
 
 const router = Router();
 
@@ -38,7 +40,7 @@ router.use(verifyToken);
  *       200:
  *         description: Promotion applied
  */
-router.post('/apply', wrap(applyPromotion));
+router.post('/apply', validate(applyPromotionSchema), wrap(applyPromotion));
 
 /**
  * @swagger
@@ -53,6 +55,20 @@ router.post('/apply', wrap(applyPromotion));
  *         description: List of promotions
  */
 router.get('/mine', wrap(listMyPromotions));
+
+/**
+ * @swagger
+ * /promotions/available:
+ *   get:
+ *     summary: Get currently available promotions
+ *     tags: [Promotions]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of available promotions
+ */
+router.get('/available', wrap(getAvailablePromotions));
 
 export default router;
 

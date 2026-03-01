@@ -38,6 +38,7 @@ class IncentiveService {
                     peakHourBonus: 0,
                     airportBonus: 0,
                     weatherBonus: 0,
+                    deliveryBonus: 0,
                     totalEarned: 0,
                     isPaid: false,
                     createdAt: now
@@ -53,9 +54,7 @@ class IncentiveService {
             else {
                 dailyData.ridesCompleted++;
             }
-            // Peak Hour Check (Simple hour check for now)
-            // Nigeria: 7-9am, 4-8pm
-            // Chicago: 6-9am, 4-7pm
+            // Peak Hour Check
             const hour = now.getHours();
             let isPeak = false;
             if (ride.region === 'NG') {
@@ -68,9 +67,6 @@ class IncentiveService {
             }
             if (isPeak) {
                 dailyData.peakHourTrips++;
-                // Add immediate peak bonus? Or sum later?
-                // Nigeria: +300-500 per trip
-                // Chicago: +5 per trip
                 const peakAmt = ride.region === 'NG' ? 300 : 5;
                 dailyData.peakHourBonus += peakAmt;
                 dailyData.totalEarned += peakAmt;
@@ -85,8 +81,6 @@ class IncentiveService {
             // 3. Check Daily Threshold Bonuses (Nigeria)
             if (ride.region === 'NG') {
                 const totalTrips = dailyData.ridesCompleted + dailyData.deliveriesCompleted;
-                // Rules: 6 trips -> 3000, 10 trips -> 7000 (Total, not cumulative usually)
-                // Logic: If hit 6, bonus is 3000. If hit 10, bonus becomes 7000 (add 4000 more).
                 let newDailyBonus = 0;
                 if (totalTrips >= 10) {
                     newDailyBonus = 7000;
@@ -101,12 +95,56 @@ class IncentiveService {
                 }
             }
             // Delivery Bonus (Nigeria)
-            // 10 trips -> 1000, 18 -> 2500
             if (ride.region === 'NG' && ride.bookingType === 'delivery') {
                 const dTrips = dailyData.deliveriesCompleted;
-                // Note: This might overlap with general trips if not carefully separated.
-                // Assuming separate bonus structure as per doc.
-                // Implementation logic similar to above...
+                let newDeliveryBonus = 0;
+                if (dTrips >= 18) {
+                    newDeliveryBonus = 2500;
+                }
+                else if (dTrips >= 10) {
+                    newDeliveryBonus = 1000;
+                }
+                const diff = newDeliveryBonus - (dailyData.deliveryBonus || 0);
+                if (diff > 0) {
+                    dailyData.deliveryBonus = newDeliveryBonus;
+                    dailyData.totalEarned += diff;
+                }
+            }
+            // Weekly Bonus Logic (Nigeria: 40 trips -> 10000)
+            if (ride.region === 'NG') {
+                const weekStart = this.getWeekStart(now);
+                const weekId = `${ride.driverId}_${weekStart.toISOString().split('T')[0]}`;
+                const weeklyRef = firebase_1.db.collection('incentives_weekly').doc(weekId);
+                const weeklySnap = yield weeklyRef.get();
+                let weeklyData;
+                if (!weeklySnap.exists) {
+                    weeklyData = {
+                        driverId: ride.driverId,
+                        region: ride.region,
+                        weekStart,
+                        weekEnd: new Date(weekStart.getTime() + 6 * 24 * 60 * 60 * 1000),
+                        totalRides: 0,
+                        totalDeliveries: 0,
+                        weeklyBonus: 0,
+                        isPaid: false,
+                        createdAt: now
+                    };
+                }
+                else {
+                    weeklyData = weeklySnap.data();
+                }
+                if (ride.bookingType === 'delivery')
+                    weeklyData.totalDeliveries++;
+                else
+                    weeklyData.totalRides++;
+                const totalWeeklyTrips = weeklyData.totalRides + weeklyData.totalDeliveries;
+                // If just crossed 40, award bonus
+                if (totalWeeklyTrips === 40) {
+                    weeklyData.weeklyBonus = 10000;
+                    dailyData.weeklyBonus += 10000;
+                    dailyData.totalEarned += 10000;
+                }
+                yield weeklyRef.set(weeklyData);
             }
             yield dailyRef.set(Object.assign(Object.assign({}, dailyData), { updatedAt: now }));
         });
@@ -134,6 +172,14 @@ class IncentiveService {
             }
             yield batch.commit();
         });
+    }
+    getWeekStart(date) {
+        const d = new Date(date);
+        const day = d.getDay();
+        const diff = d.getDate() - day + (day === 0 ? -6 : 1); // adjust when day is sunday
+        d.setDate(diff);
+        d.setHours(0, 0, 0, 0);
+        return d;
     }
 }
 exports.IncentiveService = IncentiveService;

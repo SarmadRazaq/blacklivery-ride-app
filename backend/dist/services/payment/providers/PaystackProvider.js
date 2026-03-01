@@ -54,6 +54,7 @@ class PaystackProvider {
     }
     verifyTransaction(reference) {
         return __awaiter(this, void 0, void 0, function* () {
+            var _a;
             try {
                 const response = yield axios_1.default.get(`${this.baseUrl}/transaction/verify/${reference}`, { headers: this.headers });
                 const data = response.data.data;
@@ -68,6 +69,7 @@ class PaystackProvider {
                 };
             }
             catch (error) {
+                console.error('Paystack verify error:', ((_a = error.response) === null || _a === void 0 ? void 0 : _a.data) || error.message);
                 return {
                     success: false,
                     amount: 0,

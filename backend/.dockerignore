@@ -1,0 +1,7 @@
+node_modules
+npm-debug.log
+dist
+coverage
+.env
+*.jks
+share-ride-app-*-firebase-adminsdk-*.json

@@ -1,15 +1,41 @@
 import { Router } from 'express';
 import { verifyToken } from '../middlewares/auth.middleware';
+import { validate } from '../middlewares/validate.middleware';
+import { wrap } from '../utils/errorHandler';
+import {
+    signupStartSchema,
+    signupVerifySchema,
+    phoneVerificationSchema,
+    phoneVerifyOtpSchema,
+    emailVerificationSchema
+} from '../schemas/auth.schema';
 import {
     register,
+    registerOrLink,
     getProfile,
+    updateProfile,
     logout,
+    login,
     startPhoneVerification,
     verifyPhoneVerification,
+    startEmailVerification,
+    verifyEmailVerification,
+    signupStart,
+    signupResend,
+    signupVerify,
     googleSignIn,
     requestPasswordReset,
     submitDriverOnboarding,
-    registerTestUser
+    getActiveSessions,
+    revokeSession,
+    revokeAllSessions,
+    getLoginHistory,
+    deleteAccount,
+    registerFcmToken,
+    removeFcmToken,
+    send2faOtp,
+    verify2faOtp,
+    toggle2fa
 } from '../controllers/auth.controller';
 
 const router = Router();
@@ -20,6 +46,168 @@ const router = Router();
  *   name: Auth
  *   description: Authentication and User Management
  */
+
+/**
+ * @swagger
+ * /auth/register:
+ *   post:
+ *     summary: Register a new user (sends OTP to email)
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *               - password
+ *               - fullName
+ *               - phoneNumber
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 example: "user@example.com"
+ *               password:
+ *                 type: string
+ *                 example: "SecurePass123!"
+ *               fullName:
+ *                 type: string
+ *                 example: "John Doe"
+ *               phoneNumber:
+ *                 type: string
+ *                 example: "+2348012345678"
+ *               role:
+ *                 type: string
+ *                 enum: [rider, driver]
+ *                 default: rider
+ *     responses:
+ *       200:
+ *         description: OTP sent to email
+ *       409:
+ *         description: Email or phone already registered
+ */
+router.post('/register', validate(signupStartSchema), wrap(signupStart));
+
+/**
+ * @swagger
+ * /auth/register/resend:
+ *   post:
+ *     summary: Resend OTP for pending registration
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 example: "user@example.com"
+ *     responses:
+ *       200:
+ *         description: OTP resent to email
+ *       400:
+ *         description: No pending signup found
+ */
+router.post('/register/resend', validate(emailVerificationSchema), wrap(signupResend));
+
+/**
+ * @swagger
+ * /auth/register-firebase:
+ *   post:
+ *     summary: Register a new user with Firebase Token
+ *     tags: [Auth]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               displayName:
+ *                 type: string
+ *               phoneNumber:
+ *                 type: string
+ *               role:
+ *                 type: string
+ *               deviceId:
+ *                 type: string
+ *               country:
+ *                 type: string
+ *     responses:
+ *       201:
+ *         description: User registered successfully
+ *       409:
+ *         description: User already exists
+ */
+router.post('/register-firebase', verifyToken, wrap(register));
+
+/**
+ * @swagger
+ * /auth/register/verify:
+ *   post:
+ *     summary: Complete registration by verifying OTP
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *               - otp
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 example: "user@example.com"
+ *               otp:
+ *                 type: string
+ *                 example: "123456"
+ *     responses:
+ *       201:
+ *         description: Account created successfully
+ *       400:
+ *         description: Invalid or expired OTP
+ *       409:
+ *         description: Email already registered
+ */
+router.post('/register/verify', validate(signupVerifySchema), wrap(signupVerify));
+
+/**
+ * @swagger
+ * /auth/login:
+ *   post:
+ *     summary: Login user (get user data by email)
+ *     tags: [Auth]
+ *     description: |
+ *       This endpoint returns user data. For authentication, use Firebase Client SDK 
+ *       to sign in with email/password and get an ID token for protected endpoints.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 example: "user@example.com"
+ *     responses:
+ *       200:
+ *         description: Login successful
+ *       404:
+ *         description: User not found
+ */
+router.post('/login', verifyToken, wrap(login));
 
 /**
  * @swagger
@@ -40,7 +228,7 @@ const router = Router();
  *       200:
  *         description: Verification code sent
  */
-router.post('/phone/start', startPhoneVerification);
+router.post('/phone/start', validate(phoneVerificationSchema), wrap(startPhoneVerification));
 
 /**
  * @swagger
@@ -63,7 +251,54 @@ router.post('/phone/start', startPhoneVerification);
  *       200:
  *         description: Phone verified successfully
  */
-router.post('/phone/verify', verifyPhoneVerification);
+router.post('/phone/verify', validate(phoneVerifyOtpSchema), wrap(verifyPhoneVerification));
+
+/**
+ * @swagger
+ * /auth/email/start:
+ *   post:
+ *     summary: Start email verification (send OTP)
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 example: "user@example.com"
+ *     responses:
+ *       200:
+ *         description: Verification code sent to email
+ */
+router.post('/email/start', validate(emailVerificationSchema), wrap(startEmailVerification));
+
+/**
+ * @swagger
+ * /auth/email/verify:
+ *   post:
+ *     summary: Verify email with OTP
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 example: "user@example.com"
+ *               code:
+ *                 type: string
+ *                 example: "123456"
+ *     responses:
+ *       200:
+ *         description: Email verified successfully
+ */
+router.post('/email/verify', validate(emailVerificationSchema), wrap(verifyEmailVerification));
 
 /**
  * @swagger
@@ -84,7 +319,7 @@ router.post('/phone/verify', verifyPhoneVerification);
  *       200:
  *         description: User authenticated via Google
  */
-router.post('/google', googleSignIn);
+router.post('/google', wrap(googleSignIn));
 
 /**
  * @swagger
@@ -105,81 +340,48 @@ router.post('/google', googleSignIn);
  *       200:
  *         description: Password reset email sent
  */
-router.post('/password/reset', requestPasswordReset);
+router.post('/password/reset', wrap(requestPasswordReset));
 
 /**
  * @swagger
- * /auth/register:
+ * /auth/register-or-link:
  *   post:
- *     summary: Register a new user
+ *     summary: Register a new user or link existing user with firebaseUid
  *     tags: [Auth]
- *     security:
- *       - bearerAuth: []
  *     requestBody:
  *       required: true
  *       content:
  *         application/json:
  *           schema:
  *             type: object
+ *             required:
+ *               - email
  *             properties:
  *               email:
  *                 type: string
  *                 example: "user@example.com"
- *               role:
- *                 type: string
- *                 enum: [rider, driver]
- *                 example: "rider"
- *               displayName:
+ *               name:
  *                 type: string
  *                 example: "John Doe"
- *               phoneNumber:
+ *               phone:
  *                 type: string
  *                 example: "+2348012345678"
- *               country:
- *                 type: string
- *                 example: "Nigeria"
- *               vehicleType:
- *                 type: string
- *                 description: "Required if role is driver"
- *                 enum: [sedan, suv, van, motorbike]
- *                 example: "sedan"
- *     responses:
- *       201:
- *         description: User registered successfully
- */
-router.post('/register', verifyToken, register);
-
-/**
- * @swagger
- * /auth/test/register:
- *   post:
- *     summary: Register a new user (TEST ONLY - No Token Required)
- *     tags: [Auth]
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               email:
- *                 type: string
- *                 example: "test_rider@example.com"
  *               role:
  *                 type: string
  *                 enum: [rider, driver]
  *                 example: "rider"
- *               displayName:
+ *               firebaseUid:
  *                 type: string
- *                 example: "Test User"
- *               phoneNumber:
- *                 type: string
- *                 example: "+2348000000000"
+ *                 example: "abc123xyz"
  *     responses:
+ *       200:
+ *         description: Existing user linked with firebaseUid
  *       201:
- *         description: Test user created successfully
+ *         description: New user registered successfully
+ *       500:
+ *         description: Registration failed
  */
-router.post('/test/register', registerTestUser);
+router.post('/register-or-link', verifyToken, wrap(registerOrLink));
 
 /**
  * @swagger
@@ -204,7 +406,7 @@ router.post('/test/register', registerTestUser);
  *       200:
  *         description: Onboarding submitted
  */
-router.post('/driver/onboarding', verifyToken, submitDriverOnboarding);
+router.post('/driver/onboarding', verifyToken, wrap(submitDriverOnboarding));
 
 /**
  * @swagger
@@ -218,7 +420,114 @@ router.post('/driver/onboarding', verifyToken, submitDriverOnboarding);
  *       200:
  *         description: User profile data
  */
-router.get('/profile', verifyToken, getProfile);
+router.get('/profile', verifyToken, wrap(getProfile));
+
+/**
+ * @swagger
+ * /auth/profile:
+ *   patch:
+ *     summary: Update user profile
+ *     tags: [Auth]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               fullName:
+ *                 type: string
+ *               phoneNumber:
+ *                 type: string
+ *               profileImage:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Profile updated successfully
+ *       400:
+ *         description: No valid fields to update
+ *       404:
+ *         description: User not found
+ */
+router.patch('/profile', verifyToken, wrap(updateProfile));
+
+/**
+ * @swagger
+ * /auth/sessions:
+ *   get:
+ *     summary: Get active sessions
+ *     tags: [Auth]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of active sessions
+ */
+router.get('/sessions', verifyToken, wrap(getActiveSessions));
+
+/**
+ * @swagger
+ * /auth/sessions/{sessionId}:
+ *   delete:
+ *     summary: Revoke a specific session
+ *     tags: [Auth]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: sessionId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Session revoked
+ */
+router.delete('/sessions/:sessionId', verifyToken, wrap(revokeSession));
+
+/**
+ * @swagger
+ * /auth/sessions:
+ *   delete:
+ *     summary: Revoke all sessions
+ *     tags: [Auth]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: All sessions revoked
+ */
+router.delete('/sessions', verifyToken, wrap(revokeAllSessions));
+
+/**
+ * @swagger
+ * /auth/login-history:
+ *   get:
+ *     summary: Get login history
+ *     tags: [Auth]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Login history entries
+ */
+router.get('/login-history', verifyToken, wrap(getLoginHistory));
+
+/**
+ * @swagger
+ * /auth/account:
+ *   delete:
+ *     summary: Delete user account
+ *     tags: [Auth]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Account deleted successfully
+ */
+router.delete('/account', verifyToken, wrap(deleteAccount));
 
 /**
  * @swagger
@@ -232,6 +541,123 @@ router.get('/profile', verifyToken, getProfile);
  *       200:
  *         description: User logged out
  */
-router.post('/logout', verifyToken, logout);
+router.post('/logout', verifyToken, wrap(logout));
+
+/**
+ * @swagger
+ * /auth/fcm-token:
+ *   post:
+ *     summary: Register FCM token for push notifications
+ *     tags: [Auth]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - token
+ *             properties:
+ *               token:
+ *                 type: string
+ *                 description: Firebase Cloud Messaging device token
+ *     responses:
+ *       200:
+ *         description: FCM token registered
+ */
+router.post('/fcm-token', verifyToken, wrap(registerFcmToken));
+
+/**
+ * @swagger
+ * /auth/fcm-token:
+ *   delete:
+ *     summary: Remove FCM token (on logout/uninstall)
+ *     tags: [Auth]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - token
+ *             properties:
+ *               token:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: FCM token removed
+ */
+router.delete('/fcm-token', verifyToken, wrap(removeFcmToken));
+
+// ─── Two-Factor Authentication ──────────────────────────────────
+
+/**
+ * @swagger
+ * /auth/2fa/send:
+ *   post:
+ *     summary: Send 2FA OTP to user's phone
+ *     tags: [Auth]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: 2FA code sent
+ */
+router.post('/2fa/send', verifyToken, wrap(send2faOtp));
+
+/**
+ * @swagger
+ * /auth/2fa/verify:
+ *   post:
+ *     summary: Verify 2FA OTP code
+ *     tags: [Auth]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - code
+ *             properties:
+ *               code:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: 2FA verified successfully
+ */
+router.post('/2fa/verify', verifyToken, wrap(verify2faOtp));
+
+/**
+ * @swagger
+ * /auth/2fa/toggle:
+ *   patch:
+ *     summary: Enable or disable 2FA
+ *     tags: [Auth]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - enabled
+ *             properties:
+ *               enabled:
+ *                 type: boolean
+ *     responses:
+ *       200:
+ *         description: 2FA setting updated
+ */
+router.patch('/2fa/toggle', verifyToken, wrap(toggle2fa));
 
 export default router;

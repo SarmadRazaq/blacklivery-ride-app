@@ -5,7 +5,7 @@ import { Request, Response } from 'express';
 // Protects against basic DDoS and bot scraping
 export const globalLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    limit: 100, // Limit each IP to 100 requests per windowMs
+    limit: process.env.NODE_ENV === 'production' ? 100 : 1000, // Production: 100, Dev: 1000
     standardHeaders: true,
     legacyHeaders: false,
     validate: { xForwardedForHeader: false },
@@ -18,7 +18,7 @@ export const globalLimiter = rateLimit({
 // Protects login/register endpoints from brute-force attacks
 export const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    limit: 5, // Limit each IP to 5 login/register attempts per windowMs
+    limit: process.env.NODE_ENV === 'production' ? 15 : 100, // Production: 15, Dev: 100
     standardHeaders: true,
     legacyHeaders: false,
     validate: { xForwardedForHeader: false },
@@ -31,7 +31,7 @@ export const authLimiter = rateLimit({
 // Prevents spamming ride requests
 export const rideLimiter = rateLimit({
     windowMs: 1 * 60 * 1000, // 1 minute
-    limit: 3, // Limit each User ID to 3 ride requests per minute
+    limit: process.env.NODE_ENV === 'production' ? 5 : 20, // Production: 5, Dev: 20
     standardHeaders: true,
     legacyHeaders: false,
     validate: { xForwardedForHeader: false, keyGeneratorIpFallback: false },

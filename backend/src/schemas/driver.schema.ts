@@ -94,7 +94,7 @@ export const listDriverApplicationsSchema = z.object({
         status: z.enum(['pending_documents', 'pending_review', 'needs_resubmission', 'approved', 'rejected']).optional(),
         vehicleType: z.string().optional()
     }),
-    body: z.object({}),
+    body: z.object({}).optional(),
     params: z.object({})
 });
 

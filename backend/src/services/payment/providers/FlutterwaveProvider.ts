@@ -1,5 +1,6 @@
 import axios from 'axios';
 import crypto from 'crypto';
+import { logger } from '../../../utils/logger';
 import { IPaymentProvider, PaymentInitResult, PaymentVerificationResult } from '../IPaymentProvider';
 
 export class FlutterwaveProvider implements IPaymentProvider {
@@ -8,11 +9,12 @@ export class FlutterwaveProvider implements IPaymentProvider {
     private baseUrl = 'https://api.flutterwave.com/v3';
 
     constructor() {
-        this.secretKey = process.env.FLUTTERWAVE_SECRET_KEY || '';
-        this.hashSecret = process.env.FLUTTERWAVE_HASH_SECRET || this.secretKey;
-        if (!this.secretKey) {
-            console.warn('FLUTTERWAVE_SECRET_KEY is not set');
+        const key = process.env.FLUTTERWAVE_SECRET_KEY;
+        if (!key) {
+            throw new Error('FLUTTERWAVE_SECRET_KEY is not configured');
         }
+        this.secretKey = key;
+        this.hashSecret = process.env.FLUTTERWAVE_HASH_SECRET || this.secretKey;
     }
 
     async initializeTransaction(email: string, amount: number, currency: string, reference: string, metadata?: any): Promise<PaymentInitResult> {
@@ -43,7 +45,7 @@ export class FlutterwaveProvider implements IPaymentProvider {
                 authorizationUrl: response.data.data.link
             };
         } catch (error: any) {
-            console.error('Flutterwave init error:', error.response?.data || error.message);
+            logger.error({ err: error }, 'Flutterwave init error');
             throw new Error('Payment initialization failed');
         }
     }
@@ -78,9 +80,11 @@ export class FlutterwaveProvider implements IPaymentProvider {
     }
 
     async verifyWebhook(payload: any, signature: string): Promise<PaymentVerificationResult | null> {
-        if (signature !== this.hashSecret) {
-            return null;
-        }
+        const raw = typeof payload === 'string' ? payload : JSON.stringify(payload);
+        const computed = crypto.createHmac('sha512', this.hashSecret).update(raw).digest('hex');
+        const computedBuf = Buffer.from(computed, 'hex');
+        const sigBuf = Buffer.from(signature, 'hex');
+        if (computedBuf.length !== sigBuf.length || !crypto.timingSafeEqual(computedBuf, sigBuf)) return null;
 
         const data = payload.data;
         if (payload.event === 'charge.completed' && data.status === 'successful') {
@@ -114,55 +118,62 @@ export class FlutterwaveProvider implements IPaymentProvider {
             // For consistency with IPaymentProvider which expects a string ID, we'll return the ID.
             return response.data.data.id.toString();
         } catch (error: any) {
-            console.error('Flutterwave recipient error:', error.response?.data || error.message);
+            logger.error({ err: error }, 'Flutterwave recipient error');
             throw new Error('Failed to create recipient');
         }
     }
 
-    async transfer(recipientCode: string, amount: number, currency: string, reason: string): Promise<string> {
+    async transfer(recipientCode: string, amount: number, currency: string, reason: string, reference?: string): Promise<string> {
         try {
-            // Note: recipientCode here is treated as beneficiary ID or we might need to adjust implementation 
-            // if we want to support direct account transfers. 
-            // For now assuming we use the beneficiary ID or similar.
-            // Actually Flutterwave transfers usually take account bank and number.
-            // If recipientCode is not sufficient, we might need to store bank details.
-            // But to adhere to interface, let's assume we can fetch beneficiary or use a transfer endpoint that accepts ID.
-            // OR we just implement a direct transfer if we had the details. 
-            // Since we only have recipientCode here, we'll assume it's a saved beneficiary ID.
+            // Flutterwave transfers use account details stored as beneficiary
+            // recipientCode can be either:
+            //   1. A beneficiary ID (from createRecipient)
+            //   2. A JSON string with {accountNumber, bankCode} for direct transfers
+            let transferPayload: any;
 
-            // However, standard Flutterwave transfer endpoint:
-            /*
-            {
-                "account_bank": "044",
-                "account_number": "0690000040",
-                "amount": 5500,
-                "narration": "Akhlm Payout",
-                "currency": "NGN",
-                "reference": "akhlm-pstmn-1094373823",
-                "callback_url": "https://webhook.site/b3e505b0-fe02-430e-a538-22bbbce8ce0d",
-                "debit_currency": "NGN"
+            // Try to parse as JSON with account details for direct transfer
+            try {
+                const parsed = JSON.parse(recipientCode);
+                if (parsed.accountNumber && parsed.bankCode) {
+                    transferPayload = {
+                        account_bank: parsed.bankCode,
+                        account_number: parsed.accountNumber,
+                        amount,
+                        narration: reason,
+                        currency: currency || 'NGN',
+                        reference: reference || `BL-FLW-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`,
+                        debit_currency: currency || 'NGN'
+                    };
+                }
+            } catch {
+                // Not JSON — treat as beneficiary ID
             }
-            */
-            // If we don't have account details, we can't easily transfer unless we stored them.
-            // Paystack uses recipient_code. Flutterwave is different.
-            // For this implementation, I will throw an error for now or try to use a "transfer to beneficiary" endpoint if it exists.
-            // Checking Flutterwave docs (mental check): /transfers endpoint requires account details.
 
-            // WORKAROUND: We will assume the 'recipientCode' passed in is actually a JSON string containing {accountNumber, bankCode} 
-            // OR we simply accept that this provider might need refactoring to store recipients.
-            // BUT, to unblock, I will implement a basic version that assumes recipientCode MIGHT be a "beneficiary_id" 
-            // but since I can't easily look that up without storage, I'll log a warning and try to proceed if possible, 
-            // or just throw "Not Implemented" for transfers for now to be safe.
+            if (!transferPayload) {
+                // Use beneficiary-based transfer
+                transferPayload = {
+                    beneficiary: parseInt(recipientCode, 10) || recipientCode,
+                    amount,
+                    narration: reason,
+                    currency: currency || 'NGN',
+                    reference: reference || `BL-FLW-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`,
+                    debit_currency: currency || 'NGN'
+                };
+            }
 
-            // Wait, PaystackProvider.ts uses `recipient_code`.
-            // I will leave transfer as "Not fully supported" or try to implement if I can find a way.
-            // Let's try to implement a generic transfer if possible.
+            const response = await axios.post(
+                `${this.baseUrl}/transfers`,
+                transferPayload,
+                { headers: { Authorization: `Bearer ${this.secretKey}` } }
+            );
 
-            throw new Error('Flutterwave automated transfers require account details, not just recipient code. Please use Paystack for payouts for now.');
+            const transferId = response.data?.data?.id?.toString() || response.data?.data?.reference || transferPayload.reference;
+            logger.info({ transferId, amount, currency }, 'Flutterwave transfer initiated');
+            return transferId;
 
         } catch (error: any) {
-            console.error('Flutterwave transfer error:', error.message);
-            throw error;
+            logger.error({ err: error }, 'Flutterwave transfer error');
+            throw new Error(`Flutterwave transfer failed: ${error.response?.data?.message || error.message}`);
         }
     }
 }

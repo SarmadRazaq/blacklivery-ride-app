@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { logger } from '../utils/logger';
 
 interface WeatherData {
     condition: string; // 'clear', 'rain', 'storm', 'snow', 'clouds'
@@ -18,7 +19,7 @@ export class WeatherService {
         this.cache = new Map();
 
         if (!this.apiKey) {
-            console.warn('OPENWEATHER_API_KEY is not set. Weather-based surge will be disabled.');
+            logger.warn('OPENWEATHER_API_KEY is not set. Weather-based surge will be disabled.');
         }
     }
 
@@ -60,7 +61,7 @@ export class WeatherService {
             return weatherData;
 
         } catch (error) {
-            console.error('Weather API error:', error);
+            logger.error({ err: error }, 'Weather API error');
             return this.getDefaultWeather();
         }
     }

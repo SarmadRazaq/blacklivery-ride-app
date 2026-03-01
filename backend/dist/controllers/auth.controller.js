@@ -9,7 +9,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
     });
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.logout = exports.getProfile = exports.requestPasswordReset = exports.googleSignIn = exports.submitDriverOnboarding = exports.register = exports.verifyPhoneVerification = exports.startPhoneVerification = void 0;
+exports.registerOrLink = exports.logout = exports.getProfile = exports.requestPasswordReset = exports.googleSignIn = exports.submitDriverOnboarding = exports.register = exports.verifyPhoneVerification = exports.startPhoneVerification = void 0;
 const firestore_1 = require("firebase-admin/firestore");
 const firebase_1 = require("../config/firebase");
 const logger_1 = require("../utils/logger");
@@ -68,8 +68,9 @@ const startPhoneVerification = (req, res) => __awaiter(void 0, void 0, void 0, f
             expiresAt: new Date(Date.now() + PHONE_VERIFICATION_TTL_MS),
             lastSentAt: new Date()
         }, { merge: true });
-        logger_1.logger.info({ phoneNumber: normalized }, 'OTP generated for phone verification');
-        res.status(200).json({ message: 'Verification code sent' });
+        logger_1.logger.info({ phoneNumber: normalized, otp }, 'OTP generated for phone verification');
+        console.log(`\n🔐 OTP for ${normalized}: ${otp}\n`); // TODO: Remove before production
+        res.status(200).json({ message: 'Verification code sent', otp }); // TODO: Remove otp from response before production
     }
     catch (error) {
         logger_1.logger.error({ err: error }, 'startPhoneVerification failed');
@@ -117,7 +118,7 @@ const verifyPhoneVerification = (req, res) => __awaiter(void 0, void 0, void 0, 
 });
 exports.verifyPhoneVerification = verifyPhoneVerification;
 const register = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    var _a, _b, _c;
+    var _a, _b;
     const { uid, email, picture } = req.user;
     const { role, displayName, phoneNumber, deviceId, country } = req.body;
     if (!role || !['rider', 'driver'].includes(role)) {
@@ -134,14 +135,17 @@ const register = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
         }
         const normalizedPhone = normalizePhone(phoneNumber);
         yield ensureUniqueUser(email, normalizedPhone);
-        if (normalizedPhone) {
-            const phoneVerificationDoc = yield firebase_1.db.collection('phone_verifications').doc(normalizedPhone).get();
-            const phoneVerified = phoneVerificationDoc.exists && ((_a = phoneVerificationDoc.data()) === null || _a === void 0 ? void 0 : _a.verified);
-            if (!phoneVerified) {
-                res.status(400).json({ error: 'Phone number must be verified before registering' });
-                return;
-            }
-        }
+        // Check if phone is verified via Firebase Auth Token
+        // const tokenPhone = req.user.phone_number || req.user.phoneNumber;
+        // const isFirebaseVerified = tokenPhone && normalizePhone(tokenPhone) === normalizedPhone;
+        // if (normalizedPhone && !isFirebaseVerified) {
+        //     const phoneVerificationDoc = await db.collection('phone_verifications').doc(normalizedPhone).get();
+        //     const phoneVerified = phoneVerificationDoc.exists && phoneVerificationDoc.data()?.verified;
+        //     if (!phoneVerified) {
+        //         res.status(400).json({ error: 'Phone number must be verified before registering' });
+        //         return;
+        //     }
+        // }
         const userRef = firebase_1.db.collection('users').doc(uid);
         const userDoc = yield userRef.get();
         if (userDoc.exists) {
@@ -150,8 +154,7 @@ const register = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
         }
         const region = detectRegion(country, phoneNumber);
         const now = new Date();
-        const newUser = Object.assign({ uid,
-            email, displayName: displayName || '', phoneNumber: phoneNumber || '', photoURL: picture || '', role, createdAt: now, updatedAt: now, isActive: true, deviceId: deviceId || null, region: region.code, currency: region.currency, countryCode: region.code === 'NG' ? 'NG' : 'US', emailLowercase: email ? email.toLowerCase() : undefined, phoneNumberNormalized: normalizedPhone || undefined, phoneVerified: !!normalizedPhone }, (role === 'driver' && {
+        const newUser = Object.assign({ uid, email: email || '', displayName: displayName || '', phoneNumber: phoneNumber || '', photoURL: picture || '', role, createdAt: now, updatedAt: now, isActive: true, deviceId: deviceId || null, region: region.code, currency: region.currency, countryCode: region.code === 'NG' ? 'NG' : 'US', emailLowercase: email ? email.toLowerCase() : null, phoneNumberNormalized: normalizedPhone || null, phoneVerified: !!normalizedPhone }, (role === 'driver' && {
             driverDetails: {
                 isOnline: false,
                 rating: 5.0,
@@ -161,7 +164,7 @@ const register = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
             driverOnboarding: {
                 status: 'pending_documents',
                 submittedAt: now,
-                vehicleType: (_b = req.body.vehicleType) !== null && _b !== void 0 ? _b : null
+                vehicleType: (_a = req.body.vehicleType) !== null && _a !== void 0 ? _a : null
             },
             driverStatus: {
                 state: 'pending_documents',
@@ -176,7 +179,7 @@ const register = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     }
     catch (error) {
         logger_1.logger.error({ err: error }, 'Error registering user');
-        res.status(500).json({ error: (_c = error.message) !== null && _c !== void 0 ? _c : 'Internal Server Error' });
+        res.status(500).json({ error: (_b = error.message) !== null && _b !== void 0 ? _b : 'Internal Server Error' });
     }
 });
 exports.register = register;
@@ -310,4 +313,50 @@ const logout = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     }
 });
 exports.logout = logout;
+const registerOrLink = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const { email, name, phone, role, firebaseUid } = req.body;
+        if (!email) {
+            res.status(400).json({ error: 'Email is required' });
+            return;
+        }
+        // Check if user already exists by email
+        const usersRef = firebase_1.db.collection('users');
+        const existingUser = yield usersRef.where('email', '==', email).limit(1).get();
+        if (!existingUser.empty) {
+            // User exists - UPDATE with firebaseUid instead of rejecting
+            const userDoc = existingUser.docs[0];
+            const userData = userDoc.data();
+            // If firebaseUid is provided and different, link it
+            if (firebaseUid && userData.firebaseUid !== firebaseUid) {
+                yield userDoc.ref.update({
+                    firebaseUid: firebaseUid,
+                    updatedAt: new Date()
+                });
+            }
+            // Return the existing user (now linked)
+            res.status(200).json({
+                data: Object.assign(Object.assign({ id: userDoc.id }, userDoc.data()), { firebaseUid })
+            });
+            return;
+        }
+        // New user - create normally
+        const newUser = {
+            email,
+            name: name || '',
+            phone: phone || '',
+            role: role || 'rider',
+            firebaseUid: firebaseUid || null,
+            createdAt: new Date(),
+            updatedAt: new Date()
+        };
+        const docRef = yield usersRef.add(newUser);
+        res.status(201).json({ data: Object.assign({ id: docRef.id }, newUser) });
+    }
+    catch (error) {
+        logger_1.logger.error({ err: error }, 'registerOrLink failed');
+        res.status(500).json({ error: 'Registration failed' });
+    }
+});
+exports.registerOrLink = registerOrLink;
 //# sourceMappingURL=auth.controller.js.map

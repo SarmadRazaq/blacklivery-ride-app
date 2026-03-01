@@ -11,4 +11,6 @@ export interface IWalletWithBalance extends IWallet {
         amount: number;
         currency: 'NGN' | 'USD';
     };
+    lifetimeEarnings?: number;
+    pendingWithdrawals?: number;
 }

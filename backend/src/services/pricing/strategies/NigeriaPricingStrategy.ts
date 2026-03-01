@@ -3,7 +3,7 @@ import { IPricingStrategy, PriceBreakdown } from '../IPricingStrategy';
 import { pricingConfigService } from '../PricingConfigService';
 
 export class NigeriaPricingStrategy implements IPricingStrategy {
-    
+
     private readonly DEFAULTS = {
         CITIES: {
             'lagos': { baseFare: 1500, perMinute: 45, waitTimeFee: 100 },
@@ -32,29 +32,48 @@ export class NigeriaPricingStrategy implements IPricingStrategy {
 
     private async calculateRideFare(ride: IRide, distanceKm: number, durationMinutes: number): Promise<PriceBreakdown> {
         const config = await pricingConfigService.getNigeriaConfig();
-        const cityKey = (ride.city && (config?.pricing[ride.city] || this.DEFAULTS.CITIES[ride.city as keyof typeof this.DEFAULTS.CITIES])) ? ride.city : 'default';
-        
-        const cityConfig = config?.pricing[cityKey] || this.DEFAULTS.CITIES[cityKey as keyof typeof this.DEFAULTS.CITIES] || this.DEFAULTS.CITIES.default;
-        
+        const cityName = ride.city?.toLowerCase();
+        const cityKey = (cityName && (config?.pricing?.[cityName] || this.DEFAULTS.CITIES[cityName as keyof typeof this.DEFAULTS.CITIES])) ? cityName : 'default';
+
+        const cityConfig = config?.pricing?.[cityKey] || this.DEFAULTS.CITIES[cityKey as keyof typeof this.DEFAULTS.CITIES] || this.DEFAULTS.CITIES.default;
+
         const category = ride.vehicleCategory?.toLowerCase() || 'sedan';
-        const vehicleConfig = config?.categories[category] || this.DEFAULTS.RIDE_RATES[category as keyof typeof this.DEFAULTS.RIDE_RATES] || this.DEFAULTS.RIDE_RATES.sedan;
+        const vehicleConfig = config?.categories?.[category] || this.DEFAULTS.RIDE_RATES[category as keyof typeof this.DEFAULTS.RIDE_RATES] || this.DEFAULTS.RIDE_RATES.sedan;
 
         // Use config values or defaults
         const baseFare = cityConfig.baseFare;
         const minuteRate = (cityConfig as any).perMinute ?? (cityConfig as any).minuteRate; // Safe access
-        
+
         const distanceFare = distanceKm * vehicleConfig.perKm;
         const timeFare = durationMinutes * minuteRate;
-        
-        let surgeMultiplier = ride.pricing.surgeMultiplier || 1.0;
-        const subtotal = baseFare + (distanceFare + timeFare) * surgeMultiplier;
-        
+
+        const surgeMultiplier = ride.pricing?.surgeMultiplier || 1.0;
+
         let addOnsFare = 0;
-        if (ride.addOns?.premiumVehicle) addOnsFare += 1500;
-        if (ride.addOns?.extraLuggage) addOnsFare += 1000;
+        if (ride.addOns?.premiumVehicle) {
+            addOnsFare += config?.addOns?.premiumVehicle ?? 1500;
+        }
+
+        const chauffeurSedan = (ride.addOns as any)?.chauffeurSedan;
+        if (chauffeurSedan) {
+            addOnsFare += config?.addOns?.chauffeurSedan ?? 1000;
+        }
+
+        if (ride.addOns?.extraLuggage) {
+            const luggageCfg = config?.addOns?.extraLuggage;
+            addOnsFare +=
+                luggageCfg?.[category as 'sedan' | 'suv' | 'xl'] ??
+                luggageCfg?.min ??
+                1000;
+        }
+
+        const airportPriorityPickup = (ride.addOns as any)?.airportPriorityPickup;
+        if (airportPriorityPickup) {
+            addOnsFare += config?.addOns?.airportPriorityPickup ?? 1500;
+        }
 
         const surgeFare = (distanceFare + timeFare) * (surgeMultiplier - 1);
-        
+
         let totalFare = baseFare + distanceFare + timeFare + surgeFare + addOnsFare;
         if (totalFare < vehicleConfig.minFare) {
             totalFare = vehicleConfig.minFare;
@@ -78,20 +97,26 @@ export class NigeriaPricingStrategy implements IPricingStrategy {
         const config = await pricingConfigService.getDeliveryConfig();
         const category = ride.vehicleCategory?.toLowerCase() || 'motorbike';
         const vehicleConfig = config?.rates?.[category] || this.DEFAULTS.DELIVERY_RATES[category as keyof typeof this.DEFAULTS.DELIVERY_RATES] || this.DEFAULTS.DELIVERY_RATES.motorbike;
-        
+
         const baseFare = vehicleConfig.base;
         const distanceFare = distanceKm * vehicleConfig.perKm;
         const timeFare = durationMinutes * (vehicleConfig.perMin ?? 15); // Default if missing
 
         let multiplier = 1.0;
-        if (ride.deliveryDetails?.serviceType === 'instant') multiplier = 1.2;
-        if (ride.deliveryDetails?.serviceType === 'scheduled') multiplier = 0.9;
+        if (ride.deliveryDetails?.serviceType === 'instant') multiplier = config?.serviceMultipliers?.instant ?? 1.2;
+        if (ride.deliveryDetails?.serviceType === 'scheduled') multiplier = config?.serviceMultipliers?.scheduled ?? 0.9;
+        if (ride.deliveryDetails?.serviceType === 'same_day') multiplier = config?.serviceMultipliers?.same_day ?? 1.0;
 
         let addOnsFare = 0;
-        if (ride.deliveryDetails?.extraStops) addOnsFare += (ride.deliveryDetails.extraStops * (category === 'motorbike' ? 500 : 750));
-        if (ride.deliveryDetails?.isFragile) addOnsFare += 500;
+        if (ride.deliveryDetails?.extraStops) {
+            const extraStopFee = config?.fees?.extraStop?.[category] ?? (category === 'motorbike' ? 500 : category === 'suv' ? 1000 : 750);
+            addOnsFare += (ride.deliveryDetails.extraStops * extraStopFee);
+        }
+        if (ride.deliveryDetails?.isFragile) {
+            addOnsFare += config?.fees?.fragileItem?.[category] ?? (category === 'motorbike' ? 500 : 1000);
+        }
         if (ride.deliveryDetails?.requiresReturn) {
-             addOnsFare += (baseFare + distanceFare + timeFare) * 0.7;
+            addOnsFare += (baseFare + distanceFare + timeFare) * (config?.fees?.returnTripMultiplier ?? 0.7);
         }
 
         const preTotal = (baseFare + distanceFare + timeFare) * multiplier;
@@ -121,7 +146,8 @@ export class NigeriaPricingStrategy implements IPricingStrategy {
         // For now, using defaults to satisfy interface
         const category = ride.vehicleCategory?.toLowerCase() || 'sedan';
         if (ride.bookingType === 'delivery') {
-            return 300;
+            const deliveryDefaults = this.DEFAULTS.DELIVERY_RATES[category as keyof typeof this.DEFAULTS.DELIVERY_RATES] || this.DEFAULTS.DELIVERY_RATES.motorbike;
+            return deliveryDefaults.cancel || 300;
         }
         return this.DEFAULTS.RIDE_RATES[category as keyof typeof this.DEFAULTS.RIDE_RATES]?.cancel || 1500;
     }
@@ -135,9 +161,14 @@ export class NigeriaPricingStrategy implements IPricingStrategy {
     calculateWaitTimeFee(ride: IRide, waitMinutes: number): number {
         const freeMinutes = ride.bookingType === 'delivery' ? 7 : 3;
         if (waitMinutes <= freeMinutes) return 0;
-        
+
         const billableMinutes = waitMinutes - freeMinutes;
-        // Using default rate as sync
+        if (ride.bookingType === 'delivery') {
+            const category = ride.vehicleCategory?.toLowerCase() || 'motorbike';
+            const perMinute = category === 'motorbike' ? 20 : category === 'suv' ? 30 : 25;
+            return billableMinutes * perMinute;
+        }
+
         return billableMinutes * 100;
     }
 }

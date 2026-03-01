@@ -20,7 +20,16 @@ const verifyToken = (req, res, next) => __awaiter(void 0, void 0, void 0, functi
     try {
         // Verify token and check if it has been revoked
         const decodedToken = yield firebase_1.auth.verifyIdToken(token, true);
-        req.user = decodedToken;
+        // Fetch user data from Firestore to get role and other info
+        const userDoc = yield firebase_1.db.collection('users').doc(decodedToken.uid).get();
+        if (userDoc.exists) {
+            const userData = userDoc.data();
+            req.user = Object.assign(Object.assign({}, decodedToken), { role: userData === null || userData === void 0 ? void 0 : userData.role, region: userData === null || userData === void 0 ? void 0 : userData.region, currency: userData === null || userData === void 0 ? void 0 : userData.currency, driverOnboarding: userData === null || userData === void 0 ? void 0 : userData.driverOnboarding, driverDetails: userData === null || userData === void 0 ? void 0 : userData.driverDetails });
+        }
+        else {
+            // User not registered yet, just use token data
+            req.user = decodedToken;
+        }
         next();
     }
     catch (error) {

@@ -1,0 +1,40 @@
+# Dependencies
+node_modules/
+.dart_tool/
+.packages
+
+# Build outputs
+dist/
+build/
+*.js.map
+
+# Environment files
+.env
+.env.*
+!.env.example
+!.env.production.example
+
+# Firebase service account keys
+*-firebase-adminsdk-*.json
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Coverage
+coverage/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Flutter/Dart
+.flutter-plugins
+.flutter-plugins-dependencies

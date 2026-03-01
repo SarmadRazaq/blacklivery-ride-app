@@ -9,7 +9,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
     });
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.recordDriverHeartbeat = exports.updateDriverAvailability = exports.adminRequestDocumentResubmission = exports.adminReviewDriverApplication = exports.adminGetDriverApplication = exports.adminListDriverApplications = exports.getDriverApplication = exports.updateDriverBankInfo = exports.uploadDriverDocuments = void 0;
+exports.getDriverActiveRide = exports.getDriverRideHistory = exports.getDriverEarnings = exports.recordDriverHeartbeat = exports.updateDriverAvailability = exports.adminRequestDocumentResubmission = exports.adminReviewDriverApplication = exports.adminGetDriverApplication = exports.adminListDriverApplications = exports.getDriverApplication = exports.updateDriverBankInfo = exports.uploadDriverDocuments = void 0;
 const firestore_1 = require("firebase-admin/firestore");
 const firebase_1 = require("../config/firebase");
 const logger_1 = require("../utils/logger");
@@ -203,7 +203,13 @@ const adminReviewDriverApplication = (req, res) => __awaiter(void 0, void 0, voi
             var _a, _b;
             const applicationRef = firebase_1.db.collection('driver_applications').doc(driverId);
             const userRef = firebase_1.db.collection('users').doc(driverId);
-            const [applicationSnap, userSnap] = yield Promise.all([tx.get(applicationRef), tx.get(userRef)]);
+            const walletRef = firebase_1.db.collection('wallets').doc(driverId);
+            // All reads FIRST (Firestore transaction requirement)
+            const [applicationSnap, userSnap, walletSnap] = yield Promise.all([
+                tx.get(applicationRef),
+                tx.get(userRef),
+                tx.get(walletRef)
+            ]);
             if (!applicationSnap.exists) {
                 throw new Error('Application not found');
             }
@@ -234,7 +240,17 @@ const adminReviewDriverApplication = (req, res) => __awaiter(void 0, void 0, voi
                     isActive: true,
                     updatedAt: now
                 }, { merge: true });
-                yield ensureDriverWallet(tx, driverId, (_b = userData.currency) !== null && _b !== void 0 ? _b : 'NGN');
+                // Create wallet if doesn't exist (using pre-fetched data)
+                if (!walletSnap.exists) {
+                    tx.set(walletRef, {
+                        userId: driverId,
+                        balance: { amount: 0, currency: (_b = userData.currency) !== null && _b !== void 0 ? _b : 'NGN' },
+                        lifetimeEarnings: 0,
+                        pendingWithdrawals: 0,
+                        createdAt: now,
+                        updatedAt: now
+                    });
+                }
             }
             else if (action === 'reject') {
                 tx.update(applicationRef, {
@@ -348,6 +364,7 @@ const updateDriverAvailability = (req, res) => __awaiter(void 0, void 0, void 0,
     }
     try {
         const { uid } = req.user;
+        console.log('Update Driver Availability Body:', JSON.stringify(req.body, null, 2)); // Debug log
         const { isOnline, location } = req.body;
         const now = new Date();
         const geohash = location ? (0, geohash_1.encodeGeohash)(location.lat, location.lng, 7) : null;
@@ -424,4 +441,137 @@ const recordDriverHeartbeat = (req, res) => __awaiter(void 0, void 0, void 0, fu
     }
 });
 exports.recordDriverHeartbeat = recordDriverHeartbeat;
+/**
+ * Get driver earnings for a specific period
+ */
+const getDriverEarnings = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a, _b;
+    if (req.user.role !== 'driver') {
+        res.status(403).json({ error: 'Drivers only' });
+        return;
+    }
+    try {
+        const { uid } = req.user;
+        const period = req.query.period || 'week';
+        const now = new Date();
+        let startDate;
+        switch (period) {
+            case 'day':
+                startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+                break;
+            case 'month':
+                startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+                break;
+            case 'week':
+            default:
+                startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+                break;
+        }
+        const ridesSnap = yield firebase_1.db.collection('rides')
+            .where('driverId', '==', uid)
+            .where('status', '==', 'completed')
+            .where('completedAt', '>=', startDate)
+            .orderBy('completedAt', 'desc')
+            .get();
+        let totalEarnings = 0;
+        let totalTrips = 0;
+        let totalCommission = 0;
+        ridesSnap.forEach(doc => {
+            var _a, _b;
+            const ride = doc.data();
+            const settlement = (_a = ride.payment) === null || _a === void 0 ? void 0 : _a.settlement;
+            if (settlement === null || settlement === void 0 ? void 0 : settlement.driverAmount) {
+                totalEarnings += settlement.driverAmount;
+                totalCommission += settlement.commissionAmount || 0;
+            }
+            else if ((_b = ride.pricing) === null || _b === void 0 ? void 0 : _b.estimatedFare) {
+                totalEarnings += ride.pricing.estimatedFare * 0.8;
+            }
+            totalTrips++;
+        });
+        const walletSnap = yield firebase_1.db.collection('wallets').doc(uid).get();
+        const wallet = walletSnap.exists ? walletSnap.data() : null;
+        res.status(200).json({
+            success: true,
+            data: {
+                period,
+                startDate: startDate.toISOString(),
+                endDate: now.toISOString(),
+                totalEarnings: Math.round(totalEarnings * 100) / 100,
+                totalCommission: Math.round(totalCommission * 100) / 100,
+                totalTrips,
+                averagePerTrip: totalTrips > 0 ? Math.round((totalEarnings / totalTrips) * 100) / 100 : 0,
+                currency: ((_a = wallet === null || wallet === void 0 ? void 0 : wallet.balance) === null || _a === void 0 ? void 0 : _a.currency) || 'NGN',
+                walletBalance: ((_b = wallet === null || wallet === void 0 ? void 0 : wallet.balance) === null || _b === void 0 ? void 0 : _b.amount) || 0
+            }
+        });
+    }
+    catch (error) {
+        logger_1.logger.error({ err: error }, 'getDriverEarnings failed');
+        res.status(500).json({ error: 'Unable to fetch earnings' });
+    }
+});
+exports.getDriverEarnings = getDriverEarnings;
+/**
+ * Get driver's ride history
+ */
+const getDriverRideHistory = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    if (req.user.role !== 'driver') {
+        res.status(403).json({ error: 'Drivers only' });
+        return;
+    }
+    try {
+        const { uid } = req.user;
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 20;
+        const offset = (page - 1) * limit;
+        const countSnap = yield firebase_1.db.collection('rides').where('driverId', '==', uid).count().get();
+        const total = countSnap.data().count;
+        const snapshot = yield firebase_1.db.collection('rides')
+            .where('driverId', '==', uid)
+            .orderBy('createdAt', 'desc')
+            .offset(offset)
+            .limit(limit)
+            .get();
+        const rides = snapshot.docs.map(doc => (Object.assign({ id: doc.id }, doc.data())));
+        res.status(200).json({
+            success: true,
+            data: rides,
+            pagination: { total, page, limit, totalPages: Math.ceil(total / limit) }
+        });
+    }
+    catch (error) {
+        logger_1.logger.error({ err: error }, 'getDriverRideHistory failed');
+        res.status(500).json({ error: 'Unable to fetch ride history' });
+    }
+});
+exports.getDriverRideHistory = getDriverRideHistory;
+/**
+ * Get driver's current active ride
+ */
+const getDriverActiveRide = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    if (req.user.role !== 'driver') {
+        res.status(403).json({ error: 'Drivers only' });
+        return;
+    }
+    try {
+        const { uid } = req.user;
+        const snapshot = yield firebase_1.db.collection('rides')
+            .where('driverId', '==', uid)
+            .where('status', 'in', ['accepted', 'arrived', 'in_progress'])
+            .limit(1)
+            .get();
+        if (snapshot.empty) {
+            res.status(200).json({ success: true, data: null, message: 'No active ride' });
+            return;
+        }
+        const doc = snapshot.docs[0];
+        res.status(200).json({ success: true, data: Object.assign({ id: doc.id }, doc.data()) });
+    }
+    catch (error) {
+        logger_1.logger.error({ err: error }, 'getDriverActiveRide failed');
+        res.status(500).json({ error: 'Unable to fetch active ride' });
+    }
+});
+exports.getDriverActiveRide = getDriverActiveRide;
 //# sourceMappingURL=driver.controller.js.map

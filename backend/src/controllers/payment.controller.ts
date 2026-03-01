@@ -1,142 +1,814 @@
 import { Request, Response } from 'express';
+import crypto from 'crypto';
 import { AuthRequest } from '../middlewares/auth.middleware';
 import { paymentService } from '../services/payment/PaymentService';
 import { walletService } from '../services/WalletService';
+import { rideService } from '../services/RideService';
+import { db } from '../config/firebase';
 import { RegionCode } from '../config/region.config';
+import { logger } from '../utils/logger';
 
-// Webhooks not yet implemented in PaymentService
-/*
-const forwardWebhook = async (gateway: string, req: Request, res: Response) => {
+/**
+ * Validate webhook amount against the stored transaction amount.
+ * Prevents attackers from crediting arbitrary amounts via forged webhooks.
+ */
+const validateWebhookAmount = async (reference: string, webhookAmount: number): Promise<boolean> => {
     try {
-        // Stub
-        res.status(200).json({ received: true });
+        const txSnapshot = await db.collection('transactions')
+            .where('reference', '==', reference)
+            .limit(1)
+            .get();
+
+        if (txSnapshot.empty) {
+            // No matching transaction — fail closed to prevent fraudulent webhooks
+            logger.warn({ reference, webhookAmount }, 'No matching transaction found for webhook amount validation — rejecting');
+            return false;
+        }
+
+        const storedAmount = txSnapshot.docs[0].data().amount;
+        if (typeof storedAmount !== 'number') return false;
+
+        // Allow up to 1% tolerance for currency conversion/rounding
+        const tolerance = storedAmount * 0.01;
+        if (Math.abs(webhookAmount - storedAmount) > tolerance) {
+            logger.error({ reference, webhookAmount, storedAmount }, 'Webhook amount mismatch — possible fraud');
+            return false;
+        }
+
+        return true;
     } catch (error) {
-        res.status(400).json({ error: (error as Error).message });
+        logger.error({ err: error, reference }, 'Error validating webhook amount');
+        // Fail closed — reject on DB errors. Legitimate payments will be retried by the gateway.
+        return false;
     }
 };
-*/
 
-export const initiatePayment = async (req: AuthRequest, res: Response) => {
-    const { amount, currency, metadata = {}, description, callbackUrl, captureNow = true, purpose, region } = req.body;
-    const { uid, email, name, phone_number } = req.user; // Standard Firebase token claims
+/**
+ * Generic webhook handler for all payment gateways
+ */
+const handleWebhook = async (
+    gateway: string,
+    signatureHeader: string,
+    req: Request,
+    res: Response
+) => {
+    const signature = req.headers[signatureHeader] as string;
+    if (!signature) {
+        return res.status(400).send('Missing signature');
+    }
 
     try {
-        const reference = req.body.reference ?? `REF-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+        const body = gateway === 'stripe' ? (req as any).rawBody : req.body;
+        if (gateway === 'stripe' && !body) {
+            return res.status(400).send('Raw body missing');
+        }
+
+        const result = await paymentService.verifyWebhook(gateway as 'paystack' | 'flutterwave' | 'stripe' | 'monnify', body, signature);
+        if (!result) {
+            return res.status(400).send('Webhook verification failed');
+        }
+
+        if (result.success && result.status === 'success') {
+            const { userId, rideId, purpose } = result.metadata || {};
+
+            // Validate amount against stored transaction
+            const amountValid = await validateWebhookAmount(result.reference, result.amount);
+            if (!amountValid) {
+                logger.error({ gateway, reference: result.reference }, 'Webhook rejected — amount mismatch');
+                return res.status(400).send('Amount validation failed');
+            }
+
+            if (userId) {
+                try {
+                    await walletService.recordEscrowDeposit({
+                        reference: result.reference,
+                        amount: result.amount,
+                        currency: result.currency as 'NGN' | 'USD',
+                        riderId: userId,
+                        rideId,
+                        purpose: purpose || 'wallet_topup',
+                        gateway: gateway as 'paystack' | 'flutterwave' | 'stripe' | 'monnify',
+                        metadata: result.metadata
+                    });
+                } catch (e) {
+                    logger.error({ err: e, reference: result.reference }, `${gateway} webhook wallet deposit failed`);
+                }
+
+                // If ride is already completed (driver marked done before webhook arrived),
+                // trigger settlement now that the escrow hold exists.
+                if (rideId) {
+                    rideService.triggerSettlementIfComplete(rideId).catch(err =>
+                        logger.error({ err, rideId }, 'Late-webhook settlement trigger failed')
+                    );
+                }
+            }
+        }
+        res.json({ received: true });
+    } catch (error) {
+        logger.error({ err: error, gateway }, 'Webhook processing error');
+        res.status(500).json({ error: 'Webhook processing failed' });
+    }
+};
+
+export const handleStripeWebhook = (req: Request, res: Response) =>
+    handleWebhook('stripe', 'stripe-signature', req, res);
+
+export const handlePaystackWebhook = (req: Request, res: Response) =>
+    handleWebhook('paystack', 'x-paystack-signature', req, res);
+
+export const handleFlutterwaveWebhook = (req: Request, res: Response) =>
+    handleWebhook('flutterwave', 'verif-hash', req, res);
+
+export const handleMonnifyWebhook = (req: Request, res: Response) =>
+    handleWebhook('monnify', 'monnify-signature', req, res);
+
+export const initiatePayment = async (req: AuthRequest, res: Response) => {
+    const { amount, currency, metadata = {}, description, callbackUrl, captureNow = true, purpose, region, rideId } = req.body;
+    const { uid, email, name, phone_number } = req.user; // Standard Firebase token claims
+
+    if (!amount || typeof amount !== 'number' || amount <= 0) {
+        res.status(400).json({ error: 'amount must be a positive number' });
+        return;
+    }
+
+    try {
+        logger.info(
+            {
+                uid,
+                amount,
+                currency,
+                region: req.body.region,
+                purpose,
+                rideId
+            },
+            'Initiating payment request'
+        );
+        const reference = req.body.reference ?? `REF-${Date.now()}-${crypto.randomBytes(6).toString('hex')}`;
         const mergedMetadata = {
             ...metadata,
             userId: uid,
             riderId: uid,
+            rideId: rideId || metadata.rideId,
             purpose: purpose ?? metadata.purpose ?? 'wallet_topup',
             captureMode: captureNow ? 'auto' : 'manual'
         };
 
-        const targetRegion = (region as RegionCode) || 'NG';
+        let targetRegion = (region as RegionCode) || 'NG';
+        let paymentAmount = amount;
+        let paymentCurrency = currency;
+
+        // Security: If rideId is present, validate against Ride document
+        if (rideId) {
+            const rideDoc = await db.collection('rides').doc(rideId).get();
+            if (!rideDoc.exists) {
+                res.status(404).json({ error: 'Ride not found' });
+                return;
+            }
+            const ride = rideDoc.data();
+
+            // Validate user is the rider (or driver/admin)
+            if (ride?.riderId !== uid && req.user.role !== 'admin') {
+                res.status(403).json({ error: 'Unauthorized payment for this ride' });
+                return;
+            }
+
+            // Enforce payment amount from ride pricing to prevent underpayment/overpayment tampering
+            const expectedAmount =
+                typeof ride?.pricing?.finalFare === 'number'
+                    ? ride.pricing.finalFare
+                    : typeof ride?.pricing?.estimatedFare === 'number'
+                        ? ride.pricing.estimatedFare
+                        : null;
+
+            if (typeof expectedAmount === 'number' && expectedAmount > 0) {
+                // Allow minor tolerance for rounding differences
+                const tolerance = Math.max(0.5, expectedAmount * 0.01);
+                if (Math.abs(amount - expectedAmount) > tolerance) {
+                    res.status(400).json({
+                        error: `Invalid amount. Expected ${expectedAmount}`
+                    });
+                    return;
+                }
+            }
+
+            // Enforce currency and region from Ride
+            // Prevent "Currency Injection" (Paying NGN for USD ride)
+            if (ride?.pricing) {
+                if (currency && currency !== ride.pricing.currency) {
+                    res.status(400).json({ error: `Invalid currency. Expected ${ride.pricing.currency}` });
+                    return;
+                }
+                paymentCurrency = ride.pricing.currency;
+
+                // Infer region if not provided, or validate if provided
+                // (Simple logic: USD -> Chicago, NGN -> Nigeria)
+                // Better: Use ride.region if available
+                if (ride.region) {
+                    if (region && region !== ride.region) {
+                        res.status(400).json({ error: `Invalid region. Expected ${ride.region}` });
+                        return;
+                    }
+                    targetRegion = ride.region as RegionCode;
+                }
+            }
+        }
+
+
+        // Paystack rejects '.test' TLDs and requires a valid email structure
+        let userEmail = email;
+        if (!userEmail || userEmail.endsWith('.test') || !userEmail.includes('@')) {
+            userEmail = `user-${uid}@blacklivery.app`;
+        }
+
+        logger.debug(
+            {
+                uid,
+                hasFallbackEmail: !email || email.endsWith('.test') || !email.includes('@')
+            },
+            'Payment customer email resolved'
+        );
 
         const result = await paymentService.initializePayment(
             targetRegion,
-            email, // Token email
-            amount,
-            currency,
+            userEmail, // Token email or fallback
+            paymentAmount,
+            paymentCurrency,
             reference,
-            mergedMetadata
+            mergedMetadata,
+            req.body.gateway // Allow explicit provider selection (e.g., 'flutterwave', 'monnify')
         );
+
+        // Write the payment reference to the ride document so settleRidePayment()
+        // can find it when the ride completes (the escrow hold key must match this reference).
+        if (rideId) {
+            db.collection('rides').doc(rideId).update({
+                'payment.holdReference': reference,
+                'payment.paymentMethod': 'card',
+                'payment.status': 'pending',
+            }).catch(err => logger.error({ err, rideId, reference }, 'Failed to write holdReference to ride'));
+        }
+
         res.status(200).json(result);
-    } catch (error) {
-        console.error('Error initiating payment:', error);
+    } catch (error: any) {
+        logger.error(
+            { err: error, details: error?.response?.data || error?.message },
+            'Payment initiation failed'
+        );
+        logger.error({ err: error }, 'Error initiating payment');
         res.status(500).json({ error: 'Payment initiation failed' });
     }
 };
 
 export const verifyPayment = async (req: AuthRequest, res: Response) => {
-    const { reference, currency, purpose, region } = req.body;
+    const { reference, transactionId, currency, purpose, region } = req.body;
     const { uid } = req.user;
+
+    const paymentReference = reference || transactionId;
+
+    if (!paymentReference) {
+        res.status(400).json({ error: 'Payment reference or transactionId is required' });
+        return;
+    }
 
     try {
         const targetRegion = (region as RegionCode) || 'NG';
-        const verification = await paymentService.verifyPayment(targetRegion, reference);
+        const verification = await paymentService.verifyPayment(targetRegion, paymentReference);
 
         if (verification.success) {
-            // TODO: Credit wallet or update ride status here
-            // For now, just return success
+            const verifiedRideId = verification.metadata?.rideId;
+            // Credit wallet on successful payment verification
+            try {
+                await walletService.recordEscrowDeposit({
+                    reference: paymentReference,
+                    amount: verification.amount,
+                    currency: (verification.currency || currency || 'NGN') as 'NGN' | 'USD',
+                    riderId: uid,
+                    rideId: verifiedRideId,
+                    purpose: purpose || verification.metadata?.purpose || 'wallet_topup',
+                    gateway: (verification.gateway || 'paystack') as 'paystack' | 'flutterwave' | 'stripe' | 'monnify',
+                    metadata: verification.metadata || {}
+                });
+            } catch (walletError) {
+                logger.error({ err: walletError, reference: paymentReference }, 'Failed to credit wallet after payment verification');
+                // Still return verification success — webhook will also attempt credit
+            }
+
+            // If ride already completed before client called verify, trigger settlement now.
+            if (verifiedRideId) {
+                rideService.triggerSettlementIfComplete(verifiedRideId).catch(err =>
+                    logger.error({ err, rideId: verifiedRideId }, 'Post-verify settlement trigger failed')
+                );
+            }
         }
 
         res.status(200).json(verification);
     } catch (error) {
-        console.error('Error verifying payment:', error);
+        logger.error({ err: error }, 'Error verifying payment');
         res.status(500).json({ error: 'Payment verification failed' });
     }
 };
 
-export const handleStripeWebhook = async (req: Request, res: Response) => {
-    const signature = req.headers['stripe-signature'] as string;
-    if (!signature) {
-        return res.status(400).send('Missing signature');
-    }
+/**
+ * Get wallet balance for authenticated user
+ */
+export const getWalletBalance = async (req: AuthRequest, res: Response) => {
+    try {
+        const { uid } = req.user;
+        const currency = (req.query.currency as 'NGN' | 'USD') || 'NGN';
 
-    const rawBody = (req as any).rawBody;
-    if (!rawBody) {
-        return res.status(400).send('Raw body missing');
-    }
+        const wallet = await walletService.getWallet(uid, currency);
 
-    const result = await paymentService.verifyWebhook('stripe', rawBody, signature);
-    if (!result) {
-        return res.status(400).send('Webhook Error');
-    }
-
-    if (result.success && result.status === 'success') {
-        const { userId, rideId, purpose } = result.metadata || {};
-        if (userId) {
-            try {
-                await walletService.recordEscrowDeposit({
-                    reference: result.reference,
-                    amount: result.amount,
-                    currency: result.currency as 'NGN' | 'USD',
-                    riderId: userId,
-                    rideId,
-                    purpose: purpose || 'wallet_topup',
-                    gateway: 'stripe',
-                    metadata: result.metadata
-                });
-            } catch (e) {
-                console.error('Wallet deposit failed', e);
+        res.status(200).json({
+            success: true,
+            data: {
+                balance: wallet.balance,
+                currency: wallet.currency,
+                lifetimeEarnings: wallet.lifetimeEarnings || 0,
+                pendingWithdrawals: wallet.pendingWithdrawals || 0
             }
-        }
+        });
+    } catch (error) {
+        logger.error({ err: error }, 'Error getting wallet balance');
+        res.status(500).json({ error: 'Failed to get wallet balance' });
     }
-    res.json({ received: true });
 };
 
-export const handlePaystackWebhook = async (req: Request, res: Response) => {
-    const signature = req.headers['x-paystack-signature'] as string;
-    if (!signature) {
-        return res.status(400).send('Missing signature');
-    }
+/**
+ * Get payment/transaction history
+ */
+export const getPaymentHistory = async (req: AuthRequest, res: Response) => {
+    try {
+        const { uid } = req.user;
+        const page = parseInt(req.query.page as string) || 1;
+        const limit = parseInt(req.query.limit as string) || 20;
+        const offset = (page - 1) * limit;
 
-    const result = await paymentService.verifyWebhook('paystack', req.body, signature);
-    if (!result) {
-        return res.status(400).send('Webhook Error');
-    }
+        const countSnap = await db.collection('transactions')
+            .where('userId', '==', uid)
+            .count()
+            .get();
+        const total = countSnap.data().count;
 
-    if (result.success && result.status === 'success') {
-        const { userId, rideId, purpose } = result.metadata || {};
-        if (userId) {
-            try {
-                await walletService.recordEscrowDeposit({
-                    reference: result.reference,
-                    amount: result.amount,
-                    currency: result.currency as 'NGN' | 'USD',
-                    riderId: userId,
-                    rideId,
-                    purpose: purpose || 'wallet_topup',
-                    gateway: 'paystack',
-                    metadata: result.metadata
-                });
-            } catch (e) {
-                console.error('Wallet deposit failed', e);
-            }
-        }
+        const snapshot = await db.collection('transactions')
+            .where('userId', '==', uid)
+            .orderBy('createdAt', 'desc')
+            .offset(offset)
+            .limit(limit)
+            .get();
+
+        const transactions = snapshot.docs.map((doc: any) => ({ id: doc.id, ...doc.data() }));
+
+        res.status(200).json({
+            success: true,
+            data: transactions,
+            pagination: { total, page, limit, totalPages: Math.ceil(total / limit) }
+        });
+    } catch (error) {
+        logger.error({ err: error }, 'Error getting payment history');
+        res.status(500).json({ error: 'Failed to get payment history' });
     }
-    res.json({ received: true });
 };
 
-export const handleFlutterwaveWebhook = (req: Request, res: Response) => res.json({ received: true }); // forwardWebhook('flutterwave', req, res);
-export const handleMonnifyWebhook = (req: Request, res: Response) => res.json({ received: true }); // forwardWebhook('monnify', req, res);
+/**
+ * Get saved payment methods
+ */
+export const getPaymentMethods = async (req: AuthRequest, res: Response) => {
+    try {
+        const { uid } = req.user;
+
+        const snapshot = await db.collection('payment_methods')
+            .where('userId', '==', uid)
+            .where('isActive', '==', true)
+            .orderBy('createdAt', 'desc')
+            .get();
+
+        const methods = snapshot.docs.map((doc: any) => ({ id: doc.id, ...doc.data() }));
+
+        res.status(200).json({ success: true, data: methods });
+    } catch (error) {
+        logger.error({ err: error }, 'Error getting payment methods');
+        res.status(500).json({ error: 'Failed to get payment methods' });
+    }
+};
+
+/**
+ * Add a new payment method
+ */
+export const addPaymentMethod = async (req: AuthRequest, res: Response) => {
+    try {
+        const { uid } = req.user;
+        const { type, details, isDefault } = req.body;
+
+        if (!type || !details) {
+            res.status(400).json({ error: 'type and details are required' });
+            return;
+        }
+
+        // If setting as default, unset other defaults
+        if (isDefault) {
+            const existing = await db.collection('payment_methods')
+                .where('userId', '==', uid)
+                .where('isDefault', '==', true)
+                .get();
+
+            const batch = db.batch();
+            existing.docs.forEach((doc: any) => {
+                batch.update(doc.ref, { isDefault: false });
+            });
+            await batch.commit();
+        }
+
+        const methodRef = await db.collection('payment_methods').add({
+            userId: uid,
+            type,
+            details,
+            isDefault: isDefault || false,
+            isActive: true,
+            createdAt: new Date(),
+            updatedAt: new Date()
+        });
+
+        res.status(201).json({
+            success: true,
+            data: { id: methodRef.id, type, details, isDefault: isDefault || false }
+        });
+    } catch (error) {
+        logger.error({ err: error }, 'Error adding payment method');
+        res.status(500).json({ error: 'Failed to add payment method' });
+    }
+};
+
+/**
+ * Delete a payment method
+ */
+export const deletePaymentMethod = async (req: AuthRequest, res: Response) => {
+    try {
+        const { uid } = req.user;
+        const { id } = req.params;
+
+        const methodRef = db.collection('payment_methods').doc(id);
+        const doc = await methodRef.get();
+
+        if (!doc.exists) {
+            res.status(404).json({ error: 'Payment method not found' });
+            return;
+        }
+
+        if (doc.data()!.userId !== uid) {
+            res.status(403).json({ error: 'Unauthorized' });
+            return;
+        }
+
+        await methodRef.update({ isActive: false, deletedAt: new Date() });
+
+        res.status(200).json({ success: true, message: 'Payment method deleted' });
+    } catch (error) {
+        logger.error({ err: error }, 'Error deleting payment method');
+        res.status(500).json({ error: 'Failed to delete payment method' });
+    }
+};
+
+/**
+ * Add money to wallet
+ */
+export const addToWallet = async (req: AuthRequest, res: Response) => {
+    try {
+        const { amount, currency, paymentMethod } = req.body;
+        const { uid, email } = req.user;
+
+        if (!amount || amount <= 0) {
+            res.status(400).json({ error: 'Invalid amount' });
+            return;
+        }
+
+        const reference = `TOPUP-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
+
+        // Default to NG region for now, or infer from currency
+        const region = currency === 'USD' ? 'US-CHI' : 'NG';
+
+        const result = await paymentService.initializePayment(
+            region,
+            email,
+            amount,
+            currency,
+            reference,
+            {
+                purpose: 'wallet_topup',
+                userId: uid,
+                paymentMethod,
+                captureMode: 'auto'
+            }
+        );
+
+        res.status(200).json({ success: true, data: result });
+    } catch (error: any) {
+        logger.error({ err: error }, 'Error adding to wallet');
+        res.status(500).json({ error: 'Failed to add money to wallet' });
+    }
+};
+
+/**
+ * Withdraw from wallet
+ */
+export const withdrawFromWallet = async (req: AuthRequest, res: Response) => {
+    try {
+        const { amount, currency, bankAccountId } = req.body;
+        const { uid } = req.user;
+
+        if (!amount || amount <= 0) {
+            res.status(400).json({ error: 'Invalid amount' });
+            return;
+        }
+
+        // Enforce minimum withdrawal
+        const minWithdrawal = currency === 'USD' ? 5 : 500;
+        if (amount < minWithdrawal) {
+            res.status(400).json({ error: `Minimum withdrawal is ${currency === 'USD' ? '$' : '₦'}${minWithdrawal}` });
+            return;
+        }
+
+        // Validate currency
+        if (!['NGN', 'USD'].includes(currency)) {
+            res.status(400).json({ error: 'Unsupported currency. Use NGN or USD.' });
+            return;
+        }
+
+        const wallet = await walletService.getWallet(uid, currency);
+        if (wallet.balance.amount < amount) {
+            res.status(400).json({ error: 'Insufficient balance' });
+            return;
+        }
+
+        // Get bank details if bankAccountId provided
+        let accountNumber, bankCode;
+        if (bankAccountId) {
+            const methodDoc = await db.collection('payment_methods').doc(bankAccountId).get();
+            if (!methodDoc.exists) {
+                res.status(404).json({ error: 'Bank account not found' });
+                return;
+            }
+            const method = methodDoc.data();
+            if (method?.userId !== uid) {
+                res.status(403).json({ error: 'Unauthorized' });
+                return;
+            }
+            accountNumber = method?.details?.accountNumber;
+            bankCode = method?.details?.bankCode;
+        } else {
+            // If no ID, expect details in body (not supported by mobile app yet but good for backend)
+            accountNumber = req.body.accountNumber;
+            bankCode = req.body.bankCode;
+        }
+
+        if (!accountNumber || !bankCode) {
+            res.status(400).json({ error: 'Bank account details required' });
+            return;
+        }
+
+        const reference = `WITHDRAW-${Date.now()}`;
+
+        // Debit wallet immediately
+        await walletService.processTransaction(
+            uid,
+            amount,
+            'debit',
+            'withdrawal',
+            'Wallet Withdrawal',
+            reference,
+            {
+                walletCurrency: currency,
+                metadata: { withdrawalReference: reference, bankAccountId }
+            }
+        );
+
+        // Create payout request record (reusing payout_requests collection for consistency)
+        const now = new Date();
+        await db.collection('payout_requests').add({
+            userId: uid,
+            amount,
+            currency,
+            accountNumber,
+            bankCode,
+            reference,
+            status: 'pending',
+            gateway: null,
+            createdAt: now,
+            updatedAt: now,
+            statusHistory: [{ status: 'pending', at: now, actor: uid, notes: 'Wallet withdrawal requested' }],
+            metadata: { bankAccountId, source: 'wallet_withdraw' },
+            payoutChannel: 'bank_transfer',
+            walletCurrency: currency,
+            walletId: wallet.id
+        });
+
+        res.status(200).json({ success: true, data: { reference, status: 'pending' } });
+    } catch (error: any) {
+        logger.error({ err: error }, 'Error withdrawing from wallet');
+        res.status(500).json({ error: 'Failed to withdraw from wallet' });
+    }
+};
+
+/**
+ * Request a refund for a wallet top-up transaction.
+ * Creates a refund_requests document for admin review — does NOT auto-initiate a gateway refund.
+ */
+export const requestWalletRefund = async (req: AuthRequest, res: Response) => {
+    try {
+        const { uid } = req.user;
+        const { reference, reason } = req.body;
+
+        if (!reference || typeof reference !== 'string') {
+            res.status(400).json({ error: 'reference is required' });
+            return;
+        }
+
+        if (!reason || typeof reason !== 'string') {
+            res.status(400).json({ error: 'reason is required' });
+            return;
+        }
+
+        // Find the transaction by reference and verify ownership
+        const txSnapshot = await db.collection('transactions')
+            .where('reference', '==', reference)
+            .where('userId', '==', uid)
+            .limit(1)
+            .get();
+
+        if (txSnapshot.empty) {
+            res.status(404).json({ error: 'Transaction not found' });
+            return;
+        }
+
+        const txDoc = txSnapshot.docs[0];
+        const tx = txDoc.data();
+
+        // Only allow refund requests for wallet top-ups
+        if (tx.category !== 'wallet_topup') {
+            res.status(400).json({ error: 'Only wallet top-up transactions can be refunded' });
+            return;
+        }
+
+        // Check it hasn't already been refunded
+        if (tx.refundStatus === 'refunded' || tx.refundStatus === 'pending') {
+            res.status(409).json({ error: 'A refund request already exists for this transaction' });
+            return;
+        }
+
+        // Only allow within 24 hours of top-up
+        const createdAt = tx.createdAt?.toDate ? tx.createdAt.toDate() : new Date(tx.createdAt);
+        const ageMs = Date.now() - createdAt.getTime();
+        const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
+        if (ageMs > TWENTY_FOUR_HOURS) {
+            res.status(400).json({ error: 'Refund window has expired (24 hours)' });
+            return;
+        }
+
+        // Check no existing pending refund request for this reference
+        const existingRefund = await db.collection('refund_requests')
+            .where('originalReference', '==', reference)
+            .limit(1)
+            .get();
+
+        if (!existingRefund.empty) {
+            res.status(409).json({ error: 'A refund request already exists for this transaction' });
+            return;
+        }
+
+        const refundRef = await db.collection('refund_requests').add({
+            userId: uid,
+            amount: tx.amount,
+            currency: tx.currency || 'NGN',
+            originalReference: reference,
+            transactionId: txDoc.id,
+            reason,
+            status: 'pending',
+            createdAt: new Date()
+        });
+
+        // Mark transaction as refund pending
+        await txDoc.ref.update({ refundStatus: 'pending' });
+
+        res.status(201).json({
+            message: 'Refund request submitted. Our team will review and process it within 3-5 business days.',
+            refundRequestId: refundRef.id
+        });
+    } catch (error) {
+        logger.error({ err: error }, 'Error requesting wallet refund');
+        res.status(500).json({ error: 'Failed to submit refund request' });
+    }
+};
+
+/**
+ * Charge the rider's on-platform wallet for a ride.
+ *
+ * Use this instead of `initiatePayment` when paymentMethod = 'wallet'.
+ * The rider's wallet balance is debited, an escrow hold is created, and
+ * settlement runs immediately if the ride is already completed.
+ *
+ * POST /api/v1/payments/wallet/charge-ride
+ * Body: { rideId: string, amount: number, currency?: string }
+ */
+export const chargeRideWithWallet = async (req: AuthRequest, res: Response) => {
+    const { rideId, amount, currency } = req.body;
+    const { uid } = req.user;
+
+    try {
+        // Validate ride ownership and fetch authoritative fare
+        const rideDoc = await db.collection('rides').doc(rideId).get();
+        if (!rideDoc.exists) {
+            res.status(404).json({ error: 'Ride not found' });
+            return;
+        }
+        const ride = rideDoc.data()!;
+
+        if (ride.riderId !== uid && req.user.role !== 'admin') {
+            res.status(403).json({ error: 'Unauthorized payment for this ride' });
+            return;
+        }
+
+        // Use the authoritative fare from the ride doc, reject tampered amounts
+        const expectedAmount =
+            typeof ride.pricing?.finalFare === 'number'
+                ? ride.pricing.finalFare
+                : typeof ride.pricing?.estimatedFare === 'number'
+                    ? ride.pricing.estimatedFare
+                    : null;
+
+        if (typeof expectedAmount === 'number' && expectedAmount > 0) {
+            const tolerance = Math.max(0.5, expectedAmount * 0.01);
+            if (Math.abs(amount - expectedAmount) > tolerance) {
+                res.status(400).json({ error: `Invalid amount. Expected ${expectedAmount}` });
+                return;
+            }
+        }
+
+        const rideCurrency = (ride.pricing?.currency ?? currency ?? 'NGN') as 'NGN' | 'USD';
+
+        // Pre-flight balance check (the actual debit inside chargeWalletForRide
+        // also throws 'Insufficient funds' if balance is too low, but checking
+        // early gives a cleaner error message before the DB transaction starts)
+        const wallet = await walletService.getWallet(uid, rideCurrency);
+        if (wallet.balance.amount < amount) {
+            res.status(400).json({ error: 'Insufficient wallet balance' });
+            return;
+        }
+
+        const reference = `WALLET-RIDE-${rideId}-${Date.now()}`;
+
+        await walletService.chargeWalletForRide({
+            riderId: uid,
+            rideId,
+            amount,
+            currency: rideCurrency,
+            reference,
+        });
+
+        // Record holdReference on ride doc (same pattern as card initiatePayment)
+        await db.collection('rides').doc(rideId).update({
+            'payment.holdReference': reference,
+            'payment.paymentMethod': 'wallet',
+            'payment.status': 'held',
+        });
+
+        // Trigger driver settlement now if ride already completed
+        rideService.triggerSettlementIfComplete(rideId).catch(err =>
+            logger.error({ err, rideId }, 'Wallet charge: post-debit settlement trigger failed')
+        );
+
+        res.status(200).json({ success: true, reference });
+    } catch (error: any) {
+        if (error?.message === 'Insufficient funds') {
+            res.status(400).json({ error: 'Insufficient wallet balance' });
+            return;
+        }
+        logger.error({ err: error, rideId, uid }, 'chargeRideWithWallet failed');
+        res.status(500).json({ error: 'Wallet charge failed' });
+    }
+};
+
+/**
+ * Get transaction details
+ */
+export const getTransaction = async (req: AuthRequest, res: Response) => {
+    try {
+        const { id } = req.params;
+        const { uid } = req.user;
+
+        const doc = await db.collection('transactions').doc(id).get();
+        if (!doc.exists) {
+            res.status(404).json({ error: 'Transaction not found' });
+            return;
+        }
+
+        const data = doc.data();
+        if (data?.userId !== uid) {
+            res.status(403).json({ error: 'Unauthorized' });
+            return;
+        }
+
+        res.status(200).json({ success: true, data: { id: doc.id, ...data } });
+    } catch (error) {
+        logger.error({ err: error }, 'Error getting transaction');
+        res.status(500).json({ error: 'Failed to get transaction' });
+    }
+};

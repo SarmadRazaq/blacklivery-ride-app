@@ -12,12 +12,12 @@ export class ChicagoPricingStrategy implements IPricingStrategy {
         },
         AIRPORT_RATES: {
             'ORD': {
-                'business_sedan': 125,
-                'business_suv': 150,
+                'business_sedan': 95,
+                'business_suv': 125,
                 'first_class': 150
             },
             'MDW': {
-                'business_sedan': 95,
+                'business_sedan': 85,
                 'business_suv': 110,
                 'first_class': 135
             }
@@ -49,13 +49,19 @@ export class ChicagoPricingStrategy implements IPricingStrategy {
         const distanceFare = distanceMiles * rateConfig.perMile;
         const timeFare = durationMinutes * rateConfig.perMin;
 
-        let surgeMultiplier = ride.pricing.surgeMultiplier || 1.0;
-        const subtotal = (baseFare + distanceFare + timeFare) * surgeMultiplier;
+        const surgeMultiplier = ride.pricing?.surgeMultiplier || 1.0;
         const surgeFare = (baseFare + distanceFare + timeFare) * (surgeMultiplier - 1);
 
         let addOnsFare = 0;
-        if (ride.addOns?.childSeat) addOnsFare += (ride.addOns.childSeat * 10);
-        if (ride.addOns?.meetAndGreet) addOnsFare += 10;
+        if (ride.addOns?.childSeat) addOnsFare += (ride.addOns.childSeat * (config?.addOns?.childSeat ?? 10));
+        if (ride.addOns?.meetAndGreet) addOnsFare += (config?.addOns?.meetAndGreet ?? 10);
+        if ((ride.addOns as any)?.extraStop || (ride.addOns as any)?.extraStops) {
+            const stops = (ride.addOns as any)?.extraStops ?? 1;
+            addOnsFare += stops * (config?.addOns?.extraStop ?? 15);
+        }
+        if ((ride.addOns as any)?.afterHours) {
+            addOnsFare += config?.addOns?.afterHoursFee ?? 10;
+        }
         
         let totalFare = baseFare + distanceFare + timeFare + surgeFare + addOnsFare;
         if (totalFare < rateConfig.minFare) {
@@ -108,7 +114,7 @@ export class ChicagoPricingStrategy implements IPricingStrategy {
         // Cast to any to handle mixed types
         const hourlyRate = (hourlyConfig as any)[category] || this.DEFAULTS.HOURLY_RATES[category as keyof typeof this.DEFAULTS.HOURLY_RATES] || 80;
         
-        const totalFare = hours * hourlyRate;
+        const totalFare = Math.max(hours * hourlyRate, hourlyRate * 2);
 
         return {
             baseFare: totalFare,
@@ -124,18 +130,36 @@ export class ChicagoPricingStrategy implements IPricingStrategy {
     }
 
     calculateCancellationFee(ride: IRide, minutesSinceBooking: number): number {
-        // Sync implementation for now, using defaults
         if (ride.bookingType === 'hourly') {
-            return this.DEFAULTS.HOURLY_RATES[ride.vehicleCategory as keyof typeof this.DEFAULTS.HOURLY_RATES] || 80;
+            const category = (ride.vehicleCategory?.toLowerCase() || 'business_sedan') as keyof typeof this.DEFAULTS.HOURLY_RATES;
+            return this.DEFAULTS.HOURLY_RATES[category] || 80;
         }
-        if (ride.isAirport) {
-            return 50;
+        if (ride.isAirport && ride.airportCode) {
+            // 50% of airport fare
+            const airport = ride.airportCode as keyof typeof this.DEFAULTS.AIRPORT_RATES;
+            const category = (ride.vehicleCategory?.toLowerCase() || 'business_sedan') as keyof typeof this.DEFAULTS.AIRPORT_RATES.ORD;
+            const airportFare = this.DEFAULTS.AIRPORT_RATES[airport]?.[category] || 100;
+            return Math.round(airportFare * 0.5);
         }
+
+        if (minutesSinceBooking < 60) {
+            return 0;
+        }
+
         return 25;
     }
 
     calculateNoShowFee(ride: IRide): number {
-        return this.calculateCancellationFee(ride, 60);
+        if (ride.isAirport && ride.airportCode) {
+            // Airport no-show = full airport fare
+            const airport = ride.airportCode as keyof typeof this.DEFAULTS.AIRPORT_RATES;
+            const category = (ride.vehicleCategory?.toLowerCase() || 'business_sedan') as keyof typeof this.DEFAULTS.AIRPORT_RATES.ORD;
+            return this.DEFAULTS.AIRPORT_RATES[airport]?.[category] || 100;
+        }
+        // Standard no-show = 1.5x cancellation fee
+        const category = ride.vehicleCategory?.toLowerCase() || 'business_sedan';
+        const rates: Record<string, number> = { 'business_sedan': 35, 'business_suv': 50, 'first_class': 65 };
+        return rates[category] || 35;
     }
 
     calculateWaitTimeFee(ride: IRide, waitMinutes: number): number {

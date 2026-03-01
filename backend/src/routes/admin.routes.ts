@@ -27,10 +27,14 @@ import {
     updateBonusProgram,
     listBonusPrograms,
     getEarningsAnalytics,
+    getAnalyticsCounts,
+    getEarningsTimeSeries,
+    listAllPayouts,
     listSupportTickets,
     updateSupportTicket,
     createSupportTicket,
-    updateVehicleStatus
+    updateVehicleStatus,
+    awardLoyaltyPoints
 } from '../controllers/admin.controller';
 import {
     updateUserStatusSchema,
@@ -519,6 +523,9 @@ router.put('/bonuses/:id', validate(updateBonusSchema), idempotency, wrap(update
  */
 router.get('/bonuses', wrap(listBonusPrograms));
 
+// ── Loyalty ──
+router.post('/loyalty/award', idempotency, wrap(awardLoyaltyPoints));
+
 // Analytics
 /**
  * @swagger
@@ -533,6 +540,20 @@ router.get('/bonuses', wrap(listBonusPrograms));
  *         description: Earnings analytics
  */
 router.get('/analytics/earnings', wrap(getEarningsAnalytics));
+
+/**
+ * @swagger
+ * /admin/analytics/counts:
+ *   get:
+ *     summary: Get lightweight aggregate counts for the dashboard
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Ride and user counts
+ */
+router.get('/analytics/counts', wrap(getAnalyticsCounts));
 
 // Support tickets
 /**
@@ -594,5 +615,95 @@ router.post('/support-tickets', validate(createSupportTicketSchema), idempotency
  *         description: Ticket updated
  */
 router.patch('/support-tickets/:id', validate(updateSupportTicketSchema), idempotency, wrap(updateSupportTicket));
+
+/**
+ * @swagger
+ * /admin/payouts:
+ *   get:
+ *     summary: List all payout requests (admin)
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [pending, approved, completed, failed]
+ *     responses:
+ *       200:
+ *         description: List of payout requests
+ */
+router.get('/payouts', wrap(listAllPayouts));
+
+/**
+ * @swagger
+ * /admin/analytics/earnings/timeseries:
+ *   get:
+ *     summary: Get daily earnings time-series data
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: days
+ *         schema:
+ *           type: integer
+ *           default: 30
+ *     responses:
+ *       200:
+ *         description: Daily earnings breakdown
+ */
+router.get('/analytics/earnings/timeseries', wrap(getEarningsTimeSeries));
+
+// ── B2B Accounts ──
+import { b2bPricingService } from '../services/pricing/B2BPricingService';
+
+router.get('/b2b/accounts', wrap(async (req, res) => {
+    const accounts = await b2bPricingService.listAccounts({
+        activeOnly: req.query.activeOnly !== 'false',
+        limit: parseInt(req.query.limit as string) || 50,
+        offset: parseInt(req.query.offset as string) || 0,
+    });
+    res.json({ data: accounts });
+}));
+
+router.post('/b2b/accounts', idempotency, wrap(async (req, res) => {
+    const { userId, businessName, contactEmail, contactPhone, tier, customDiscount, customCommission } = req.body;
+    if (!userId || !businessName || !contactEmail) {
+        res.status(400).json({ message: 'userId, businessName, and contactEmail are required' });
+        return;
+    }
+    const account = await b2bPricingService.createAccount({
+        userId, businessName, contactEmail, contactPhone, tier, customDiscount, customCommission
+    });
+    res.status(201).json({ data: account });
+}));
+
+router.put('/b2b/accounts/:id', idempotency, wrap(async (req, res) => {
+    const account = await b2bPricingService.updateAccount(req.params.id, req.body);
+    if (!account) {
+        res.status(404).json({ message: 'B2B account not found' });
+        return;
+    }
+    res.json({ data: account });
+}));
+
+router.get('/b2b/accounts/:id', wrap(async (req, res) => {
+    const account = await b2bPricingService.getAccountById(req.params.id);
+    if (!account) {
+        res.status(404).json({ message: 'B2B account not found' });
+        return;
+    }
+    res.json({ data: account });
+}));
 
 export default router;

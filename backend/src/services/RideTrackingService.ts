@@ -105,10 +105,20 @@ class RideTrackingService {
             const headingStage = context.stage === 'accepted' || context.stage === 'arrived' ? 'pickup' : 'dropoff';
             const target = headingStage === 'pickup' ? context.pickupLocation : context.dropoffLocation;
 
-            const eta = await googleMapsService.getDistanceAndDuration(
-                { lat: location.lat, lng: location.lng },
-                { lat: target.lat, lng: target.lng }
-            );
+            let etaData = undefined;
+
+            if (target) {
+                const eta = await googleMapsService.getDistanceAndDuration(
+                    { lat: location.lat, lng: location.lng },
+                    { lat: target.lat, lng: target.lng }
+                );
+                etaData = {
+                    seconds: eta.durationSeconds,
+                    text: eta.durationText,
+                    distanceMeters: eta.distanceMeters,
+                    distanceText: eta.distanceText
+                };
+            }
 
             socketService.emitRideUpdate(context.rideId, {
                 rideId: context.rideId,
@@ -117,12 +127,7 @@ class RideTrackingService {
                 stage: context.stage,
                 nextStop: headingStage,
                 location,
-                eta: {
-                    seconds: eta.durationSeconds,
-                    text: eta.durationText,
-                    distanceMeters: eta.distanceMeters,
-                    distanceText: eta.distanceText
-                },
+                eta: etaData,
                 updatedAt: new Date().toISOString()
             });
 

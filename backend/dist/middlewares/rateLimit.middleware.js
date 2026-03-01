@@ -9,9 +9,10 @@ const express_rate_limit_1 = __importDefault(require("express-rate-limit"));
 // Protects against basic DDoS and bot scraping
 exports.globalLimiter = (0, express_rate_limit_1.default)({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    limit: 100, // Limit each IP to 100 requests per windowMs
+    limit: 1000, // INCREASED FOR DEV: Limit each IP to 1000 requests per windowMs
     standardHeaders: true,
     legacyHeaders: false,
+    validate: { xForwardedForHeader: false },
     message: {
         error: 'Too many requests from this IP, please try again after 15 minutes'
     }
@@ -20,9 +21,10 @@ exports.globalLimiter = (0, express_rate_limit_1.default)({
 // Protects login/register endpoints from brute-force attacks
 exports.authLimiter = (0, express_rate_limit_1.default)({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    limit: 5, // Limit each IP to 5 login/register attempts per windowMs
+    limit: 100, // INCREASED FOR DEV: Limit each IP to 100 login/register attempts per windowMs
     standardHeaders: true,
     legacyHeaders: false,
+    validate: { xForwardedForHeader: false },
     message: {
         error: 'Too many login attempts, please try again after 15 minutes'
     }
@@ -31,9 +33,10 @@ exports.authLimiter = (0, express_rate_limit_1.default)({
 // Prevents spamming ride requests
 exports.rideLimiter = (0, express_rate_limit_1.default)({
     windowMs: 1 * 60 * 1000, // 1 minute
-    limit: 3, // Limit each User ID to 3 ride requests per minute
+    limit: 20, // INCREASED FOR DEV: Limit each User ID to 20 ride requests per minute
     standardHeaders: true,
     legacyHeaders: false,
+    validate: { xForwardedForHeader: false, keyGeneratorIpFallback: false },
     keyGenerator: (req) => {
         var _a;
         // Use the user's UID from the auth middleware

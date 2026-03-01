@@ -67,47 +67,50 @@ class RideService {
         this.matchState = new Map();
         this.matchTimers = new Map();
     }
+    getRide(rideId) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const doc = yield firebase_1.db.collection('rides').doc(rideId).get();
+            if (!doc.exists)
+                return null;
+            return Object.assign({ id: doc.id }, doc.data());
+        });
+    }
     createRideRequest(riderId, requestData) {
         return __awaiter(this, void 0, void 0, function* () {
             var _a, _b, _c;
             const now = new Date();
-            // Validate Distance/Pricing
-            const routeData = yield GoogleMapsService_1.googleMapsService.getDistanceAndDuration(requestData.pickupLocation, requestData.dropoffLocation);
-            const distanceKm = routeData.distanceMeters / 1000;
-            const durationMinutes = routeData.durationSeconds / 60;
-            const mockRide = Object.assign(Object.assign({}, requestData), { riderId, createdAt: now });
+            // Map API fields (pickup/dropoff) to Model fields (pickupLocation/dropoffLocation)
+            const pickupLocation = requestData.pickup || requestData.pickupLocation;
+            const dropoffLocation = requestData.dropoff || requestData.dropoffLocation;
+            if (!pickupLocation) {
+                throw new Error('Pickup location is required');
+            }
+            if (requestData.bookingType !== 'hourly' && !dropoffLocation) {
+                throw new Error('Dropoff location is required');
+            }
+            let distanceKm = 0;
+            let durationMinutes = 0;
+            if (dropoffLocation) {
+                const routeData = yield GoogleMapsService_1.googleMapsService.getDistanceAndDuration(pickupLocation, dropoffLocation);
+                distanceKm = routeData.distanceMeters / 1000;
+                durationMinutes = routeData.durationSeconds / 60;
+            }
+            else if (requestData.bookingType === 'hourly' && requestData.hoursBooked) {
+                durationMinutes = requestData.hoursBooked * 60;
+            }
+            const mockRide = Object.assign(Object.assign({}, requestData), { pickupLocation,
+                dropoffLocation,
+                riderId, createdAt: now });
             const authoritativePrice = yield PricingService_1.pricingService.calculateFare(mockRide, distanceKm, durationMinutes);
-            const pickupGeohash = (0, geohash_1.encodeGeohash)(requestData.pickupLocation.lat, requestData.pickupLocation.lng, 7);
-            const dropoffGeohash = (0, geohash_1.encodeGeohash)(requestData.dropoffLocation.lat, requestData.dropoffLocation.lng, 7);
-            const rideRecord = {
-                riderId,
-                status: 'finding_driver',
-                bookingType: (_a = requestData.bookingType) !== null && _a !== void 0 ? _a : 'on_demand',
-                pickupLocation: requestData.pickupLocation,
-                dropoffLocation: requestData.dropoffLocation,
-                vehicleCategory: requestData.vehicleCategory,
-                region: requestData.region,
-                city: requestData.city,
-                isAirport: requestData.isAirport,
-                airportCode: requestData.airportCode,
-                hoursBooked: requestData.hoursBooked,
-                hourlyStartTime: requestData.hourlyStartTime,
-                deliveryDetails: requestData.deliveryDetails,
-                addOns: requestData.addOns,
-                pricing: {
+            const pickupGeohash = (0, geohash_1.encodeGeohash)(pickupLocation.lat, pickupLocation.lng, 7);
+            const dropoffGeohash = dropoffLocation ? (0, geohash_1.encodeGeohash)(dropoffLocation.lat, dropoffLocation.lng, 7) : undefined;
+            const rideRecord = Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign({ riderId, status: 'finding_driver', bookingType: (_a = requestData.bookingType) !== null && _a !== void 0 ? _a : 'on_demand', pickupLocation,
+                dropoffLocation, vehicleCategory: requestData.vehicleCategory, region: requestData.region }, (requestData.city && { city: requestData.city })), (requestData.isAirport !== undefined && { isAirport: requestData.isAirport })), (requestData.airportCode && { airportCode: requestData.airportCode })), (requestData.hoursBooked && { hoursBooked: requestData.hoursBooked })), (requestData.hourlyStartTime && { hourlyStartTime: requestData.hourlyStartTime })), (requestData.deliveryDetails && { deliveryDetails: requestData.deliveryDetails })), (requestData.addOns && { addOns: requestData.addOns })), { pricing: {
                     estimatedFare: authoritativePrice.totalFare,
                     currency: authoritativePrice.currency,
-                    surgeMultiplier: (_c = (_b = requestData.pricing) === null || _b === void 0 ? void 0 : _b.surgeMultiplier) !== null && _c !== void 0 ? _c : 1.0, // Should be server-calculated ideally
+                    surgeMultiplier: (_c = (_b = requestData.pricing) === null || _b === void 0 ? void 0 : _b.surgeMultiplier) !== null && _c !== void 0 ? _c : 1.0,
                     breakdown: authoritativePrice
-                },
-                requestedDriverIds: [],
-                createdAt: now,
-                updatedAt: now,
-                pickupGeohash,
-                pickupGeohash5: pickupGeohash.substring(0, 5),
-                dropoffGeohash5: dropoffGeohash.substring(0, 5),
-                matching: { radiusKm: this.INITIAL_RADIUS_KM, batch: 0 }
-            };
+                }, requestedDriverIds: [], createdAt: now, updatedAt: now, pickupGeohash, pickupGeohash5: pickupGeohash.substring(0, 5) }), (dropoffGeohash && { dropoffGeohash5: dropoffGeohash.substring(0, 5) })), { matching: { radiusKm: this.INITIAL_RADIUS_KM, batch: 0 } });
             const rideDoc = yield firebase_1.db.collection('rides').add(rideRecord);
             const ride = Object.assign(Object.assign({}, rideRecord), { id: rideDoc.id });
             RideEvents_1.rideEvents.emit('ride.created', { rideId: rideDoc.id, riderId, requestedDriverIds: [] });
@@ -146,21 +149,31 @@ class RideService {
             return Array.from(candidates.values())
                 .map((doc) => (Object.assign({ id: doc.id }, doc.data())))
                 .filter((driver) => {
-                var _a, _b, _c, _d, _e, _f;
+                var _a, _b, _c, _d, _e, _f, _g, _h;
                 const driverId = (_a = driver.uid) !== null && _a !== void 0 ? _a : driver.id;
                 if (!driverId)
                     return false;
                 if ((_b = filters.excludeDriverIds) === null || _b === void 0 ? void 0 : _b.includes(driverId))
                     return false;
-                if (filters.vehicleCategory && ((_c = driver.driverProfile) === null || _c === void 0 ? void 0 : _c.vehicleType) !== filters.vehicleCategory)
+                // Check vehicle type in both profile and onboarding
+                const vehicleType = (_d = (_c = driver.driverProfile) === null || _c === void 0 ? void 0 : _c.vehicleType) !== null && _d !== void 0 ? _d : (_e = driver.driverOnboarding) === null || _e === void 0 ? void 0 : _e.vehicleType;
+                if (filters.vehicleCategory && vehicleType !== filters.vehicleCategory)
                     return false;
-                if (filters.region && driver.countryCode && driver.countryCode.toLowerCase() !== filters.region)
+                // Handle region matching (map 'nigeria' -> 'ng', 'chicago' -> 'us')
+                if (filters.region && driver.countryCode) {
+                    const driverRegion = driver.countryCode.toLowerCase();
+                    const filterRegion = filters.region.toLowerCase();
+                    const isMatch = driverRegion === filterRegion ||
+                        (filterRegion === 'nigeria' && driverRegion === 'ng') ||
+                        (filterRegion === 'chicago' && driverRegion === 'us');
+                    if (!isMatch)
+                        return false;
+                }
+                if (((_f = driver.driverDetails) === null || _f === void 0 ? void 0 : _f.rating) && driver.driverDetails.rating < this.MIN_DRIVER_RATING)
                     return false;
-                if (((_d = driver.driverDetails) === null || _d === void 0 ? void 0 : _d.rating) && driver.driverDetails.rating < this.MIN_DRIVER_RATING)
+                if (!((_g = driver.driverStatus) === null || _g === void 0 ? void 0 : _g.lastKnownLocation))
                     return false;
-                if (!((_e = driver.driverStatus) === null || _e === void 0 ? void 0 : _e.lastKnownLocation))
-                    return false;
-                if ((_f = driver.driverStatus) === null || _f === void 0 ? void 0 : _f.currentRideId)
+                if ((_h = driver.driverStatus) === null || _h === void 0 ? void 0 : _h.currentRideId)
                     return false;
                 return true;
             })
@@ -535,6 +548,183 @@ class RideService {
     }
     deg2rad(deg) {
         return deg * (Math.PI / 180);
+    }
+    /**
+     * Estimate fare without creating a ride
+     */
+    estimateFare(requestData) {
+        return __awaiter(this, void 0, void 0, function* () {
+            var _a, _b;
+            const routeData = yield GoogleMapsService_1.googleMapsService.getDistanceAndDuration(requestData.pickup, requestData.dropoff);
+            const distanceKm = routeData.distanceMeters / 1000;
+            const durationMinutes = routeData.durationSeconds / 60;
+            const mockRide = {
+                pickupLocation: requestData.pickup,
+                dropoffLocation: requestData.dropoff,
+                vehicleCategory: requestData.vehicleCategory,
+                region: requestData.region,
+                bookingType: (_a = requestData.bookingType) !== null && _a !== void 0 ? _a : 'on_demand',
+                createdAt: new Date()
+            };
+            const priceBreakdown = yield PricingService_1.pricingService.calculateFare(mockRide, distanceKm, durationMinutes);
+            return {
+                estimatedFare: priceBreakdown.totalFare,
+                currency: priceBreakdown.currency,
+                distanceKm,
+                durationMinutes,
+                breakdown: priceBreakdown,
+                surgeMultiplier: (_b = priceBreakdown.surgeMultiplier) !== null && _b !== void 0 ? _b : 1.0
+            };
+        });
+    }
+    /**
+     * Get ride history for a user (rider or driver)
+     */
+    getRideHistory(userId_1, role_1) {
+        return __awaiter(this, arguments, void 0, function* (userId, role, options = {}) {
+            const { page = 1, limit = 20, status } = options;
+            const offset = (page - 1) * limit;
+            const field = role === 'rider' ? 'riderId' : 'driverId';
+            let query = firebase_1.db.collection('rides')
+                .where(field, '==', userId)
+                .orderBy('createdAt', 'desc');
+            if (status) {
+                query = query.where('status', '==', status);
+            }
+            // Get total count (approximate via a separate query)
+            const countSnap = yield firebase_1.db.collection('rides').where(field, '==', userId).count().get();
+            const total = countSnap.data().count;
+            // Get paginated results
+            const snapshot = yield query.offset(offset).limit(limit).get();
+            const rides = snapshot.docs.map(doc => (Object.assign({ id: doc.id }, doc.data())));
+            return { rides, total, page, limit };
+        });
+    }
+    /**
+     * Rate a driver after ride completion
+     */
+    rateDriver(rideId, riderId, rating, feedback) {
+        return __awaiter(this, void 0, void 0, function* () {
+            if (rating < 1 || rating > 5) {
+                throw new Error('Rating must be between 1 and 5');
+            }
+            const rideRef = firebase_1.db.collection('rides').doc(rideId);
+            const rideSnap = yield rideRef.get();
+            if (!rideSnap.exists) {
+                throw new Error('Ride not found');
+            }
+            const ride = Object.assign({ id: rideSnap.id }, rideSnap.data());
+            if (ride.riderId !== riderId) {
+                throw new Error('You can only rate drivers for your own rides');
+            }
+            if (ride.status !== 'completed') {
+                throw new Error('Can only rate completed rides');
+            }
+            if (ride.driverRating) {
+                throw new Error('Driver already rated for this ride');
+            }
+            // Update ride with rating
+            yield rideRef.update({
+                driverRating: rating,
+                driverFeedback: feedback !== null && feedback !== void 0 ? feedback : null,
+                updatedAt: new Date()
+            });
+            // Update driver's average rating
+            if (ride.driverId) {
+                yield this.updateDriverAverageRating(ride.driverId);
+            }
+            return Object.assign(Object.assign({}, ride), { driverRating: rating, driverFeedback: feedback });
+        });
+    }
+    /**
+     * Rate a rider after ride completion (by driver)
+     */
+    rateRider(rideId, driverId, rating, feedback) {
+        return __awaiter(this, void 0, void 0, function* () {
+            if (rating < 1 || rating > 5) {
+                throw new Error('Rating must be between 1 and 5');
+            }
+            const rideRef = firebase_1.db.collection('rides').doc(rideId);
+            const rideSnap = yield rideRef.get();
+            if (!rideSnap.exists) {
+                throw new Error('Ride not found');
+            }
+            const ride = Object.assign({ id: rideSnap.id }, rideSnap.data());
+            if (ride.driverId !== driverId) {
+                throw new Error('You can only rate riders for your own rides');
+            }
+            if (ride.status !== 'completed') {
+                throw new Error('Can only rate completed rides');
+            }
+            if (ride.riderRating) {
+                throw new Error('Rider already rated for this ride');
+            }
+            // Update ride with rating
+            yield rideRef.update({
+                riderRating: rating,
+                riderFeedback: feedback !== null && feedback !== void 0 ? feedback : null,
+                updatedAt: new Date()
+            });
+            // Update rider's average rating
+            yield this.updateRiderAverageRating(ride.riderId);
+            return Object.assign(Object.assign({}, ride), { riderRating: rating, riderFeedback: feedback });
+        });
+    }
+    /**
+     * Update driver's average rating
+     */
+    updateDriverAverageRating(driverId) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const ridesSnap = yield firebase_1.db.collection('rides')
+                .where('driverId', '==', driverId)
+                .where('driverRating', '>', 0)
+                .limit(100)
+                .get();
+            if (ridesSnap.empty)
+                return;
+            const ratings = ridesSnap.docs.map(doc => doc.data().driverRating);
+            const avgRating = ratings.reduce((a, b) => a + b, 0) / ratings.length;
+            yield firebase_1.db.collection('users').doc(driverId).update({
+                'driverDetails.rating': Math.round(avgRating * 10) / 10,
+                'driverDetails.totalRatings': ratings.length
+            });
+        });
+    }
+    /**
+     * Update rider's average rating
+     */
+    updateRiderAverageRating(riderId) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const ridesSnap = yield firebase_1.db.collection('rides')
+                .where('riderId', '==', riderId)
+                .where('riderRating', '>', 0)
+                .limit(100)
+                .get();
+            if (ridesSnap.empty)
+                return;
+            const ratings = ridesSnap.docs.map(doc => doc.data().riderRating);
+            const avgRating = ratings.reduce((a, b) => a + b, 0) / ratings.length;
+            yield firebase_1.db.collection('users').doc(riderId).update({
+                'riderDetails.rating': Math.round(avgRating * 10) / 10,
+                'riderDetails.totalRatings': ratings.length
+            });
+        });
+    }
+    /**
+     * Get driver's active ride
+     */
+    getDriverActiveRide(driverId) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const snapshot = yield firebase_1.db.collection('rides')
+                .where('driverId', '==', driverId)
+                .where('status', 'in', ['accepted', 'arrived', 'in_progress'])
+                .limit(1)
+                .get();
+            if (snapshot.empty)
+                return null;
+            const doc = snapshot.docs[0];
+            return Object.assign({ id: doc.id }, doc.data());
+        });
     }
 }
 exports.RideService = RideService;

@@ -2,13 +2,17 @@ import { Response, NextFunction } from 'express';
 import { AuthRequest } from './auth.middleware';
 import { db } from '../config/firebase';
 import { IIdempotencyKey } from '../models/IdempotencyKey';
+import { logger } from '../utils/logger';
 
 export const idempotency = async (req: AuthRequest, res: Response, next: NextFunction) => {
     const key = req.headers['idempotency-key'] as string;
 
     if (!key) {
-        // If no key provided, proceed normally (or enforce it depending on strictness)
-        // For now, we'll allow requests without it but warn or just skip idempotency
+        return res.status(400).json({ error: 'Idempotency-Key header is required' });
+    }
+
+    if (!req.user?.uid) {
+        // Idempotency requires authenticated user context
         return next();
     }
 
@@ -24,8 +28,10 @@ export const idempotency = async (req: AuthRequest, res: Response, next: NextFun
             // Check if locked (request in progress)
             if (data.lockedAt && !data.responseCode) {
                 // Simple retry mechanism or conflict error
-                const now = new Date().getTime();
-                const lockedTime = data.lockedAt.getTime();
+                const now = Date.now();
+                // Handle both Firestore Timestamp objects and plain Date objects
+                const lockedAt = data.lockedAt as any;
+                const lockedTime = lockedAt.toDate ? lockedAt.toDate().getTime() : new Date(lockedAt).getTime();
 
                 // If locked for more than 30 seconds, assume crash and allow retry
                 if (now - lockedTime < 30000) {
@@ -34,7 +40,7 @@ export const idempotency = async (req: AuthRequest, res: Response, next: NextFun
             }
 
             if (data.responseCode) {
-                console.log(`Idempotency hit: ${key}`);
+                logger.debug({ key }, 'Idempotency cache hit');
                 return res.status(data.responseCode).json(data.responseBody);
             }
         }
@@ -62,14 +68,14 @@ export const idempotency = async (req: AuthRequest, res: Response, next: NextFun
                 responseCode: res.statusCode,
                 responseBody: body,
                 lockedAt: null // Release lock implicitly by having a response
-            }).catch(err => console.error('Failed to save idempotency response:', err));
+            }).catch(err => logger.error({ err }, 'Failed to save idempotency response'));
 
             return originalJson.call(this, body);
         };
 
         next();
     } catch (error) {
-        console.error('Idempotency error:', error);
+        logger.error({ err: error }, 'Idempotency middleware error');
         next(error);
     }
 };

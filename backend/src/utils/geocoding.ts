@@ -1,4 +1,6 @@
 // backend/src/utils/geocoding.ts
+import { logger } from './logger';
+
 interface NominatimResponse {
     display_name?: string;
 }
@@ -20,7 +22,7 @@ export async function reverseGeocode(lat: number, lng: number): Promise<string |
         const data = await response.json() as NominatimResponse;
         return data.display_name || `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
     } catch (error) {
-        console.warn('Reverse geocoding failed:', error);
+        logger.warn({ err: error }, 'Reverse geocoding failed');
         return `${lat.toFixed(6)}, ${lng.toFixed(6)}`; // Fallback to coordinates
     }
 }

@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { logger } from '../utils/logger';
 
 interface DistanceMatrixResult {
     distanceMeters: number;
@@ -9,11 +10,12 @@ interface DistanceMatrixResult {
 
 export class GoogleMapsService {
     private apiKey: string;
+    private static readonly REQUEST_TIMEOUT_MS = 10_000;
 
     constructor() {
         this.apiKey = process.env.GOOGLE_MAPS_API_KEY || '';
         if (!this.apiKey) {
-            console.warn('GOOGLE_MAPS_API_KEY is not set. Using fallback calculations.');
+            logger.warn('GOOGLE_MAPS_API_KEY is not set. Using fallback calculations.');
         }
     }
 
@@ -25,6 +27,14 @@ export class GoogleMapsService {
         destination: { lat: number; lng: number },
         mode: 'driving' | 'walking' | 'bicycling' = 'driving'
     ): Promise<DistanceMatrixResult> {
+        // Validate inputs
+        if (!origin || origin.lat === undefined || origin.lng === undefined) {
+            throw new Error('Invalid origin: lat and lng are required');
+        }
+        if (!destination || destination.lat === undefined || destination.lng === undefined) {
+            throw new Error('Invalid destination: lat and lng are required');
+        }
+
         if (!this.apiKey) {
             // Fallback to haversine calculation
             return this.fallbackCalculation(origin, destination);
@@ -38,18 +48,19 @@ export class GoogleMapsService {
                     mode,
                     key: this.apiKey,
                     units: 'metric'
-                }
+                },
+                timeout: GoogleMapsService.REQUEST_TIMEOUT_MS
             });
 
             if (response.data.status !== 'OK') {
-                console.error('Google Maps API error:', response.data.status);
+                logger.error({ status: response.data.status }, 'Google Maps API error');
                 return this.fallbackCalculation(origin, destination);
             }
 
             const element = response.data.rows[0]?.elements[0];
 
             if (element?.status !== 'OK') {
-                console.error('Route not found:', element?.status);
+                logger.error({ status: element?.status }, 'Route not found');
                 return this.fallbackCalculation(origin, destination);
             }
 
@@ -61,7 +72,7 @@ export class GoogleMapsService {
             };
 
         } catch (error) {
-            console.error('Google Maps API request failed:', error);
+            logger.error({ err: error }, 'Google Maps API request failed');
             return this.fallbackCalculation(origin, destination);
         }
     }
@@ -118,7 +129,7 @@ export class GoogleMapsService {
      */
     async geocodeAddress(address: string): Promise<{ lat: number; lng: number } | null> {
         if (!this.apiKey) {
-            console.warn('Cannot geocode without API key');
+            logger.warn('Cannot geocode without API key');
             return null;
         }
 
@@ -140,7 +151,7 @@ export class GoogleMapsService {
 
             return null;
         } catch (error) {
-            console.error('Geocoding failed:', error);
+            logger.error({ err: error }, 'Geocoding failed');
             return null;
         }
     }
@@ -167,7 +178,7 @@ export class GoogleMapsService {
 
             return null;
         } catch (error) {
-            console.error('Reverse geocoding failed:', error);
+            logger.error({ err: error }, 'Reverse geocoding failed');
             return null;
         }
     }

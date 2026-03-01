@@ -1,12 +1,24 @@
+export type LedgerCategory =
+    | 'ride_payment'
+    | 'driver_payout'
+    | 'wallet_topup'
+    | 'commission_deduction'
+    | 'refund'
+    | 'escrow_deposit'
+    | 'escrow_release'
+    | 'micro_deduction'
+    | 'subscription_fee';
+
 export interface ILedgerEntry {
     id?: string;
-    transactionId: string; // Groups the debit and credit entries
-    walletId: string; // The wallet being debited or credited
+    transactionId: string;
+    walletId: string;
     type: 'debit' | 'credit';
     amount: number;
     currency: 'NGN' | 'USD';
-    category: 'ride_payment' | 'driver_payout' | 'wallet_topup' | 'commission_deduction' | 'refund';
+    category: LedgerCategory;
     description: string;
-    reference: string; // External reference (e.g., Payment Gateway Ref, Ride ID)
+    reference: string;
+    metadata?: Record<string, unknown>;
     createdAt: Date;
 }

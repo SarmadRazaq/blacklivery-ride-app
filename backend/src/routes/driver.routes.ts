@@ -1,10 +1,15 @@
 import { Router, RequestHandler, Response } from 'express';
+import multer from 'multer';
 import { AuthRequest } from '../types/express';
 import { verifyToken } from '../middlewares/auth.middleware';
-import { checkRole } from '../middlewares/roles.middleware';
+import { checkRole, requireApprovedDriver } from '../middlewares/roles.middleware';
 import { validate } from '../middlewares/validate.middleware';
 import {
     uploadDriverDocuments,
+    getDriverDocuments,
+    refreshDocumentSignedUrl,
+    adminRefreshDocumentSignedUrl,
+    updateDriverVerificationDetails,
     updateDriverBankInfo,
     getDriverApplication,
     adminListDriverApplications,
@@ -12,7 +17,16 @@ import {
     adminReviewDriverApplication,
     adminRequestDocumentResubmission,
     updateDriverAvailability,
-    recordDriverHeartbeat
+    recordDriverHeartbeat,
+    getDriverEarnings,
+    getDriverRideHistory,
+    getDriverActiveRide,
+    getDriverRatingDistribution,
+    getDriverNotifications,
+    markAllDriverNotificationsRead,
+    markDriverNotificationRead,
+    getDriverLoyaltyOverview,
+    getDriverDemandZones
 } from '../controllers/driver.controller';
 import {
     driverDocumentUploadSchema,
@@ -25,6 +39,10 @@ import {
 } from '../schemas/driver.schema';
 
 const router = Router();
+const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 10 * 1024 * 1024 } // 10MB
+});
 
 const wrap = (handler: (req: AuthRequest, res: Response) => Promise<void> | void): RequestHandler => {
     return (req, res, next) => {
@@ -62,7 +80,11 @@ router.use(verifyToken);
  *       200:
  *         description: Documents uploaded
  */
-router.post('/documents', checkRole(['driver']), validate(driverDocumentUploadSchema), wrap(uploadDriverDocuments));
+router.post('/documents', checkRole(['driver']), upload.single('file'), wrap(uploadDriverDocuments));
+router.get('/documents', checkRole(['driver']), wrap(getDriverDocuments));
+// Refresh a 15-min signed URL for a specific document type (driver self-service)
+router.get('/documents/:docType/signed-url', checkRole(['driver']), wrap(refreshDocumentSignedUrl));
+router.patch('/verification-details', checkRole(['driver']), wrap(updateDriverVerificationDetails));
 
 /**
  * @swagger
@@ -128,7 +150,7 @@ router.get('/application', checkRole(['driver']), wrap(getDriverApplication));
  *       200:
  *         description: Availability updated
  */
-router.post('/availability', checkRole(['driver']), validate(driverAvailabilitySchema), wrap(updateDriverAvailability));
+router.post('/availability', checkRole(['driver']), requireApprovedDriver, validate(driverAvailabilitySchema), wrap(updateDriverAvailability));
 
 /**
  * @swagger
@@ -153,7 +175,7 @@ router.post('/availability', checkRole(['driver']), validate(driverAvailabilityS
  *       200:
  *         description: Heartbeat recorded
  */
-router.post('/heartbeat', checkRole(['driver']), validate(driverHeartbeatSchema), wrap(recordDriverHeartbeat));
+router.post('/heartbeat', checkRole(['driver']), requireApprovedDriver, validate(driverHeartbeatSchema), wrap(recordDriverHeartbeat));
 
 // Admin endpoints
 /**
@@ -254,5 +276,104 @@ router.post(
     validate(adminRequestDriverDocumentsSchema),
     wrap(adminRequestDocumentResubmission)
 );
+
+// Refresh a 15-min signed URL for a driver's document (admin use — document review)
+router.get('/applications/:driverId/documents/:docType/signed-url', checkRole(['admin']), wrap(adminRefreshDocumentSignedUrl));
+
+/**
+ * @swagger
+ * /driver/earnings:
+ *   get:
+ *     summary: Get driver earnings summary
+ *     tags: [Drivers]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: period
+ *         schema:
+ *           type: string
+ *           enum: [day, week, month]
+ *           default: week
+ *     responses:
+ *       200:
+ *         description: Earnings summary
+ */
+router.get('/earnings', checkRole(['driver']), requireApprovedDriver, wrap(getDriverEarnings));
+
+/**
+ * @swagger
+ * /driver/earnings/dashboard:
+ *   get:
+ *     summary: Get driver earnings dashboard (redesign)
+ *     tags: [Drivers]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Earnings dashboard data
+ */
+import { getEarningsDashboard, getPayouts } from '../controllers/earnings.controller';
+router.get('/earnings/dashboard', checkRole(['driver']), requireApprovedDriver, wrap(getEarningsDashboard));
+router.get('/payouts', checkRole(['driver']), requireApprovedDriver, wrap(getPayouts));
+
+/**
+ * @swagger
+ * /driver/rides:
+ *   get:
+ *     summary: Get driver ride history
+ *     tags: [Drivers]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: number
+ *           default: 1
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: number
+ *           default: 20
+ *     responses:
+ *       200:
+ *         description: List of rides
+ */
+router.get('/rides', checkRole(['driver']), requireApprovedDriver, wrap(getDriverRideHistory));
+
+/**
+ * @swagger
+ * /driver/active-ride:
+ *   get:
+ *     summary: Get driver's current active ride
+ *     tags: [Drivers]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Active ride details or null
+ */
+router.get('/active-ride', checkRole(['driver']), requireApprovedDriver, wrap(getDriverActiveRide));
+
+/**
+ * @swagger
+ * /driver/ratings:
+ *   get:
+ *     summary: Get driver rating distribution
+ *     tags: [Drivers]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Rating distribution and recent feedback
+ */
+router.get('/ratings', checkRole(['driver']), requireApprovedDriver, wrap(getDriverRatingDistribution));
+// notifications and loyalty are available to all drivers regardless of approval status
+router.get('/notifications', checkRole(['driver']), wrap(getDriverNotifications));
+router.patch('/notifications/read-all', checkRole(['driver']), wrap(markAllDriverNotificationsRead));
+router.patch('/notifications/:id/read', checkRole(['driver']), wrap(markDriverNotificationRead));
+router.get('/loyalty', checkRole(['driver']), requireApprovedDriver, wrap(getDriverLoyaltyOverview));
+router.get('/demand-zones', checkRole(['driver']), requireApprovedDriver, wrap(getDriverDemandZones));
 
 export default router;

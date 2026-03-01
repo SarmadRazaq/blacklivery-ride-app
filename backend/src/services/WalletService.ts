@@ -2,19 +2,22 @@ import admin from 'firebase-admin';
 import { db } from '../config/firebase';
 import { IWallet, IWalletWithBalance } from '../models/Wallet';
 import { ledgerService } from './LedgerService';
+import { logger } from '../utils/logger';
 
-type PaymentGateway = 'paystack' | 'flutterwave' | 'stripe' | 'monnify';
+type PaymentGateway = 'paystack' | 'flutterwave' | 'stripe' | 'monnify' | 'wallet';
 type WalletEntryType = 'credit' | 'debit';
 type WalletCategory =
     | 'ride_payment'
     | 'driver_payout'
     | 'wallet_topup'
+    | 'withdrawal'
     | 'commission_deduction'
     | 'refund'
     | 'escrow_deposit'
     | 'escrow_release'
     | 'micro_deduction'
-    | 'subscription_fee';
+    | 'subscription_fee'
+    | 'cancellation_fee';
 
 const PLATFORM_ESCROW_USERS = {
     NGN: 'PLATFORM_ESCROW_NGN',
@@ -162,6 +165,18 @@ export class WalletService {
         const timestamp = admin.firestore.FieldValue.serverTimestamp();
 
         const runTx = async (transaction: FirebaseFirestore.Transaction) => {
+            // Defence-in-depth: guard against duplicate reference for this wallet
+            const existingLedger = await transaction.get(
+                this.ledgerCollection
+                    .where('walletId', '==', wallet.id)
+                    .where('reference', '==', reference)
+                    .limit(1)
+            );
+            if (!existingLedger.empty) {
+                logger.warn({ walletId: wallet.id, reference }, 'Duplicate transaction reference — skipping');
+                return;
+            }
+
             const walletBalanceRef = this.walletBalancesCollection.doc(wallet.id!);
             const walletBalanceSnapshot = await transaction.get(walletBalanceRef);
             const currentBalance = walletBalanceSnapshot.exists
@@ -172,12 +187,15 @@ export class WalletService {
                 throw new Error('Insufficient funds');
             }
 
+            // Use absolute value based on read to ensure balance check + update are consistent
+            const newBalance = type === 'credit' ? currentBalance + amount : currentBalance - amount;
+
             transaction.set(
                 walletBalanceRef,
                 {
                     walletId: wallet.id,
                     currency: wallet.currency,
-                    available: admin.firestore.FieldValue.increment(type === 'credit' ? amount : -amount),
+                    available: newBalance,
                     updatedAt: timestamp
                 },
                 { merge: true }
@@ -185,13 +203,20 @@ export class WalletService {
 
             const counterpartyCurrency = options.counterpartyCurrency ?? wallet.currency;
             const counterpartyBalanceRef = this.walletBalancesCollection.doc(counterpartyWalletId);
+            const counterpartySnapshot = await transaction.get(counterpartyBalanceRef);
+            const counterpartyBalance = counterpartySnapshot.exists
+                ? (counterpartySnapshot.data()?.available as number) ?? 0
+                : 0;
+            const newCounterpartyBalance = type === 'credit'
+                ? counterpartyBalance - amount
+                : counterpartyBalance + amount;
 
             transaction.set(
                 counterpartyBalanceRef,
                 {
                     walletId: counterpartyWalletId,
                     currency: counterpartyCurrency,
-                    available: admin.firestore.FieldValue.increment(type === 'credit' ? -amount : amount),
+                    available: newCounterpartyBalance,
                     updatedAt: timestamp
                 },
                 { merge: true }
@@ -250,32 +275,36 @@ export class WalletService {
     }
 
     async recordEscrowDeposit(input: EscrowHoldInput): Promise<void> {
-        const holdDoc = this.walletHoldsCollection.doc(input.reference);
-        const existing = await holdDoc.get();
-        if (existing.exists) {
-            return;
-        }
-
         const platformWallet = await this.ensurePlatformWallet(input.currency);
-        await this.processTransaction(
-            platformWallet.userId,
-            input.amount,
-            'credit',
-            'escrow_deposit',
-            `Escrow deposit (${input.purpose})`,
-            input.reference,
-            {
-                counterpartyWalletId: EXTERNAL_PROCESSOR_WALLET_ID,
-                metadata: { gateway: input.gateway, ...input.metadata }
-            }
-        );
 
-        await holdDoc.set({
-            ...input,
-            status: 'held',
-            platformWalletId: platformWallet.id,
-            createdAt: new Date(),
-            updatedAt: new Date()
+        await db.runTransaction(async (transaction) => {
+            const holdRef = this.walletHoldsCollection.doc(input.reference);
+            const existing = await transaction.get(holdRef);
+            if (existing.exists) {
+                return; // Already recorded — idempotent
+            }
+
+            await this.processTransaction(
+                platformWallet.userId,
+                input.amount,
+                'credit',
+                'escrow_deposit',
+                `Escrow deposit (${input.purpose})`,
+                input.reference,
+                {
+                    counterpartyWalletId: EXTERNAL_PROCESSOR_WALLET_ID,
+                    metadata: { gateway: input.gateway, ...input.metadata },
+                    transaction
+                }
+            );
+
+            transaction.set(holdRef, {
+                ...input,
+                status: 'held',
+                platformWalletId: platformWallet.id,
+                createdAt: new Date(),
+                updatedAt: new Date()
+            });
         });
     }
 
@@ -309,7 +338,7 @@ export class WalletService {
             }
 
             const netAfterMicro = this.roundCurrency(hold.amount - microAmount);
-            const commissionRate = options.commissionRate ?? hold.commissionRate ?? 0.2;
+            const commissionRate = options.commissionRate ?? hold.commissionRate ?? 0.25;
             const commissionAmount = this.roundCurrency(netAfterMicro * commissionRate);
             const driverAmount = this.roundCurrency(netAfterMicro - commissionAmount);
 
@@ -351,35 +380,107 @@ export class WalletService {
     }
 
     async releaseEscrowHold(reference: string, reason?: string, metadata?: Record<string, unknown>): Promise<void> {
-        const holdSnap = await this.walletHoldsCollection.doc(reference).get();
-        if (!holdSnap.exists) {
-            return;
-        }
+        if (!reference) return;
 
-        const hold = holdSnap.data() as EscrowHoldRecord;
-        if (hold.status !== 'held') {
-            return;
-        }
+        const platformWalletPromise = this.ensurePlatformWallet('NGN'); // Pre-fetch; overridden inside tx
 
-        const platformWallet = await this.ensurePlatformWallet(hold.currency);
-        await this.processTransaction(
-            platformWallet.userId,
-            hold.amount,
-            'debit',
-            'escrow_release',
-            reason ?? `Escrow release for ${reference}`,
-            reference,
-            {
-                counterpartyWalletId: EXTERNAL_PROCESSOR_WALLET_ID,
-                metadata: { ...hold.metadata, ...metadata, releaseReason: reason }
+        await db.runTransaction(async (transaction) => {
+            const holdRef = this.walletHoldsCollection.doc(reference);
+            const holdSnap = await transaction.get(holdRef);
+            if (!holdSnap.exists) {
+                return;
             }
-        );
 
-        await this.walletHoldsCollection.doc(reference).update({
-            status: 'released',
-            releasedAt: new Date(),
-            releaseReason: reason ?? 'refunded',
-            updatedAt: new Date()
+            const hold = holdSnap.data() as EscrowHoldRecord;
+            if (hold.status !== 'held') {
+                return;
+            }
+
+            const platformWallet = await this.ensurePlatformWallet(hold.currency);
+            await this.processTransaction(
+                platformWallet.userId,
+                hold.amount,
+                'debit',
+                'escrow_release',
+                reason ?? `Escrow release for ${reference}`,
+                reference,
+                {
+                    counterpartyWalletId: EXTERNAL_PROCESSOR_WALLET_ID,
+                    metadata: { ...hold.metadata, ...metadata, releaseReason: reason },
+                    transaction
+                }
+            );
+
+            transaction.update(holdRef, {
+                status: 'released',
+                releasedAt: new Date(),
+                releaseReason: reason ?? 'refunded',
+                updatedAt: new Date()
+            });
+        });
+    }
+
+    /**
+     * Charge the rider's on-platform wallet for a completed ride.
+     *
+     * This is the wallet-as-payment counterpart to `recordEscrowDeposit`.
+     * Instead of money arriving from an external gateway, the rider's existing
+     * wallet balance is debited and the same amount is credited to the platform
+     * escrow wallet.  A `wallet_holds` document is created so the normal
+     * `captureEscrowHold` → driver credit flow can proceed unchanged.
+     *
+     * The method is idempotent: a second call with the same reference is a no-op.
+     *
+     * @throws Error('Insufficient funds') if rider balance < amount (from processTransaction)
+     */
+    async chargeWalletForRide(input: {
+        riderId: string;
+        rideId: string;
+        amount: number;
+        currency: 'NGN' | 'USD';
+        reference: string;
+    }): Promise<void> {
+        const platformWallet = await this.ensurePlatformWallet(input.currency);
+
+        await db.runTransaction(async (transaction) => {
+            // Idempotency: skip silently if already processed
+            const holdRef = this.walletHoldsCollection.doc(input.reference);
+            const existing = await transaction.get(holdRef);
+            if (existing.exists) {
+                logger.warn({ reference: input.reference }, 'Wallet ride charge already recorded — skipping');
+                return;
+            }
+
+            // Debit rider wallet; credit platform escrow (double-entry)
+            await this.processTransaction(
+                input.riderId,
+                input.amount,
+                'debit',
+                'ride_payment',
+                `Wallet payment for ride ${input.rideId}`,
+                input.reference,
+                {
+                    counterpartyWalletId: platformWallet.id!,
+                    walletCurrency: input.currency,
+                    metadata: { rideId: input.rideId, purpose: 'ride_payment' },
+                    transaction,
+                }
+            );
+
+            // Create escrow hold so captureEscrowHold() can pay the driver
+            transaction.set(holdRef, {
+                reference: input.reference,
+                amount: input.amount,
+                currency: input.currency,
+                riderId: input.riderId,
+                rideId: input.rideId,
+                purpose: 'ride_payment' as EscrowPurpose,
+                gateway: 'wallet' as PaymentGateway,
+                status: 'held',
+                platformWalletId: platformWallet.id,
+                createdAt: new Date(),
+                updatedAt: new Date(),
+            });
         });
     }
 

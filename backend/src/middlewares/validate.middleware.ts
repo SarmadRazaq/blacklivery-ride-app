@@ -3,11 +3,17 @@ import { ZodSchema, ZodError } from 'zod';
 
 export const validate = (schema: ZodSchema) => (req: Request, res: Response, next: NextFunction) => {
     try {
-        schema.parse({
+        const parsed = schema.parse({
             body: req.body,
             query: req.query,
             params: req.params,
-        });
+        }) as { body?: Record<string, any>; query?: Record<string, any>; params?: Record<string, any> };
+
+        // Apply Zod transforms back to request (e.g. region 'nigeria' → 'NG')
+        if (parsed.body) req.body = parsed.body;
+        if (parsed.query) req.query = parsed.query as any;
+        if (parsed.params) req.params = parsed.params as any;
+
         next();
     } catch (error) {
         if (error instanceof ZodError) {

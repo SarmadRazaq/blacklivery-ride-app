@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx jest:*)",
+      "Bash(npm run:*)",
+      "Bash(npm test:*)",
+      "Bash(npx tsc:*)",
+      "Bash(flutter analyze:*)",
+      "Bash(where flutter:*)",
+      "Bash(powershell:*)",
+      "Bash(\"C:/flutter/bin/flutter.bat\" analyze:*)"
+    ]
+  }
+}

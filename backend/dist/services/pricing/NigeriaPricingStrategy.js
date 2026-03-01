@@ -25,7 +25,8 @@ const CITY_RATE_TABLE = {
 const DELIVERY_RATES = {
     motorbike: { baseFare: 700, costPerKm: 120, costPerMinute: 15, minimumFare: 1500, waitTime: { freeMinutes: 7, perMinute: 20 } },
     sedan: { baseFare: 1000, costPerKm: 150, costPerMinute: 20, minimumFare: 2500, waitTime: { freeMinutes: 7, perMinute: 25 } },
-    suv: { baseFare: 1500, costPerKm: 200, costPerMinute: 30, minimumFare: 4000, waitTime: { freeMinutes: 7, perMinute: 30 } }
+    suv: { baseFare: 1500, costPerKm: 200, costPerMinute: 30, minimumFare: 4000, waitTime: { freeMinutes: 7, perMinute: 30 } },
+    van: { baseFare: 3000, costPerKm: 250, costPerMinute: 35, minimumFare: 7000, waitTime: { freeMinutes: 7, perMinute: 35 } }
 };
 const CANCELLATION_FEES = { sedan: 1500, motorbike: 1500, suv: 2000, xl: 2500 };
 const NOSHOW_FEES = { sedan: 2000, motorbike: 2000, suv: 3000, xl: 4000 };

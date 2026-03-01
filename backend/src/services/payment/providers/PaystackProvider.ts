@@ -1,5 +1,6 @@
 import axios from 'axios';
 import crypto from 'crypto';
+import { logger } from '../../../utils/logger';
 import { IPaymentProvider, PaymentInitResult, PaymentVerificationResult } from '../IPaymentProvider';
 
 export class PaystackProvider implements IPaymentProvider {
@@ -7,7 +8,13 @@ export class PaystackProvider implements IPaymentProvider {
     private readonly baseUrl = 'https://api.paystack.co';
 
     constructor() {
-        this.secretKey = process.env.PAYSTACK_SECRET_KEY || '';
+        const key = process.env.PAYSTACK_SECRET_KEY;
+        if (!key) {
+            // Throw an error to ensure production doesn't silently accept fake payments
+            logger.error('CRITICAL: PAYSTACK_SECRET_KEY is not configured in .env');
+            throw new Error('PAYSTACK_SECRET_KEY is not configured');
+        }
+        this.secretKey = key;
     }
 
     private get headers() {
@@ -27,10 +34,10 @@ export class PaystackProvider implements IPaymentProvider {
                 {
                     email,
                     amount: koboAmount,
-                    currency: 'NGN', // Force NGN for Paystack usually, or pass through if they support others
+                    currency: 'NGN',
                     reference,
                     metadata,
-                    callback_url: process.env.PAYSTACK_CALLBACK_URL // e.g. mobile app deep link
+                    callback_url: process.env.PAYSTACK_CALLBACK_URL
                 },
                 { headers: this.headers }
             );
@@ -41,7 +48,17 @@ export class PaystackProvider implements IPaymentProvider {
                 authorizationUrl: response.data.data.authorization_url
             };
         } catch (error: any) {
-            console.error('Paystack init error:', error.response?.data || error.message);
+            // Log valuable debugging info
+            if (error.response) {
+                logger.error({
+                    status: error.response.status,
+                    data: error.response.data,
+                    inputAmount: amount,
+                    koboAmount
+                }, 'Paystack API responded with error');
+            } else {
+                logger.error({ err: error, inputAmount: amount }, 'Paystack init error (no response)');
+            }
             throw new Error('Payment initialization failed');
         }
     }
@@ -62,8 +79,10 @@ export class PaystackProvider implements IPaymentProvider {
                 gateway: 'paystack',
                 metadata: data.metadata
             };
-        } catch (error) {
+        } catch (error: any) {
+            logger.error({ err: error }, 'Paystack verify error');
             return {
+
                 success: false,
                 amount: 0,
                 currency: '',
@@ -79,8 +98,10 @@ export class PaystackProvider implements IPaymentProvider {
             .update(JSON.stringify(payload))
             .digest('hex');
 
-        if (hash !== signature) {
-            console.warn('Invalid Paystack signature');
+        const hashBuf = Buffer.from(hash, 'hex');
+        const sigBuf = Buffer.from(signature, 'hex');
+        if (hashBuf.length !== sigBuf.length || !crypto.timingSafeEqual(hashBuf, sigBuf)) {
+            logger.warn('Invalid Paystack signature');
             return null;
         }
 
@@ -117,12 +138,12 @@ export class PaystackProvider implements IPaymentProvider {
             );
             return response.data.data.recipient_code;
         } catch (error: any) {
-            console.error('Paystack recipient error:', error.response?.data || error.message);
+            logger.error({ err: error }, 'Paystack recipient error');
             throw new Error('Failed to create recipient');
         }
     }
 
-    async transfer(recipientCode: string, amount: number, currency: string, reason: string): Promise<string> {
+    async transfer(recipientCode: string, amount: number, currency: string, reason: string, _reference?: string): Promise<string> {
         const koboAmount = Math.round(amount * 100);
         try {
             const response = await axios.post(
@@ -137,7 +158,7 @@ export class PaystackProvider implements IPaymentProvider {
             );
             return response.data.data.transfer_code;
         } catch (error: any) {
-            console.error('Paystack transfer error:', error.response?.data || error.message);
+            logger.error({ err: error }, 'Paystack transfer error');
             throw new Error('Transfer failed');
         }
     }

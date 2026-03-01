@@ -19,17 +19,17 @@ exports.createRideSchema = zod_1.z.object({
         pickup: zod_1.z.object({
             lat: zod_1.z.number().min(-90).max(90),
             lng: zod_1.z.number().min(-180).max(180),
-            address: zod_1.z.string().min(1)
+            address: zod_1.z.string().optional()
         }),
         dropoff: zod_1.z.object({
             lat: zod_1.z.number().min(-90).max(90),
             lng: zod_1.z.number().min(-180).max(180),
             address: zod_1.z.string().min(1)
-        }),
-        vehicleCategory: zod_1.z.enum(['motorbike', 'sedan', 'suv', 'xl', 'first_class']),
+        }).optional(),
+        vehicleCategory: zod_1.z.enum(['motorbike', 'sedan', 'suv', 'xl', 'first_class', 'business_sedan']),
         region: zod_1.z.enum(['nigeria', 'chicago']),
         isDelivery: zod_1.z.boolean().optional(),
-        bookingType: zod_1.z.enum(['on_demand', 'hourly', 'delivery']),
+        bookingType: zod_1.z.enum(['on_demand', 'hourly', 'delivery', 'airport_transfer']),
         hoursBooked: zod_1.z.number().min(2).optional(),
         isAirport: zod_1.z.boolean().optional(),
         airportCode: zod_1.z.enum(['ORD', 'MDW']).optional(),
@@ -47,6 +47,21 @@ exports.createRideSchema = zod_1.z.object({
             subscriptionSnapshot: subscriptionSnapshotSchema.optional()
         })
             .optional()
+    }).superRefine((val, ctx) => {
+        if (val.bookingType !== 'hourly' && !val.dropoff) {
+            ctx.addIssue({
+                code: zod_1.z.ZodIssueCode.custom,
+                message: "Dropoff location is required for non-hourly rides",
+                path: ["dropoff"]
+            });
+        }
+        if (val.bookingType === 'hourly' && !val.hoursBooked) {
+            ctx.addIssue({
+                code: zod_1.z.ZodIssueCode.custom,
+                message: "hoursBooked is required for hourly rides",
+                path: ["hoursBooked"]
+            });
+        }
     })
 });
 exports.nearbyDriversSchema = zod_1.z.object({
