@@ -7,7 +7,7 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "build": "tsc",
-    "start": "node dist/server.js",
+    "start": "node dist/src/server.js",
     "dev": "nodemon src/server.ts",
     "create:rider": "ts-node scripts/create_rider.ts",
     "migrate:normalize-user-region": "ts-node scripts/normalize_user_region_currency.ts"

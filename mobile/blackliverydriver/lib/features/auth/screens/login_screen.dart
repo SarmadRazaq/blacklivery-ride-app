@@ -44,25 +44,33 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       return;
     }
 
-    // Check if driver profile / documents are incomplete
-    if (user?.driverProfile == null || status == 'pending_documents') {
+    // Check onboarding status from the driverOnboarding field
+    final onboardingStatus = user?.driverOnboarding?.status;
+    debugPrint('[Nav] onboardingStatus=$onboardingStatus, driverProfile=${user?.driverProfile != null}, status=$status');
+
+    // Approved explicitly, or legacy account with a vehicle already set up
+    final isApproved = onboardingStatus == 'approved' ||
+        (onboardingStatus == null && user?.driverProfile != null);
+
+    if (isApproved) {
+      // Approved — go to map
       Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (context) => const VehicleOnboardingScreen()),
+        MaterialPageRoute(builder: (context) => const DriverMapScreen()),
       );
       return;
     }
 
     // Check if waiting for admin approval
-    if (status == 'pending_approval' || status == 'under_review') {
+    if (onboardingStatus == 'pending_approval' || onboardingStatus == 'under_review') {
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (context) => const ApprovalScreen()),
       );
       return;
     }
 
-    // Approved — go to map
+    // Not onboarded yet — send to vehicle info
     Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (context) => const DriverMapScreen()),
+      MaterialPageRoute(builder: (context) => const VehicleOnboardingScreen()),
     );
   }
 

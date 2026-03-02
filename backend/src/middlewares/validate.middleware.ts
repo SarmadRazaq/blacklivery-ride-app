@@ -10,9 +10,18 @@ export const validate = (schema: ZodSchema) => (req: Request, res: Response, nex
         }) as { body?: Record<string, any>; query?: Record<string, any>; params?: Record<string, any> };
 
         // Apply Zod transforms back to request (e.g. region 'nigeria' → 'NG')
+        // Note: In Express 5, req.query and req.params are read-only getters,
+        // so we mutate the existing objects in-place rather than reassigning.
         if (parsed.body) req.body = parsed.body;
-        if (parsed.query) req.query = parsed.query as any;
-        if (parsed.params) req.params = parsed.params as any;
+        if (parsed.query) {
+            const q = req.query as Record<string, any>;
+            for (const key of Object.keys(q)) delete q[key];
+            Object.assign(q, parsed.query);
+        }
+        if (parsed.params) {
+            for (const key of Object.keys(req.params)) delete req.params[key];
+            Object.assign(req.params, parsed.params);
+        }
 
         next();
     } catch (error) {

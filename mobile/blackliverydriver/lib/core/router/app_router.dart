@@ -45,12 +45,20 @@ final goRouterProvider = Provider<GoRouter>((ref) {
 
       // Guard unapproved drivers from accessing the app
       if (isAuthenticated && !isLogin) {
-        final status = authProvider.user?.status;
-        if (status == 'pending_documents') return '/documents';
-        if (status == 'pending_approval' || status == 'under_review') {
-          return '/approval';
+        final userStatus = authProvider.user?.status;
+        if (userStatus == 'suspended' || userStatus == 'deactivated') return '/login';
+
+        final onboardingStatus = authProvider.user?.driverOnboarding?.status;
+        // Approved explicitly, or legacy account with vehicle already set up
+        final isApproved = onboardingStatus == 'approved' ||
+            (onboardingStatus == null && authProvider.user?.driverProfile != null);
+
+        if (!isApproved) {
+          if (onboardingStatus == 'pending_approval' || onboardingStatus == 'under_review') {
+            return '/approval';
+          }
+          return '/documents';
         }
-        if (status == 'suspended' || status == 'deactivated') return '/login';
       }
 
       return null;

@@ -5,6 +5,8 @@ import '../../core/theme/app_theme.dart';
 import '../../core/widgets/custom_button.dart';
 import '../../core/services/biometric_service.dart';
 import 'create_account_screen.dart';
+import 'vehicle_onboarding_screen.dart';
+import 'approval_screen.dart';
 import '../auth/screens/login_screen.dart';
 import '../ride/driver_map_screen.dart';
 import '../ride/ride_accepted_screen.dart';
@@ -48,6 +50,28 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
           );
           return;
         }
+      }
+
+      // Check onboarding status before going to main app
+      final user = authProvider.user;
+      final onboardingStatus = user?.driverOnboarding?.status;
+      debugPrint('[Splash] onboardingStatus=$onboardingStatus, driverProfile=${user?.driverProfile != null}');
+
+      // Approved explicitly, or legacy account with a vehicle already set up
+      final isApproved = onboardingStatus == 'approved' ||
+          (onboardingStatus == null && user?.driverProfile != null);
+
+      if (!isApproved) {
+        if (onboardingStatus == 'pending_approval' || onboardingStatus == 'under_review') {
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(builder: (context) => const ApprovalScreen()),
+          );
+        } else {
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(builder: (context) => const VehicleOnboardingScreen()),
+          );
+        }
+        return;
       }
 
       final rideProvider = ref.read(rideRiverpodProvider);

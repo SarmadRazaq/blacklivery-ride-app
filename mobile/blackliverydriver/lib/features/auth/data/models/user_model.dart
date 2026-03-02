@@ -1,3 +1,31 @@
+/// Safely convert a Firestore timestamp (Map with _seconds) or ISO string to DateTime.
+DateTime? _parseTimestamp(dynamic value) {
+  if (value == null) return null;
+  if (value is DateTime) return value;
+  if (value is String) return DateTime.tryParse(value);
+  if (value is Map) {
+    // Firestore Timestamp serialised as {_seconds: int, _nanoseconds: int}
+    final seconds = value['_seconds'] ?? value['seconds'];
+    if (seconds is int) {
+      return DateTime.fromMillisecondsSinceEpoch(seconds * 1000);
+    }
+  }
+  return null;
+}
+
+/// Safely extract a String from a value that might be a Map.
+String? _safeString(dynamic value) {
+  if (value == null) return null;
+  if (value is String) return value;
+  if (value is Map) {
+    // Common patterns: {formatted: '...'} or {address: '...'}
+    return value['formatted']?.toString() ??
+        value['address']?.toString() ??
+        value.toString();
+  }
+  return value.toString();
+}
+
 class User {
   final String id;
   final String email;
@@ -12,6 +40,7 @@ class User {
   final String? workAddress;
   final DriverProfile? driverProfile;
   final DriverStatus? driverStatus;
+  final DriverOnboarding? driverOnboarding;
   final List<EmergencyContact> emergencyContacts;
 
   User({
@@ -28,8 +57,13 @@ class User {
     this.workAddress,
     this.driverProfile,
     this.driverStatus,
+    this.driverOnboarding,
     this.emergencyContacts = const [],
   });
+
+  /// Whether driver onboarding is approved (safe to skip onboarding screens)
+  bool get isOnboardingApproved =>
+      driverOnboarding?.status == 'approved';
 
   String get displayName => '${firstName ?? ''} ${lastName ?? ''}'.trim();
 
@@ -50,6 +84,10 @@ class User {
       status = json['driverStatus']['state'];
     }
 
+    // Debug: log what we're parsing
+    print('[User.fromJson] driverOnboarding raw: ${json['driverOnboarding']}');
+    print('[User.fromJson] driverProfile raw: ${json['driverProfile']}');
+
     return User(
       id: json['uid'] ?? json['id'] ?? '',
       email: json['email'] ?? '',
@@ -58,15 +96,18 @@ class User {
       phone: json['phoneNumber'] ?? json['phone'],
       profileImage: json['photoURL'] ?? json['profileImage'],
       status: status,
-      region: json['region'],
+      region: json['region']?.toString(),
       twoFactorEnabled: json['twoFactorEnabled'] ?? false,
-      homeAddress: json['homeAddress'],
-      workAddress: json['workAddress'],
+      homeAddress: _safeString(json['homeAddress']),
+      workAddress: _safeString(json['workAddress']),
       driverProfile: json['driverProfile'] != null
           ? DriverProfile.fromJson(json['driverProfile'])
           : null,
       driverStatus: json['driverStatus'] != null
           ? DriverStatus.fromJson(json['driverStatus'])
+          : null,
+      driverOnboarding: json['driverOnboarding'] != null
+          ? DriverOnboarding.fromJson(json['driverOnboarding'])
           : null,
       emergencyContacts:
           (json['emergencyContacts'] as List<dynamic>?)
@@ -162,6 +203,20 @@ class BankDetails {
   }
 }
 
+class DriverOnboarding {
+  final String status; // 'pending_documents', 'pending_approval', 'under_review', 'approved', 'rejected'
+  final DateTime? completedAt;
+
+  DriverOnboarding({required this.status, this.completedAt});
+
+  factory DriverOnboarding.fromJson(Map<String, dynamic> json) {
+    return DriverOnboarding(
+      status: json['status'] ?? 'pending_documents',
+      completedAt: _parseTimestamp(json['completedAt']),
+    );
+  }
+}
+
 class DriverStatus {
   final bool isOnline;
   final String state;
@@ -176,10 +231,8 @@ class DriverStatus {
   factory DriverStatus.fromJson(Map<String, dynamic> json) {
     return DriverStatus(
       isOnline: json['isOnline'] ?? false,
-      state: json['state'] ?? 'offline',
-      lastOnlineAt: json['lastOnlineAt'] != null
-          ? DateTime.tryParse(json['lastOnlineAt'])
-          : null,
+      state: json['state']?.toString() ?? 'offline',
+      lastOnlineAt: _parseTimestamp(json['lastOnlineAt']),
     );
   }
 }

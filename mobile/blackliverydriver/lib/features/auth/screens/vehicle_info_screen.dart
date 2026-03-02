@@ -36,7 +36,7 @@ class _VehicleInfoScreenState extends ConsumerState<VehicleInfoScreen> {
     final yearController = TextEditingController();
     final plateController = TextEditingController();
     final seatsController = TextEditingController(text: '4');
-    String selectedCategory = 'ride'; // Default category
+    String selectedCategory = 'sedan'; // Default category — must match backend enum
     final formKey = GlobalKey<FormState>();
     XFile? frontImage;
     XFile? backImage;
@@ -165,10 +165,21 @@ class _VehicleInfoScreenState extends ConsumerState<VehicleInfoScreen> {
                               value: selectedCategory,
                               dropdownColor: AppColors.cardBackground,
                               style: const TextStyle(color: AppColors.white),
-                              items: ['ride', 'delivery'].map((String value) {
+                              items: [
+                                'motorbike',
+                                'sedan',
+                                'suv',
+                                'xl',
+                                'first_class',
+                                'business_sedan',
+                                'business_suv',
+                                'cargo_van',
+                              ].map((String value) {
                                 return DropdownMenuItem<String>(
                                   value: value,
-                                  child: Text(value.toUpperCase()),
+                                  child: Text(
+                                    value.replaceAll('_', ' ').toUpperCase(),
+                                  ),
                                 );
                               }).toList(),
                               onChanged: (newValue) {
@@ -226,7 +237,7 @@ class _VehicleInfoScreenState extends ConsumerState<VehicleInfoScreen> {
                           final backUrl = await _uploadVehicleImage(backImage!, uid, 'back');
                           await ref.read(driverRiverpodProvider).addVehicle({
                             'name': nameController.text.trim(),
-                            'year': yearController.text.trim(),
+                            'year': int.parse(yearController.text.trim()),
                             'plateNumber': plateController.text.trim(),
                             'seats': int.tryParse(seatsController.text) ?? 4,
                             'category': selectedCategory,
