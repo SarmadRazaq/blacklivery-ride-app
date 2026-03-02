@@ -84,14 +84,10 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
       body: Stack(
         fit: StackFit.expand,
         children: [
-          Center(
-            child: FractionallySizedBox(
-              widthFactor: 0.5,
-              heightFactor: 0.5,
-              child: Image.asset(
-                'assets/images/screen-2-car.png',
-                fit: BoxFit.cover,
-              ),
+          Positioned.fill(
+            child: Image.asset(
+              'assets/images/screen-2-car.png',
+              fit: BoxFit.cover,
             ),
           ),
           Container(

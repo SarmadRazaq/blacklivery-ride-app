@@ -64,8 +64,12 @@ class NotificationService {
     // Get and register FCM token (don't await to avoid blocking startup)
     _registerToken();
 
+    // Listen for auth state changes — register token when user signs in,
+    // but skip if token was already registered to avoid duplicate calls.
     _authStateSubscription ??= _firebaseAuth.authStateChanges().listen((user) {
-      if (user != null) {
+      if (user != null && _currentToken != null) {
+        _registerTokenWithBackend(_currentToken!);
+      } else if (user != null) {
         _registerToken();
       }
     });

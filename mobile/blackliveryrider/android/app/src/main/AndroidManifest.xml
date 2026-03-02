@@ -8,7 +8,7 @@
     <!-- POST_NOTIFICATIONS required for FCM on Android 13+ (API 33+) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <application
-        android:label="BlackLivery"
+        android:label="BlackLivery Rider"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
 

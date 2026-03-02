@@ -138,6 +138,10 @@ class _RetryInterceptor extends Interceptor {
     final method = err.requestOptions.method.toUpperCase();
     if (method == 'POST') return false;
 
+    // Never retry 429 — retrying rate-limited requests makes it worse
+    final statusCode = err.response?.statusCode;
+    if (statusCode == 429) return false;
+
     // Retry on connection / timeout errors
     if (err.type == DioExceptionType.connectionTimeout ||
         err.type == DioExceptionType.receiveTimeout ||
@@ -147,7 +151,6 @@ class _RetryInterceptor extends Interceptor {
     }
 
     // Retry on 5xx server errors
-    final statusCode = err.response?.statusCode;
     if (statusCode != null && statusCode >= 500) {
       return true;
     }

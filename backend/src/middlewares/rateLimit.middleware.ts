@@ -5,7 +5,7 @@ import { Request, Response } from 'express';
 // Protects against basic DDoS and bot scraping
 export const globalLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    limit: process.env.NODE_ENV === 'production' ? 100 : 1000, // Production: 100, Dev: 1000
+    limit: process.env.NODE_ENV === 'production' ? 300 : 1000, // Production: 300, Dev: 1000
     standardHeaders: true,
     legacyHeaders: false,
     validate: { xForwardedForHeader: false },
@@ -18,7 +18,7 @@ export const globalLimiter = rateLimit({
 // Protects login/register endpoints from brute-force attacks
 export const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    limit: process.env.NODE_ENV === 'production' ? 15 : 100, // Production: 15, Dev: 100
+    limit: process.env.NODE_ENV === 'production' ? 30 : 100, // Production: 30, Dev: 100
     standardHeaders: true,
     legacyHeaders: false,
     validate: { xForwardedForHeader: false },
