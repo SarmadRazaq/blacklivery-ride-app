@@ -1,17 +1,24 @@
 import * as dotenv from 'dotenv';
 import path from 'path';
+import fs from 'fs';
 
-// Explicitly load .env from project root (backend/).
-// In dev (ts-node): __dirname = backend/src/ → go up 1 level
-// In prod (compiled): __dirname = backend/dist/src/ → go up 2 levels
+// Load .env from project root (backend/).
+// In dev (ts-node): __dirname = backend/src/  → up 1 level
+// In prod (compiled): __dirname = backend/dist/src/ → up 2 levels
 const projectRoot = path.resolve(__dirname, __dirname.includes(path.sep + 'dist' + path.sep) ? '../..' : '..');
 const envPath = path.join(projectRoot, '.env');
-const result = dotenv.config({ path: envPath });
 
-if (result.error) {
-    console.error('Failed to load .env file from root:', result.error);
+if (fs.existsSync(envPath)) {
+    const result = dotenv.config({ path: envPath });
+    if (result.error) {
+        console.error('Failed to load .env file:', result.error);
+    } else {
+        console.log(`Loaded environment configuration from ${envPath}`);
+    }
+} else if (process.env.NODE_ENV === 'production') {
+    console.log('No .env file found — using environment variables from host/container.');
 } else {
-    console.log(`Loaded environment configuration from ${envPath}`);
+    console.warn(`Warning: .env file not found at ${envPath}`);
 }
 
 import { validateEnvironment } from './config/env.validation';
