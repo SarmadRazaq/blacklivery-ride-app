@@ -5,6 +5,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:provider/provider.dart';
 import '../../core/data/booking_state.dart';
 import '../../core/models/driver_model.dart';
+import '../../core/providers/auth_provider.dart';
 import '../../core/providers/region_provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
@@ -15,6 +16,7 @@ import 'pickup_time_sheet.dart';
 import 'hourly_booking_screen.dart';
 import 'airport_booking_screen.dart';
 import 'delivery_booking_screen.dart';
+import 'account_screen.dart';
 
 class HomeTab extends StatefulWidget {
   const HomeTab({super.key});
@@ -394,31 +396,59 @@ class _HomeTabState extends State<HomeTab> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  // Menu Button
+                  // Menu Button → Account screen
                   _buildCircleButton(
                     icon: Icons.menu,
                     onTap: () {
-                      // Open drawer
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const AccountScreen(),
+                        ),
+                      );
                     },
                   ),
-                  // Profile Avatar
+                  // Profile Avatar → Account screen
                   GestureDetector(
                     onTap: () {
-                      // Open profile
-                    },
-                    child: Container(
-                      width: 44,
-                      height: 44,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        border: Border.all(color: AppColors.yellow90, width: 2),
-                        image: const DecorationImage(
-                          image: NetworkImage(
-                            'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&h=100&fit=crop',
-                          ),
-                          fit: BoxFit.cover,
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const AccountScreen(),
                         ),
-                      ),
+                      );
+                    },
+                    child: Builder(
+                      builder: (ctx) {
+                        final user = ctx.read<AuthProvider>().user;
+                        final profileImage = user?.profileImage;
+                        return Container(
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: AppColors.yellow90,
+                              width: 2,
+                            ),
+                          ),
+                          child: ClipOval(
+                            child: profileImage != null
+                                ? Image.network(
+                                    profileImage,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) => const Icon(
+                                      Icons.person,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : const Icon(
+                                    Icons.person,
+                                    color: Colors.white,
+                                  ),
+                          ),
+                        );
+                      },
                     ),
                   ),
                 ],

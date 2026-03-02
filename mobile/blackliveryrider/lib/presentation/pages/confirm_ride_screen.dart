@@ -71,8 +71,9 @@ class _ConfirmRideScreenState extends State<ConfirmRideScreen> {
       );
     } else if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Invalid promo code')),
+        const SnackBar(content: Text('Invalid or expired promo code')),
       );
+      _promoController.clear();
     }
   }
 

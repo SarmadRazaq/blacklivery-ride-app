@@ -216,7 +216,7 @@ class _DeliveryProofScreenState extends State<DeliveryProofScreen> {
           Navigator.of(context).pop(true);
         } else {
           setState(() {
-            _error = 'Failed to upload proof. Try again.';
+            _error = 'Failed to upload proof. Check your connection and try again.';
             _isSubmitting = false;
           });
         }
@@ -651,5 +651,6 @@ class _SignaturePainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_SignaturePainter old) => true;
+  bool shouldRepaint(_SignaturePainter old) =>
+      old.strokes != strokes || old.currentStroke != currentStroke;
 }

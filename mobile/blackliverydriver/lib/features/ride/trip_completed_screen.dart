@@ -1,20 +1,21 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../core/providers/riverpod_providers.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/currency_utils.dart';
-import '../../core/services/ride_service.dart';
 import 'data/models/ride_model.dart';
 import 'driver_map_screen.dart';
 
-class TripCompletedScreen extends StatefulWidget {
+class TripCompletedScreen extends ConsumerStatefulWidget {
   final Ride ride;
 
   const TripCompletedScreen({super.key, required this.ride});
 
   @override
-  State<TripCompletedScreen> createState() => _TripCompletedScreenState();
+  ConsumerState<TripCompletedScreen> createState() => _TripCompletedScreenState();
 }
 
-class _TripCompletedScreenState extends State<TripCompletedScreen> {
+class _TripCompletedScreenState extends ConsumerState<TripCompletedScreen> {
   int _selectedRating = 5;
   bool _isSubmitting = false;
   final TextEditingController _feedbackController = TextEditingController();
@@ -47,7 +48,7 @@ class _TripCompletedScreenState extends State<TripCompletedScreen> {
           feedbackText,
           tagsText,
         ].where((s) => s.isNotEmpty).join(' | ');
-        await RideService().rateRider(
+        await ref.read(rideRiverpodProvider).rateRider(
           rideId,
           _selectedRating,
           finalFeedback.isNotEmpty ? finalFeedback : null,

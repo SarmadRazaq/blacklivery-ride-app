@@ -1537,3 +1537,87 @@ export const toggle2fa = async (req: AuthRequest, res: Response): Promise<void> 
         res.status(500).json({ error: 'Unable to update 2FA setting' });
     }
 };
+
+const mapNotification = (doc: FirebaseFirestore.QueryDocumentSnapshot) => ({
+    id: doc.id,
+    ...doc.data(),
+    createdAt: doc.data().createdAt?.toDate?.()?.toISOString() ?? doc.data().createdAt,
+    readAt: doc.data().readAt?.toDate?.()?.toISOString() ?? doc.data().readAt ?? null,
+});
+
+export const getRiderNotifications = async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const { uid } = req.user;
+        const parsedLimit = parseInt((req.query.limit as string) || '30', 10);
+        const limit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? Math.min(parsedLimit, 100) : 30;
+
+        let notifications: ReturnType<typeof mapNotification>[] = [];
+        try {
+            const snapshot = await db
+                .collection('notifications')
+                .where('userId', '==', uid)
+                .orderBy('createdAt', 'desc')
+                .limit(limit)
+                .get();
+            notifications = snapshot.docs.map(mapNotification);
+        } catch {
+            const fallback = await db
+                .collection('notifications')
+                .where('userId', '==', uid)
+                .limit(limit)
+                .get();
+            notifications = fallback.docs
+                .map(mapNotification)
+                .sort((a, b) => {
+                    const toMs = (v: unknown) => v instanceof Date ? v.getTime() : typeof v === 'string' ? new Date(v).getTime() : 0;
+                    return toMs((b as { createdAt?: unknown }).createdAt) - toMs((a as { createdAt?: unknown }).createdAt);
+                });
+        }
+
+        res.status(200).json({ success: true, data: notifications });
+    } catch (error) {
+        logger.error({ err: error }, 'getRiderNotifications failed');
+        res.status(500).json({ error: 'Unable to load notifications' });
+    }
+};
+
+export const markAllRiderNotificationsRead = async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const { uid } = req.user;
+        const unread = await db
+            .collection('notifications')
+            .where('userId', '==', uid)
+            .where('read', '==', false)
+            .get();
+
+        const batch = db.batch();
+        unread.docs.forEach((doc) => batch.update(doc.ref, { read: true, readAt: new Date() }));
+        await batch.commit();
+
+        res.status(200).json({ success: true, updated: unread.size });
+    } catch (error) {
+        logger.error({ err: error }, 'markAllRiderNotificationsRead failed');
+        res.status(500).json({ error: 'Unable to mark notifications as read' });
+    }
+};
+
+export const markRiderNotificationRead = async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const { uid } = req.user;
+        const { id } = req.params;
+
+        const docRef = db.collection('notifications').doc(id);
+        const doc = await docRef.get();
+
+        if (!doc.exists || doc.data()?.userId !== uid) {
+            res.status(404).json({ error: 'Notification not found' });
+            return;
+        }
+
+        await docRef.update({ read: true, readAt: new Date() });
+        res.status(200).json({ success: true });
+    } catch (error) {
+        logger.error({ err: error }, 'markRiderNotificationRead failed');
+        res.status(500).json({ error: 'Unable to mark notification as read' });
+    }
+};

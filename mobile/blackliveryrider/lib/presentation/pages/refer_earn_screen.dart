@@ -60,7 +60,7 @@ class ReferEarnScreen extends StatelessWidget {
           children: [
             // Description text
             Text(
-              'Invite friends to Wakaijugbe and earn\nrewards for every sign-up.',
+              'Invite friends to BlackLivery and earn\nrewards for every sign-up.',
               style: AppTextStyles.body.copyWith(
                 color: AppColors.txtInactive,
                 fontSize: 14,

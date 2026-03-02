@@ -63,6 +63,17 @@
 				<string>com.googleusercontent.apps.384768177166-vamdfo2mq9o1f5ghalmua8elvdkd1dgq</string>
 			</array>
 		</dict>
+		<!-- Custom scheme deep links: blacklivery-driver:// -->
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>CFBundleURLName</key>
+			<string>com.blacklivery.driver</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>blacklivery-driver</string>
+			</array>
+		</dict>
 	</array>
 	<key>UIBackgroundModes</key>
 	<array>

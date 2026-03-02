@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../core/providers/riverpod_providers.dart';
+import '../../core/services/ride_service.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/currency_utils.dart';
 import '../ride/data/models/ride_model.dart';
-import 'ride_history_screen.dart'; // Import the new screen
+import 'ride_history_screen.dart';
 
 class BookingsScreen extends ConsumerStatefulWidget {
   const BookingsScreen({super.key});
@@ -51,9 +53,10 @@ class _BookingsScreenState extends ConsumerState<BookingsScreen> {
               vertical: 8.0,
             ),
             child: Image.asset(
-              'assets/images/upcoming-riders.png', // Using the found asset
+              'assets/images/upcoming-riders.png',
               fit: BoxFit.contain,
               width: double.infinity,
+              errorBuilder: (_, __, ___) => const SizedBox.shrink(),
             ),
           ),
 
@@ -130,12 +133,74 @@ class _BookingsScreenState extends ConsumerState<BookingsScreen> {
     );
   }
 
+  Future<void> _callRider(Ride ride) async {
+    final phone = ride.rider?.phone;
+    if (phone == null || phone.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Rider phone number not available')),
+        );
+      }
+      return;
+    }
+    final uri = Uri(scheme: 'tel', path: phone);
+    if (!await launchUrl(uri)) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not launch phone dialer')),
+        );
+      }
+    }
+  }
+
+  Future<void> _declineScheduledRide(Ride ride) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.cardBackground,
+        title: const Text('Decline Ride?', style: TextStyle(color: Colors.white)),
+        content: const Text(
+          'Are you sure you want to decline this scheduled ride?',
+          style: TextStyle(color: Colors.grey),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Decline', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      await RideService().updateRideStatus(
+        ride.id,
+        'cancelled',
+        reason: 'Driver declined scheduled ride',
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Scheduled ride declined')),
+        );
+        ref.read(rideHistoryRiverpodProvider).loadUpcomingRides();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to decline ride: $e')),
+        );
+      }
+    }
+  }
+
   Widget _buildUpcomingCard(Ride ride) {
-    // Parse scheduled time
     final dateStr = ride.startedAt ?? ride.acceptedAt ?? ride.createdAt;
-    // Assuming ride.scheduledTime exists on the model or we parse it from somewhere.
-    // Since Ride model doesn't have it explicitly, we might rely on createdAt or formatted string.
-    // For the mockup: "Nov 25, 2024 | 10:30 AM"
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -190,8 +255,13 @@ class _BookingsScreenState extends ConsumerState<BookingsScreen> {
               // Visual Asset
               Image.asset(
                 'assets/images/car-move.png',
-                height: 80, // Adjust height to match text
+                height: 80,
                 fit: BoxFit.contain,
+                errorBuilder: (_, __, ___) => const Icon(
+                  Icons.directions_car,
+                  color: Colors.grey,
+                  size: 48,
+                ),
               ),
               const SizedBox(width: 12),
               // Addresses
@@ -294,9 +364,7 @@ class _BookingsScreenState extends ConsumerState<BookingsScreen> {
               // Call Rider Button
               Expanded(
                 child: ElevatedButton(
-                  onPressed: () {
-                    // Call logic
-                  },
+                  onPressed: () => _callRider(ride),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.white,
                     foregroundColor: Colors.black,
@@ -315,11 +383,9 @@ class _BookingsScreenState extends ConsumerState<BookingsScreen> {
               // Decline Schedule Button
               Expanded(
                 child: ElevatedButton(
-                  onPressed: () {
-                    // Decline logic
-                  },
+                  onPressed: () => _declineScheduledRide(ride),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFD32F2F), // Red
+                    backgroundColor: const Color(0xFFD32F2F),
                     foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),

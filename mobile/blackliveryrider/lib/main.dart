@@ -14,6 +14,7 @@ import 'core/utils/currency_utils.dart';
 import 'core/utils/app_alert.dart';
 import 'core/providers/theme_provider.dart';
 import 'core/router/app_router.dart';
+import 'core/config/env_config.dart';
 
 /// Global navigator key kept for legacy usages (e.g. dialogs from services).
 /// Navigation should prefer [appRouter] where possible.
@@ -23,6 +24,9 @@ void main() async {
   runZonedGuarded<Future<void>>(
     () async {
       WidgetsFlutterBinding.ensureInitialized();
+
+      // Load .env configuration before anything else
+      await EnvConfig.load();
 
       try {
         await Firebase.initializeApp();

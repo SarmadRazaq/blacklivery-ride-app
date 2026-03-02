@@ -1,13 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../core/utils/currency_utils.dart';
 import '../../core/models/ride_history_model.dart';
+import '../../core/models/location_model.dart';
+import '../../core/data/booking_state.dart';
 import '../../core/services/ride_history_service.dart';
 import '../../core/services/ride_service.dart';
 import '../widgets/vehicle_icon.dart';
 import 'ride_details_screen.dart';
 import 'modify_ride_screen.dart';
+import 'select_ride_screen.dart';
 
 class MyRidesScreen extends StatefulWidget {
   const MyRidesScreen({super.key});
@@ -307,6 +311,57 @@ class _MyRidesScreenState extends State<MyRidesScreen> {
     );
   }
 
+  Future<void> _bookAgain(RideHistoryItem ride) async {
+    final bookingState = Provider.of<BookingState>(context, listen: false);
+    if (ride.pickupLat != null && ride.pickupLng != null &&
+        ride.dropoffLat != null && ride.dropoffLng != null) {
+      bookingState.setPickupLocation(Location(
+        id: 'prev_pickup_${ride.id}',
+        name: ride.pickupAddress,
+        address: ride.pickupAddress,
+        latitude: ride.pickupLat!,
+        longitude: ride.pickupLng!,
+      ));
+      bookingState.setDropoffLocation(Location(
+        id: 'prev_dropoff_${ride.id}',
+        name: ride.dropoffAddress,
+        address: ride.dropoffAddress,
+        latitude: ride.dropoffLat!,
+        longitude: ride.dropoffLng!,
+      ));
+      if (mounted) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const SelectRideScreen()),
+        );
+      }
+    } else {
+      // No coordinates — go back to home so user can re-enter route
+      Navigator.popUntil(context, (route) => route.isFirst);
+    }
+  }
+
+  String _statusLabel(String status) {
+    switch (status) {
+      case 'pending':    return 'Pending';
+      case 'accepted':   return 'Driver Assigned';
+      case 'scheduled':  return 'Scheduled';
+      case 'in_progress': return 'In Progress';
+      case 'completed':  return 'Completed';
+      case 'cancelled':  return 'Cancelled';
+      default:           return 'Scheduled';
+    }
+  }
+
+  Color _statusColor(String status) {
+    switch (status) {
+      case 'completed':  return AppColors.success;
+      case 'cancelled':  return Colors.red;
+      case 'in_progress': return Colors.blue;
+      default:           return AppColors.yellow90;
+    }
+  }
+
   Widget _buildScheduledRideCard(RideHistoryItem ride) {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
@@ -323,13 +378,13 @@ class _MyRidesScreenState extends State<MyRidesScreen> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
-              color: AppColors.yellow90.withOpacity(0.2),
+              color: _statusColor(ride.status).withOpacity(0.2),
               borderRadius: BorderRadius.circular(4),
             ),
             child: Text(
-              'Incoming rides',
+              _statusLabel(ride.status),
               style: AppTextStyles.caption.copyWith(
-                color: AppColors.yellow90,
+                color: _statusColor(ride.status),
                 fontSize: 10,
               ),
             ),
@@ -475,20 +530,30 @@ class _MyRidesScreenState extends State<MyRidesScreen> {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: AppColors.yellow90.withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(
-                      'Customize',
-                      style: AppTextStyles.caption.copyWith(
-                        color: AppColors.yellow90,
-                        fontSize: 10,
+                  GestureDetector(
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => ModifyRideScreen(ride: ride),
+                        ),
+                      );
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.yellow90.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        'Customize',
+                        style: AppTextStyles.caption.copyWith(
+                          color: AppColors.yellow90,
+                          fontSize: 10,
+                        ),
                       ),
                     ),
                   ),
@@ -588,26 +653,30 @@ class _MyRidesScreenState extends State<MyRidesScreen> {
             Column(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: AppColors.yellow90.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Text(
-                    'Book again',
-                    style: AppTextStyles.caption.copyWith(
-                      color: AppColors.yellow90,
-                      fontSize: 10,
+                GestureDetector(
+                  onTap: () => _bookAgain(ride),
+                  behavior: HitTestBehavior.opaque,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.yellow90.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      'Book again',
+                      style: AppTextStyles.caption.copyWith(
+                        color: AppColors.yellow90,
+                        fontSize: 10,
+                      ),
                     ),
                   ),
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  'N${ride.price.toStringAsFixed(0)}',
+                  CurrencyUtils.format(ride.price, currency: ride.currency),
                   style: AppTextStyles.body.copyWith(
                     color: Colors.white,
                     fontSize: 13,

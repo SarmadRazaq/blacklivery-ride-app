@@ -32,6 +32,7 @@ const SupportPage = () => {
     const [loading, setLoading] = useState(true);
     const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
     const [replyText, setReplyText] = useState('');
+    const [sending, setSending] = useState(false);
 
     const fetchTickets = async () => {
         setLoading(true);
@@ -51,13 +52,14 @@ const SupportPage = () => {
     }, []);
 
     const handleReply = async () => {
-        if (!selectedTicket || !replyText.trim()) return;
+        if (!selectedTicket || !replyText.trim() || sending) return;
 
+        setSending(true);
         try {
             await api.post(supportAdminReply(selectedTicket.id), {
                 content: replyText.trim()
             });
-            
+
             // Optimistic update
             const newMessage: Message = {
                 senderId: 'admin',
@@ -65,21 +67,24 @@ const SupportPage = () => {
                 content: replyText,
                 createdAt: new Date().toISOString()
             };
-            
+
             setSelectedTicket({
                 ...selectedTicket,
                 messages: [...(selectedTicket.messages || []), newMessage]
             });
-            
+
             setReplyText('');
             toast.success('Reply sent');
         } catch {
             toast.error('Failed to send reply');
+        } finally {
+            setSending(false);
         }
     };
 
     const resolveTicket = async () => {
         if (!selectedTicket) return;
+        if (!window.confirm('Mark this ticket as resolved? The user will not be able to reopen it.')) return;
         try {
             await api.post(supportAdminClose(selectedTicket.id));
             toast.success('Ticket resolved');
@@ -200,7 +205,7 @@ const SupportPage = () => {
                                     value={replyText}
                                     onChange={(e) => setReplyText(e.target.value)}
                                 />
-                                <Button onClick={handleReply}>
+                                <Button onClick={handleReply} disabled={sending}>
                                     <Send size={18} />
                                 </Button>
                             </div>

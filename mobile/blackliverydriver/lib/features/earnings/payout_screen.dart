@@ -139,6 +139,8 @@ class _PayoutScreenState extends ConsumerState<PayoutScreen> {
             backgroundColor: Colors.green,
           ),
         );
+        // Refresh provider so UI reflects the new bank details
+        ref.read(earningsRiverpodProvider).fetchDashboard();
       }
     } catch (e) {
       if (mounted) {

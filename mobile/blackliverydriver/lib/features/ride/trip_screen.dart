@@ -204,6 +204,8 @@ class _TripScreenState extends ConsumerState<TripScreen> {
   }
 
   void _endTrip() async {
+    // Capture navigator before async gap so navigation works even if mounted flips
+    final navigator = Navigator.of(context);
     var completed = false;
     try {
       await ref.read(rideRiverpodProvider).updateStatus('completed');
@@ -215,8 +217,8 @@ class _TripScreenState extends ConsumerState<TripScreen> {
         ).showSnackBar(SnackBar(content: Text('Failed to complete trip: $e')));
       }
     }
-    if (mounted && completed) {
-      Navigator.of(context).pushReplacement(
+    if (completed) {
+      navigator.pushReplacement(
         MaterialPageRoute(
           builder: (_) => TripCompletedScreen(ride: widget.ride),
         ),
@@ -535,10 +537,28 @@ class _TripScreenState extends ConsumerState<TripScreen> {
           child: Row(
             children: [
               GestureDetector(
-                onTap: () {
+                onTap: () async {
                   final phone = widget.ride.rider?.phone;
-                  if (phone != null && phone.isNotEmpty) {
-                    launchUrl(Uri.parse('tel:$phone'));
+                  if (phone == null || phone.isEmpty) {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Rider phone number not available'),
+                        ),
+                      );
+                    }
+                    return;
+                  }
+                  try {
+                    await launchUrl(Uri.parse('tel:$phone'));
+                  } catch (_) {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Could not launch phone dialer'),
+                        ),
+                      );
+                    }
                   }
                 },
                 child: Container(

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import api from '../api/client';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/Table';
 import Badge from '../components/ui/Badge';
@@ -50,26 +50,35 @@ const UsersPage = () => {
     const [roleFilter, setRoleFilter] = useState('');
     const [onboardingStatusFilter, setOnboardingStatusFilter] = useState('');
 
+    const [togglingUsers, setTogglingUsers] = useState<Set<string>>(new Set());
+    const abortControllerRef = useRef<AbortController | null>(null);
+
     // Modal State
     const [selectedDriver, setSelectedDriver] = useState<User | null>(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
 
     const fetchUsers = useCallback(async () => {
+        abortControllerRef.current?.abort();
+        const controller = new AbortController();
+        abortControllerRef.current = controller;
+
         setLoading(true);
         try {
             const params = new URLSearchParams();
             if (search) params.append('search', search);
             if (roleFilter) params.append('role', roleFilter);
+            if (onboardingStatusFilter) params.append('onboardingStatus', onboardingStatusFilter);
 
-            const response = await api.get(`${ADMIN_USERS}?${params.toString()}`);
+            const response = await api.get(`${ADMIN_USERS}?${params.toString()}`, { signal: controller.signal });
             setUsers(response.data);
-        } catch (error) {
+        } catch (error: unknown) {
+            if (error && typeof error === 'object' && 'name' in error && (error as { name: string }).name === 'CanceledError') return;
             console.error('Failed to fetch users', error);
             toast.error('Failed to load users');
         } finally {
-            setLoading(false);
+            if (!controller.signal.aborted) setLoading(false);
         }
-    }, [search, roleFilter]);
+    }, [search, roleFilter, onboardingStatusFilter]);
 
     useEffect(() => {
         const debounce = setTimeout(() => {
@@ -79,6 +88,9 @@ const UsersPage = () => {
     }, [fetchUsers]);
 
     const toggleUserStatus = async (userId: string, currentStatus: boolean) => {
+        const action = currentStatus ? 'suspend' : 'activate';
+        if (!window.confirm(`Are you sure you want to ${action} this user?`)) return;
+        setTogglingUsers(prev => new Set(prev).add(userId));
         try {
             await api.patch(adminUserStatus(userId), { isActive: !currentStatus });
             setUsers(users.map(u => u.id === userId ? { ...u, isActive: !currentStatus } : u));
@@ -86,6 +98,8 @@ const UsersPage = () => {
         } catch (error) {
             console.error('Failed to update user status', error);
             toast.error('Failed to update user status');
+        } finally {
+            setTogglingUsers(prev => { const s = new Set(prev); s.delete(userId); return s; });
         }
     };
 
@@ -238,8 +252,9 @@ const UsersPage = () => {
                                                     variant={user.isActive ? 'danger' : 'primary'}
                                                     size="sm"
                                                     onClick={() => toggleUserStatus(user.id, user.isActive)}
+                                                    disabled={togglingUsers.has(user.id)}
                                                 >
-                                                    {user.isActive ? 'Suspend' : 'Activate'}
+                                                    {togglingUsers.has(user.id) ? '...' : (user.isActive ? 'Suspend' : 'Activate')}
                                                 </Button>
                                             </div>
                                         </TableCell>

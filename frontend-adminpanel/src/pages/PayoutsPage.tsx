@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import api from '../api/client';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/Table';
 import Badge from '../components/ui/Badge';
-import { Wallet, ArrowDownCircle, ArrowUpCircle, RefreshCw } from 'lucide-react';
+import { Wallet, ArrowDownCircle, ArrowUpCircle, RefreshCw, ChevronDown, ChevronUp } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { ADMIN_PAYOUTS, ADMIN_ANALYTICS_EARNINGS, approvePayout as approvePayoutEndpoint } from '../api/endpoints';
 import { DEFAULT_PAGE_SIZE } from '../config/constants';
@@ -51,6 +51,13 @@ const PayoutsPage = () => {
     const [page, setPage] = useState(1);
     const [pagination, setPagination] = useState({ total: 0, totalPages: 1 });
     const [summary, setSummary] = useState({ total: 0, pending: 0, completed: 0, failed: 0 });
+    const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+
+    const toggleRow = (id: string) => setExpandedRows(prev => {
+        const s = new Set(prev);
+        s.has(id) ? s.delete(id) : s.add(id);
+        return s;
+    });
 
     const fetchPayouts = useCallback(async () => {
         setLoading(true);
@@ -91,7 +98,12 @@ const PayoutsPage = () => {
         try {
             await api.post(approvePayoutEndpoint(payoutId), { approved: true });
             toast.success('Payout approved');
-            fetchPayouts();
+            // Reset to page 1 so a shrinking list doesn't leave user on an empty page
+            if (page !== 1) {
+                setPage(1); // will re-trigger fetchPayouts via useEffect
+            } else {
+                fetchPayouts();
+            }
         } catch (error) {
             console.error('Failed to approve payout', error);
             toast.error('Failed to approve payout');
@@ -168,6 +180,7 @@ const PayoutsPage = () => {
                     <Table>
                         <TableHeader>
                             <TableRow>
+                                <TableHead className="w-10"></TableHead>
                                 <TableHead>Driver</TableHead>
                                 <TableHead>Amount</TableHead>
                                 <TableHead>Status</TableHead>
@@ -178,38 +191,77 @@ const PayoutsPage = () => {
                         <TableBody>
                             {payouts.length === 0 ? (
                                 <TableRow>
-                                    <TableCell colSpan={5} className="text-center py-8 text-gray-500">No payout records found</TableCell>
+                                    <TableCell colSpan={6} className="text-center py-8 text-gray-500">No payout records found</TableCell>
                                 </TableRow>
                             ) : (
                                 payouts.map(payout => (
-                                    <TableRow key={payout.id}>
-                                        <TableCell>
-                                            <p className="font-medium text-gray-900">{payout.driverInfo?.name || 'Unknown'}</p>
-                                            <p className="text-xs text-gray-500">{payout.driverInfo?.email || payout.userId?.substring(0, 12)}</p>
-                                        </TableCell>
-                                        <TableCell className="font-semibold">{formatMoney(payout.amount, payout.currency)}</TableCell>
-                                        <TableCell>
-                                            <Badge variant={
-                                                payout.status === 'completed' ? 'success' :
-                                                    payout.status === 'approved' ? 'info' :
-                                                        payout.status === 'pending' ? 'warning' :
-                                                            payout.status === 'failed' ? 'danger' : 'default'
-                                            }>
-                                                {payout.status}
-                                            </Badge>
-                                        </TableCell>
-                                        <TableCell>{formatDate(payout.createdAt)}</TableCell>
-                                        <TableCell className="text-right">
-                                            {payout.status === 'pending' && (
-                                                <button
-                                                    onClick={() => approvePayout(payout.id)}
-                                                    className="px-3 py-1 text-sm bg-green-50 text-green-700 rounded-md hover:bg-green-100 border border-green-200"
-                                                >
-                                                    Approve
+                                    <React.Fragment key={payout.id}>
+                                        <TableRow>
+                                            <TableCell>
+                                                <button onClick={() => toggleRow(payout.id)} className="p-1 hover:bg-gray-100 rounded">
+                                                    {expandedRows.has(payout.id) ? <ChevronUp size={16} className="text-gray-500" /> : <ChevronDown size={16} className="text-gray-500" />}
                                                 </button>
-                                            )}
-                                        </TableCell>
-                                    </TableRow>
+                                            </TableCell>
+                                            <TableCell>
+                                                <p className="font-medium text-gray-900">{payout.driverInfo?.name || 'Unknown'}</p>
+                                                <p className="text-xs text-gray-500">{payout.driverInfo?.email || payout.userId?.substring(0, 12)}</p>
+                                            </TableCell>
+                                            <TableCell className="font-semibold">{formatMoney(payout.amount, payout.currency)}</TableCell>
+                                            <TableCell>
+                                                <Badge variant={
+                                                    payout.status === 'completed' ? 'success' :
+                                                        payout.status === 'approved' ? 'info' :
+                                                            payout.status === 'pending' ? 'warning' :
+                                                                payout.status === 'failed' ? 'danger' : 'default'
+                                                }>
+                                                    {payout.status}
+                                                </Badge>
+                                            </TableCell>
+                                            <TableCell>{formatDate(payout.createdAt)}</TableCell>
+                                            <TableCell className="text-right">
+                                                {payout.status === 'pending' && (
+                                                    <button
+                                                        onClick={() => approvePayout(payout.id)}
+                                                        className="px-3 py-1 text-sm bg-green-50 text-green-700 rounded-md hover:bg-green-100 border border-green-200"
+                                                    >
+                                                        Approve
+                                                    </button>
+                                                )}
+                                            </TableCell>
+                                        </TableRow>
+                                        {expandedRows.has(payout.id) && (
+                                            <TableRow key={`${payout.id}-details`}>
+                                                <TableCell colSpan={6} className="bg-gray-50 px-6 py-4">
+                                                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
+                                                        <div>
+                                                            <p className="text-xs font-medium text-gray-500 mb-1">Payout ID</p>
+                                                            <p className="font-mono text-gray-900 break-all">{payout.id}</p>
+                                                        </div>
+                                                        <div>
+                                                            <p className="text-xs font-medium text-gray-500 mb-1">Driver ID</p>
+                                                            <p className="font-mono text-gray-900 break-all">{payout.userId || 'N/A'}</p>
+                                                        </div>
+                                                        <div>
+                                                            <p className="text-xs font-medium text-gray-500 mb-1">Phone</p>
+                                                            <p className="text-gray-900">{payout.driverInfo?.phone || 'N/A'}</p>
+                                                        </div>
+                                                        <div>
+                                                            <p className="text-xs font-medium text-gray-500 mb-1">Method</p>
+                                                            <p className="text-gray-900 capitalize">{payout.method || 'N/A'}</p>
+                                                        </div>
+                                                        <div>
+                                                            <p className="text-xs font-medium text-gray-500 mb-1">Bank Code</p>
+                                                            <p className="text-gray-900">{payout.bankCode || 'N/A'}</p>
+                                                        </div>
+                                                        <div>
+                                                            <p className="text-xs font-medium text-gray-500 mb-1">Account Number</p>
+                                                            <p className="text-gray-900">{payout.accountNumber || 'N/A'}</p>
+                                                        </div>
+                                                    </div>
+                                                </TableCell>
+                                            </TableRow>
+                                        )}
+                                    </React.Fragment>
                                 ))
                             )}
                         </TableBody>

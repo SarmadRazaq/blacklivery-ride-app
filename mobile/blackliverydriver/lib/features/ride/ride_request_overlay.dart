@@ -157,7 +157,9 @@ class _RideRequestOverlayState extends State<RideRequestOverlay>
                   child: Column(
                     children: [
                       _buildLocationRow(
-                        widget.rideData['pickup'] ?? 'Pickup location',
+                        widget.rideData['pickup_address'] ??
+                            widget.rideData['pickup'] ??
+                            'Pickup location',
                         isPickup: true,
                       ),
                       Padding(
@@ -169,7 +171,9 @@ class _RideRequestOverlayState extends State<RideRequestOverlay>
                         ),
                       ),
                       _buildLocationRow(
-                        widget.rideData['dropoff'] ?? 'Dropoff location',
+                        widget.rideData['dropoff_address'] ??
+                            widget.rideData['dropoff'] ??
+                            'Dropoff location',
                         isPickup: false,
                       ),
                     ],

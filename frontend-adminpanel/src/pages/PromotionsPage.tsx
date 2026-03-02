@@ -207,6 +207,8 @@ const PromotionsPage = () => {
     };
 
     const toggleStatus = async (promo: Promotion) => {
+        const action = promo.active ? 'suspend' : 'activate';
+        if (!window.confirm(`Are you sure you want to ${action} the "${promo.code}" promotion? This will take effect immediately.`)) return;
         try {
             await api.put(adminPromotionById(promo.id), {
                 active: !promo.active
@@ -332,6 +334,7 @@ const PromotionsPage = () => {
                             <Input
                                 label="Description"
                                 {...register('description', { required: 'Description is required' })}
+                                error={errors.description?.message as string}
                             />
 
                             <div className="grid grid-cols-2 gap-4">
@@ -348,7 +351,8 @@ const PromotionsPage = () => {
                                 <Input
                                     label="Amount"
                                     type="number"
-                                    {...register('amount', { required: true })}
+                                    {...register('amount', { required: 'Amount is required', min: { value: 0.01, message: 'Amount must be positive' } })}
+                                    error={errors.amount?.message as string}
                                 />
                             </div>
 
@@ -356,7 +360,8 @@ const PromotionsPage = () => {
                                 <Input
                                     label="Start Date"
                                     type="date"
-                                    {...register('startsAt', { required: true })}
+                                    {...register('startsAt', { required: 'Start date is required' })}
+                                    error={errors.startsAt?.message as string}
                                 />
                                 <Input
                                     label="End Date"
@@ -369,7 +374,8 @@ const PromotionsPage = () => {
                                 <Input
                                     label="Max Redemptions"
                                     type="number"
-                                    {...register('maxRedemptions', { required: true })}
+                                    {...register('maxRedemptions', { required: 'Max redemptions is required', min: { value: 1, message: 'Must be at least 1' } })}
+                                    error={errors.maxRedemptions?.message as string}
                                 />
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Region</label>

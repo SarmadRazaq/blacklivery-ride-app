@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:intl/intl.dart';
+import 'package:share_plus/share_plus.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../core/utils/currency_utils.dart';
 import '../../core/models/ride_history_model.dart';
+import '../../core/services/ride_service.dart';
 import '../widgets/vehicle_icon.dart';
 import '../widgets/ride_map_view.dart';
+import 'map_picker_screen.dart';
 
 class ModifyRideScreen extends StatefulWidget {
   final RideHistoryItem ride;
@@ -23,6 +26,7 @@ class _ModifyRideScreenState extends State<ModifyRideScreen> {
   late String _destination;
   String? _additionalStop;
   late String _pickup;
+  bool _isCancelling = false;
 
   @override
   void initState() {
@@ -217,8 +221,18 @@ class _ModifyRideScreenState extends State<ModifyRideScreen> {
                           ),
                         ),
                         GestureDetector(
-                          onTap: () {
-                            // Edit destination
+                          onTap: () async {
+                            final result = await Navigator.push<String>(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const MapPickerScreen(
+                                  title: 'Edit Destination',
+                                ),
+                              ),
+                            );
+                            if (result != null && mounted) {
+                              setState(() => _destination = result);
+                            }
                           },
                           child: Icon(
                             Icons.edit,
@@ -295,8 +309,18 @@ class _ModifyRideScreenState extends State<ModifyRideScreen> {
                           ),
                         ),
                         GestureDetector(
-                          onTap: () {
-                            // Edit pickup
+                          onTap: () async {
+                            final result = await Navigator.push<String>(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const MapPickerScreen(
+                                  title: 'Edit Pickup',
+                                ),
+                              ),
+                            );
+                            if (result != null && mounted) {
+                              setState(() => _pickup = result);
+                            }
                           },
                           child: Icon(
                             Icons.edit,
@@ -535,8 +559,11 @@ class _ModifyRideScreenState extends State<ModifyRideScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 20),
               child: GestureDetector(
                 onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Share link copied!')),
+                  Share.share(
+                    'Track my BlackLivery ride!\n'
+                    'From: $_pickup\n'
+                    'To: $_destination\n'
+                    'Time: $_pickupTime',
                   );
                 },
                 child: Container(
@@ -566,7 +593,7 @@ class _ModifyRideScreenState extends State<ModifyRideScreen> {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
               child: GestureDetector(
-                onTap: _showCancelConfirmation,
+                onTap: _isCancelling ? null : _showCancelConfirmation,
                 child: Container(
                   width: double.infinity,
                   padding: const EdgeInsets.symmetric(vertical: 16),
@@ -576,14 +603,23 @@ class _ModifyRideScreenState extends State<ModifyRideScreen> {
                     border: Border.all(color: Colors.red.withOpacity(0.5)),
                   ),
                   child: Center(
-                    child: Text(
-                      'Cancel ride',
-                      style: AppTextStyles.body.copyWith(
-                        color: Colors.red,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 14,
-                      ),
-                    ),
+                    child: _isCancelling
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              color: Colors.red,
+                              strokeWidth: 2,
+                            ),
+                          )
+                        : Text(
+                            'Cancel ride',
+                            style: AppTextStyles.body.copyWith(
+                              color: Colors.red,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 14,
+                            ),
+                          ),
                   ),
                 ),
               ),
@@ -761,10 +797,7 @@ class _ModifyRideScreenState extends State<ModifyRideScreen> {
           TextButton(
             onPressed: () {
               Navigator.pop(context);
-              Navigator.pop(context);
-              ScaffoldMessenger.of(
-                context,
-              ).showSnackBar(const SnackBar(content: Text('Ride cancelled')));
+              _cancelRide();
             },
             child: Text(
               'Yes, Cancel',
@@ -774,5 +807,26 @@ class _ModifyRideScreenState extends State<ModifyRideScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _cancelRide() async {
+    setState(() => _isCancelling = true);
+    try {
+      await RideService().cancelRide(widget.ride.id, reason: 'Cancelled by rider');
+      if (!mounted) return;
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Ride cancelled successfully')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isCancelling = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to cancel: ${e.toString().replaceAll('Exception: ', '')}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 }

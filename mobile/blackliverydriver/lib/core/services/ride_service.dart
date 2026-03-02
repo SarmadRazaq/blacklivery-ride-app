@@ -48,7 +48,7 @@ class RideService {
     try {
       await _apiClient.dio.post(
         ApiConstants.rateRider.replaceFirst('{rideId}', rideId),
-        data: {'rating': rating, 'feedback': ?feedback},
+        data: {'rating': rating, 'feedback': feedback},
       );
     } catch (e) {
       rethrow;

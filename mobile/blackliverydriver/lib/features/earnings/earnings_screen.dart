@@ -20,6 +20,9 @@ class EarningsScreen extends ConsumerStatefulWidget {
 }
 
 class _EarningsScreenState extends ConsumerState<EarningsScreen> {
+  int _retryCount = 0;
+  static const int _maxRetries = 3;
+
   @override
   void initState() {
     super.initState();
@@ -45,15 +48,25 @@ class _EarningsScreenState extends ConsumerState<EarningsScreen> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Text(
+                  const Text(
                     'Error loading earnings',
-                    style: const TextStyle(color: Colors.red),
+                    style: TextStyle(color: Colors.red),
                   ),
-                  ElevatedButton(
-                    onPressed: () =>
-                        provider.fetchDashboard(), // Changed to fetchDashboard
-                    child: const Text('Retry'),
-                  ),
+                  const SizedBox(height: 8),
+                  if (_retryCount < _maxRetries)
+                    ElevatedButton(
+                      onPressed: () {
+                        setState(() => _retryCount++);
+                        provider.fetchDashboard();
+                      },
+                      child: Text('Retry ($_retryCount/$_maxRetries)'),
+                    )
+                  else
+                    const Text(
+                      'Please check your connection and restart the app.',
+                      style: TextStyle(color: Colors.grey, fontSize: 12),
+                      textAlign: TextAlign.center,
+                    ),
                 ],
               ),
             );

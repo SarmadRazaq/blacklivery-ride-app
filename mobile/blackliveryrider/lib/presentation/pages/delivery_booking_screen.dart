@@ -358,7 +358,7 @@ class _DeliveryBookingScreenState extends State<DeliveryBookingScreen> {
           text: 'Review Delivery',
           isDisabled: _recipientNameController.text.trim().isEmpty ||
               _recipientPhoneController.text.trim().isEmpty,
-          onTap: () {
+          onTap: () async {
             if (_recipientNameController.text.trim().isEmpty ||
                 _recipientPhoneController.text.trim().isEmpty) {
               ScaffoldMessenger.of(context).showSnackBar(
@@ -366,8 +366,8 @@ class _DeliveryBookingScreenState extends State<DeliveryBookingScreen> {
               );
               return;
             }
-            _getQuote();
-            setState(() => _currentStep = 2);
+            await _getQuote();
+            if (mounted) setState(() => _currentStep = 2);
           },
         ),
         const SizedBox(height: AppSpacing.screenBottom),

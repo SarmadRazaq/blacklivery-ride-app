@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../core/models/emergency_contact_model.dart';
@@ -24,6 +25,22 @@ class _EmergencyContactsScreenState extends State<EmergencyContactsScreen> {
   void initState() {
     super.initState();
     _loadContacts();
+    _loadSettings();
+  }
+
+  Future<void> _loadSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (mounted) {
+      setState(() {
+        _nearestPoliceStation = prefs.getBool('emergency_police') ?? true;
+        _shareTripStatus = prefs.getBool('emergency_share_trip') ?? true;
+      });
+    }
+  }
+
+  Future<void> _saveToggle(String key, bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(key, value);
   }
 
   Future<void> _loadContacts() async {
@@ -56,10 +73,20 @@ class _EmergencyContactsScreenState extends State<EmergencyContactsScreen> {
     }
   }
 
-  void _removeContact(EmergencyContact contact) {
-    setState(() {
-      _selectedContacts.removeWhere((c) => c.id == contact.id);
-    });
+  Future<void> _removeContact(EmergencyContact contact) async {
+    final success = await _contactsService.removeEmergencyContact(contact.id);
+    if (success && mounted) {
+      setState(() {
+        _selectedContacts.removeWhere((c) => c.id == contact.id);
+      });
+    } else if (!success && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Failed to remove contact. Please try again.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   @override
@@ -125,9 +152,8 @@ class _EmergencyContactsScreenState extends State<EmergencyContactsScreen> {
                         'We\'ll automatically detect the nearest police station to alert if an emergency is triggered.',
                     value: _nearestPoliceStation,
                     onChanged: (value) {
-                      setState(() {
-                        _nearestPoliceStation = value;
-                      });
+                      setState(() => _nearestPoliceStation = value);
+                      _saveToggle('emergency_police', value);
                     },
                   ),
 
@@ -141,9 +167,8 @@ class _EmergencyContactsScreenState extends State<EmergencyContactsScreen> {
                         'Your live location and trip details will be shared with your emergency contacts when you start a ride.',
                     value: _shareTripStatus,
                     onChanged: (value) {
-                      setState(() {
-                        _shareTripStatus = value;
-                      });
+                      setState(() => _shareTripStatus = value);
+                      _saveToggle('emergency_share_trip', value);
                     },
                   ),
                 ],

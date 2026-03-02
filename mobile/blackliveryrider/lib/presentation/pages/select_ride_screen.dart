@@ -236,7 +236,9 @@ class _SelectRideScreenState extends State<SelectRideScreen> {
                         // Edit route button
                         GestureDetector(
                           onTap: () {
-                            // Navigate to modify route
+                            // Pop back through ConfirmPickupScreen → WhereToScreen
+                            Navigator.pop(context);
+                            Navigator.pop(context);
                           },
                           child: Container(
                             padding: const EdgeInsets.symmetric(

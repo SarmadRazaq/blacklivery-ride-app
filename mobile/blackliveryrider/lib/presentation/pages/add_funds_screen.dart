@@ -28,6 +28,7 @@ class _AddFundsScreenState extends State<AddFundsScreen> {
   List<PaymentMethodOption> _paymentMethods = [];
   bool _isLoading = true;
   bool _isProcessing = false;
+  String? _loadError;
 
   @override
   void initState() {
@@ -36,7 +37,10 @@ class _AddFundsScreenState extends State<AddFundsScreen> {
   }
 
   Future<void> _loadPaymentMethods() async {
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _loadError = null;
+    });
     try {
       final methods = await _paymentService.getPaymentMethods();
       setState(() {
@@ -57,7 +61,10 @@ class _AddFundsScreenState extends State<AddFundsScreen> {
       });
     } catch (e) {
       debugPrint('Error loading methods: $e');
-      setState(() => _isLoading = false);
+      setState(() {
+        _isLoading = false;
+        _loadError = 'Failed to load payment methods. Pull down to retry.';
+      });
     }
   }
 
@@ -88,11 +95,41 @@ class _AddFundsScreenState extends State<AddFundsScreen> {
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : Padding(
+          : RefreshIndicator(
+              onRefresh: _loadPaymentMethods,
+              color: AppColors.yellow90,
+              child: Padding(
               padding: const EdgeInsets.all(20),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Load error banner
+                  if (_loadError != null) ...[
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      margin: const EdgeInsets.only(bottom: 12),
+                      decoration: BoxDecoration(
+                        color: Colors.red.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.red.withOpacity(0.3)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.error_outline, color: Colors.red, size: 18),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              _loadError!,
+                              style: AppTextStyles.caption.copyWith(
+                                color: Colors.red,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                   // Amount selection
                   Text(
                     'How much do you want to add?',
@@ -303,6 +340,7 @@ class _AddFundsScreenState extends State<AddFundsScreen> {
                 ],
               ),
             ),
+          ),
     );
   }
 
@@ -403,6 +441,19 @@ class _AddFundsScreenState extends State<AddFundsScreen> {
     final amount = _customAmount.isNotEmpty
         ? int.tryParse(_customAmount) ?? _selectedAmount
         : _selectedAmount;
+
+    // Minimum top-up validation
+    const minAmount = 5; // $5 / ₦500 minimum
+    if (amount < minAmount) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Minimum top-up is ${CurrencyUtils.format(minAmount.toDouble())}',
+          ),
+        ),
+      );
+      return;
+    }
 
     if (_selectedPaymentMethod == null) {
       ScaffoldMessenger.of(context).showSnackBar(

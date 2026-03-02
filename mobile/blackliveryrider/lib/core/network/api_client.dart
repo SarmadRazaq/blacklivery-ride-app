@@ -1,8 +1,8 @@
 import 'package:dio/dio.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'dart:io';
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import '../config/env_config.dart';
 import '../utils/app_alert.dart';
 import 'api_error_message.dart';
 
@@ -16,15 +16,10 @@ class ApiClient {
   /// Max retry attempts for transient failures (5xx, timeout, connection errors)
   static const int _maxRetries = 3;
 
-  /// Pass API_BASE_URL at build time:
-  /// flutter build apk --dart-define=API_BASE_URL=https://api.blacklivery.com
-  static const String _envBaseUrl = String.fromEnvironment('API_BASE_URL');
-  static const int _localDevPort = 5001;
-
   ApiClient._internal() {
     _dio = Dio(
       BaseOptions(
-        baseUrl: _getBaseUrl(),
+        baseUrl: EnvConfig.apiBaseUrl,
         connectTimeout: const Duration(seconds: 8),
         receiveTimeout: const Duration(seconds: 8),
         sendTimeout: const Duration(seconds: 8),
@@ -91,24 +86,6 @@ class ApiClient {
   }
 
   Dio get dio => _dio;
-
-  static String _getBaseUrl() {
-    // Use compile-time value (--dart-define=API_BASE_URL=...)
-    if (_envBaseUrl.isNotEmpty) return _envBaseUrl;
-
-    // In release mode, refuse to fall back to localhost
-    if (kReleaseMode) {
-      throw StateError(
-        'API_BASE_URL must be set via --dart-define for production builds',
-      );
-    }
-
-    // Dev-only fallbacks
-    // 10.0.2.2 only works on Android emulator — physical devices need the LAN IP
-    if (kIsWeb) return 'http://localhost:$_localDevPort';
-    if (Platform.isAndroid) return 'http://10.0.2.2:$_localDevPort';
-    return 'http://localhost:$_localDevPort';
-  }
 }
 
 /// Interceptor that retries transient failures with exponential backoff.

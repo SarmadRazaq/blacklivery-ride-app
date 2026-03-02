@@ -446,6 +446,14 @@ class RideProvider with ChangeNotifier {
     }
   }
 
+  Future<void> rateRider(String rideId, int rating, String? feedback) async {
+    try {
+      await _rideService.rateRider(rideId, rating, feedback);
+    } catch (e) {
+      rethrow;
+    }
+  }
+
   // ── Trip State Persistence ──────────────────────────────────────────
 
   static const _cacheKey = 'active_ride';

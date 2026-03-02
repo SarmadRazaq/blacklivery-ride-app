@@ -33,13 +33,11 @@ const DashboardPage = () => {
         }
     }, []);
 
-    // NEW: Fetch initial stats on load
+    // Fetch initial stats on load + poll every 30s as socket fallback
     useEffect(() => {
-        const timer = window.setTimeout(() => {
-            void refreshStats();
-        }, 0);
-
-        return () => window.clearTimeout(timer);
+        void refreshStats();
+        const interval = window.setInterval(() => { void refreshStats(); }, 30_000);
+        return () => window.clearInterval(interval);
     }, [refreshStats]);
 
     useEffect(() => {

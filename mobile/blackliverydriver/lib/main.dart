@@ -17,6 +17,7 @@ import 'features/auth/providers/auth_provider.dart';
 import 'core/widgets/connectivity_banner.dart';
 import 'core/providers/riverpod_providers.dart';
 import 'core/router/app_router.dart';
+import 'core/config/env_config.dart';
 
 /// Global navigator key for notification-based navigation
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -25,6 +26,9 @@ Future<void> main() async {
   runZonedGuarded<Future<void>>(
     () async {
       WidgetsFlutterBinding.ensureInitialized();
+
+      // Load .env configuration before anything else
+      await EnvConfig.load();
 
       try {
         await Firebase.initializeApp();

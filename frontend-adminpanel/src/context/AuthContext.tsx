@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useEffect, type ReactNode } from '
 import { auth } from '../firebase/config';
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut as firebaseSignOut } from 'firebase/auth';
 import api from '../api/client';
+import { toast } from 'react-toastify';
 import { STORAGE_KEYS, DEFAULT_ROLE, DEFAULT_DISPLAY_NAME, ADMIN_ROLE } from '../config/constants';
 import { AUTH_PROFILE } from '../api/endpoints';
 
@@ -39,6 +40,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
                         if (profile.role !== ADMIN_ROLE) {
                             console.error('Access denied: user is not an admin');
+                            toast.error('Access denied: admin privileges required');
                             await firebaseSignOut(auth);
                             localStorage.removeItem(STORAGE_KEYS.TOKEN);
                             setUser(null);
@@ -59,6 +61,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
                         if (role !== ADMIN_ROLE) {
                             console.error('Access denied: user is not an admin (claims check)');
+                            toast.error('Access denied: admin privileges required');
                             await firebaseSignOut(auth);
                             localStorage.removeItem(STORAGE_KEYS.TOKEN);
                             setUser(null);

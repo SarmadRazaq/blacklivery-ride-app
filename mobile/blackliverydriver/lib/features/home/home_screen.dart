@@ -10,6 +10,7 @@ import '../auth/screens/edit_profile_screen.dart';
 import '../auth/screens/vehicle_info_screen.dart';
 import '../auth/screens/documents_screen.dart';
 import 'incentive_screen.dart';
+import 'notifications_screen.dart';
 import 'support_screen.dart';
 import 'settings_screen.dart';
 import 'rating_screen.dart';
@@ -158,8 +159,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               const Spacer(),
               IconButton(
                 onPressed: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('No new notifications')),
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const NotificationsScreen(),
+                    ),
                   );
                 },
                 icon: Container(

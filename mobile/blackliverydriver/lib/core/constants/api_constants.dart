@@ -1,27 +1,7 @@
-import 'dart:io' show Platform;
-import 'package:flutter/foundation.dart' show kIsWeb, kReleaseMode;
+import '../config/env_config.dart';
 
 class ApiConstants {
-  /// Pass at build time: flutter build apk --dart-define=API_BASE_URL=https://api.blacklivery.com
-  static const String _envBaseUrl = String.fromEnvironment('API_BASE_URL');
-  static const int _localDevPort = 5000;
-
-  static String get baseUrl {
-    // 1. Compile-time variable takes priority
-    if (_envBaseUrl.isNotEmpty) return _envBaseUrl;
-
-    // 2. In release mode, refuse to fall back to localhost
-    if (kReleaseMode) {
-      throw StateError(
-        'API_BASE_URL must be set via --dart-define for production builds',
-      );
-    }
-
-    // 3. Platform-based fallback for local development
-    if (kIsWeb) return 'http://localhost:$_localDevPort';
-    if (Platform.isAndroid) return 'http://10.0.2.2:$_localDevPort';
-    return 'http://localhost:$_localDevPort'; // iOS simulator
-  }
+  static String get baseUrl => EnvConfig.apiBaseUrl;
 
   // WebSocket (same host as API)
   static String get wsUrl => baseUrl;
@@ -81,10 +61,7 @@ class ApiConstants {
   static const String deliveryQuote = '/api/v1/deliveries/quote';
 
   // Google Maps
-  /// Pass at build time: --dart-define=GOOGLE_MAPS_API_KEY=...
-  static const String googleMapsApiKey = String.fromEnvironment(
-    'GOOGLE_MAPS_API_KEY',
-  );
+  static String get googleMapsApiKey => EnvConfig.googleMapsApiKey;
 
   // Profile
   static const String profile = '/api/v1/auth/profile';

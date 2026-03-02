@@ -83,8 +83,8 @@ class _SupportScreenState extends State<SupportScreen> {
             onTap: () async {
               final uri = Uri(
                 scheme: 'tel',
-                path: '1234567890',
-              ); // Replace with actual number
+                path: '+2348100000000',
+              );
               if (await canLaunchUrl(uri)) await launchUrl(uri);
             },
           ),

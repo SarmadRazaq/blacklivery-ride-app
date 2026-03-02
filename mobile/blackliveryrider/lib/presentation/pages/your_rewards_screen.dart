@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../core/network/api_client.dart';
@@ -27,6 +28,7 @@ class _YourRewardsScreenState extends State<YourRewardsScreen> {
   List<ReferralReward> _rewards = [];
   double _totalCredits = 0;
   bool _isLoading = true;
+  bool _isRedeeming = false;
 
   @override
   void initState() {
@@ -67,6 +69,41 @@ class _YourRewardsScreenState extends State<YourRewardsScreen> {
       if (mounted) {
         setState(() => _isLoading = false);
       }
+    }
+  }
+
+  Future<void> _redeemCredits() async {
+    if (_totalCredits <= 0 || _isRedeeming) return;
+    setState(() => _isRedeeming = true);
+    try {
+      final dio = ApiClient().dio;
+      await dio.post('/api/v1/promotions/redeem', data: {'type': 'referral'});
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '${CurrencyUtils.format(_totalCredits)} credited to your wallet!',
+          ),
+          backgroundColor: Colors.green,
+        ),
+      );
+      // Reload to show updated state
+      setState(() {
+        _totalCredits = 0;
+        _rewards = [];
+        _isRedeeming = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isRedeeming = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Redemption failed: ${e.toString().replaceAll('Exception: ', '')}',
+          ),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 
@@ -218,7 +255,7 @@ class _YourRewardsScreenState extends State<YourRewardsScreen> {
                               ),
                               const SizedBox(height: 2),
                               Text(
-                                'You earned on Oct ${reward.date.day}, ${reward.date.year}',
+                                'You earned on ${DateFormat('MMM d, y').format(reward.date)}',
                                 style: AppTextStyles.caption.copyWith(
                                   color: AppColors.yellow90,
                                   fontSize: 11,
@@ -246,28 +283,36 @@ class _YourRewardsScreenState extends State<YourRewardsScreen> {
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
-                onPressed: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Credits redeemed to wallet!'),
-                    ),
-                  );
-                },
+                onPressed: (_totalCredits > 0 && !_isRedeeming && !_isLoading)
+                    ? _redeemCredits
+                    : null,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.yellow90,
                   foregroundColor: AppColors.bgPri,
+                  disabledBackgroundColor: AppColors.yellow90.withOpacity(0.4),
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(30),
                   ),
                 ),
-                child: Text(
-                  'Redeem credits to wallet',
-                  style: AppTextStyles.body.copyWith(
-                    color: AppColors.bgPri,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
+                child: _isRedeeming
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          color: Colors.black,
+                          strokeWidth: 2,
+                        ),
+                      )
+                    : Text(
+                        _totalCredits > 0
+                            ? 'Redeem ${CurrencyUtils.format(_totalCredits)} to wallet'
+                            : 'No credits to redeem',
+                        style: AppTextStyles.body.copyWith(
+                          color: AppColors.bgPri,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
               ),
             ),
           ],

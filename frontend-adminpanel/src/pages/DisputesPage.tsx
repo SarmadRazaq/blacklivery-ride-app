@@ -44,10 +44,24 @@ interface Dispute {
     reporterInfo?: { id: string; name: string; phone: string; email: string; role: string };
 }
 
+interface ResolveModalState {
+    disputeId: string;
+    defaultUserId: string;
+    defaultAmount: number;
+}
+
 const DisputesPage = () => {
     const [disputes, setDisputes] = useState<Dispute[]>([]);
     const [loading, setLoading] = useState(true);
     const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+    const [resolveModal, setResolveModal] = useState<ResolveModalState | null>(null);
+    const [resolveForm, setResolveForm] = useState({
+        resolutionType: 'dismissed',
+        notes: '',
+        refundUserId: '',
+        refundAmount: '',
+    });
+    const [resolving, setResolving] = useState(false);
 
     const formatDate = (date: TimestampLike | null | undefined) => {
         if (!date) return 'N/A';
@@ -97,54 +111,58 @@ const DisputesPage = () => {
         fetchDisputes();
     }, []);
 
-    const resolveDispute = async (id: string) => {
-        const resolutionType = prompt('Enter resolution type (refund / penalty / warning / dismissed):');
-        if (!resolutionType || !['refund', 'penalty', 'warning', 'dismissed'].includes(resolutionType.trim())) {
-            toast.error('Invalid resolution type. Choose: refund, penalty, warning, or dismissed');
+    const openResolveModal = (id: string) => {
+        const dispute = disputes.find(d => d.id === id);
+        setResolveForm({
+            resolutionType: 'dismissed',
+            notes: '',
+            refundUserId: dispute?.rideInfo?.riderInfo?.id || '',
+            refundAmount: String(dispute?.rideInfo?.pricing?.finalFare || ''),
+        });
+        setResolveModal({
+            disputeId: id,
+            defaultUserId: dispute?.rideInfo?.riderInfo?.id || '',
+            defaultAmount: dispute?.rideInfo?.pricing?.finalFare || 0,
+        });
+    };
+
+    const submitResolve = async () => {
+        if (!resolveModal) return;
+        if (!resolveForm.notes.trim()) {
+            toast.error('Resolution notes are required');
             return;
         }
-        const notes = prompt('Enter resolution notes:');
-        if (!notes) return;
-
-        const trimmedType = resolutionType.trim();
-        let refundUserId: string | undefined;
-        let refundAmount: number | undefined;
-
-        if (trimmedType === 'refund') {
-            // Try to pre-fill from the dispute's ride info
-            const dispute = disputes.find(d => d.id === id);
-            const defaultUserId = dispute?.rideInfo?.riderInfo?.id || '';
-            const defaultAmount = dispute?.rideInfo?.pricing?.finalFare || 0;
-
-            const userIdInput = prompt(`Refund to user ID:`, defaultUserId);
-            if (!userIdInput) {
-                toast.error('Refund user ID is required for refund resolution');
+        if (resolveForm.resolutionType === 'refund') {
+            if (!resolveForm.refundUserId.trim()) {
+                toast.error('Refund user ID is required');
                 return;
             }
-            refundUserId = userIdInput.trim();
-
-            const amountInput = prompt(`Refund amount:`, String(defaultAmount));
-            const parsedAmount = parseFloat(amountInput || '0');
-            if (!parsedAmount || parsedAmount <= 0) {
+            const amt = parseFloat(resolveForm.refundAmount);
+            if (isNaN(amt) || amt <= 0) {
                 toast.error('A positive refund amount is required');
                 return;
             }
-            refundAmount = parsedAmount;
         }
-
+        setResolving(true);
         try {
-            await api.post(resolveDisputeEndpoint(id), {
-                resolutionNotes: notes,
-                resolutionType: trimmedType,
-                issueRefund: trimmedType === 'refund',
-                ...(trimmedType === 'refund' && { refundUserId, refundAmount })
+            await api.post(resolveDisputeEndpoint(resolveModal.disputeId), {
+                resolutionNotes: resolveForm.notes.trim(),
+                resolutionType: resolveForm.resolutionType,
+                issueRefund: resolveForm.resolutionType === 'refund',
+                ...(resolveForm.resolutionType === 'refund' && {
+                    refundUserId: resolveForm.refundUserId.trim(),
+                    refundAmount: parseFloat(resolveForm.refundAmount),
+                }),
             });
             toast.success('Dispute resolved successfully');
+            setResolveModal(null);
             fetchDisputes();
         } catch (error: unknown) {
             console.error('Failed to resolve dispute', error);
             const errorMessage = (error as ApiError).response?.data?.message || 'Failed to resolve dispute';
             toast.error(errorMessage);
+        } finally {
+            setResolving(false);
         }
     };
 
@@ -219,7 +237,7 @@ const DisputesPage = () => {
                                                         <Eye size={16} />
                                                     </Button>
                                                     {dispute.status === 'open' && (
-                                                        <Button size="sm" onClick={() => resolveDispute(dispute.id)}>
+                                                        <Button size="sm" onClick={() => openResolveModal(dispute.id)}>
                                                             Resolve
                                                         </Button>
                                                     )}
@@ -437,6 +455,72 @@ const DisputesPage = () => {
                     </Table>
                 )}
             </div>
+        </div>
+
+            {/* Resolve Dispute Modal */}
+            {resolveModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded-xl shadow-xl max-w-md w-full mx-4 p-6 space-y-4">
+                        <h2 className="text-xl font-bold text-gray-900">Resolve Dispute</h2>
+
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Resolution Type</label>
+                            <select
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                value={resolveForm.resolutionType}
+                                onChange={(e) => setResolveForm(f => ({ ...f, resolutionType: e.target.value }))}
+                            >
+                                <option value="dismissed">Dismissed</option>
+                                <option value="warning">Warning</option>
+                                <option value="penalty">Penalty</option>
+                                <option value="refund">Refund</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Resolution Notes <span className="text-red-500">*</span></label>
+                            <textarea
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                rows={3}
+                                placeholder="Describe the resolution..."
+                                value={resolveForm.notes}
+                                onChange={(e) => setResolveForm(f => ({ ...f, notes: e.target.value }))}
+                            />
+                        </div>
+
+                        {resolveForm.resolutionType === 'refund' && (
+                            <>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Refund to User ID <span className="text-red-500">*</span></label>
+                                    <input
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"
+                                        value={resolveForm.refundUserId}
+                                        onChange={(e) => setResolveForm(f => ({ ...f, refundUserId: e.target.value }))}
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Refund Amount <span className="text-red-500">*</span></label>
+                                    <input
+                                        type="number"
+                                        min="0.01"
+                                        step="0.01"
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        value={resolveForm.refundAmount}
+                                        onChange={(e) => setResolveForm(f => ({ ...f, refundAmount: e.target.value }))}
+                                    />
+                                </div>
+                            </>
+                        )}
+
+                        <div className="flex justify-end gap-3 pt-2">
+                            <Button variant="outline" onClick={() => setResolveModal(null)} disabled={resolving}>Cancel</Button>
+                            <Button onClick={submitResolve} disabled={resolving}>
+                                {resolving ? 'Resolving...' : 'Confirm Resolution'}
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

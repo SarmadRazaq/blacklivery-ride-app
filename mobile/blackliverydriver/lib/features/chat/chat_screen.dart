@@ -26,16 +26,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
   @override
   void dispose() {
-    // Stop polling is handled in provider dispose, but if we want to stop when leaving screen:
-    // context.read<ChatProvider>().stopPolling();
-    // Actually better to let provider handle cleanup or stop manually here if provider is global.
-    // Since provider is global, we should stop polling when leaving screen.
-    // context.read<ChatProvider>().stopPolling();
-    // But wait, if we go back to map, we might want to know if new messages come?
-    // For now, let's stop polling to save resources.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) ref.read(chatRiverpodProvider).stopPolling();
-    });
+    ref.read(chatRiverpodProvider).stopPolling();
     _messageController.dispose();
     _scrollController.dispose();
     super.dispose();

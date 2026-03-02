@@ -14,7 +14,7 @@ export class FlutterwaveProvider implements IPaymentProvider {
             throw new Error('FLUTTERWAVE_SECRET_KEY is not configured');
         }
         this.secretKey = key;
-        this.hashSecret = process.env.FLUTTERWAVE_HASH_SECRET || this.secretKey;
+        this.hashSecret = process.env.FLUTTERWAVE_WEBHOOK_HASH || this.secretKey;
     }
 
     async initializeTransaction(email: string, amount: number, currency: string, reference: string, metadata?: any): Promise<PaymentInitResult> {

@@ -375,9 +375,22 @@ class _AddPaymentMethodScreenState extends State<AddPaymentMethodScreen> {
 
   Future<void> _addPaymentMethod() async {
     if (_isCashOnHand) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Cash payment selected')));
+      setState(() => _isLoading = true);
+      try {
+        await _paymentService.addPaymentMethod({
+          'type': 'cash',
+          'provider': 'cash',
+        });
+      } catch (e) {
+        // Silently ignore — cash can always be set without backend card setup
+        debugPrint('Cash method store failed: $e');
+      } finally {
+        if (mounted) setState(() => _isLoading = false);
+      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Cash on rider selected')),
+      );
       Navigator.pop(context, true);
       return;
     }

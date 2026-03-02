@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../earnings/providers/earnings_provider.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/currency_utils.dart';
+import '../../core/providers/region_provider.dart';
 
 /// Incentive tracking screen — shows daily/weekly progress,
 /// bonus tiers, peak hour tracker.
@@ -49,6 +50,7 @@ class _IncentiveScreenState extends State<IncentiveScreen> {
           final weeklyTrips = (data['ridesCount'] as num?)?.toInt() ?? 0;
           final peakTrips = (data['peakTrips'] as num?)?.toInt() ?? 0;
           final totalEarnings = provider.totalEarnings;
+          final isChicago = context.watch<RegionProvider>().isChicago;
 
           return RefreshIndicator(
             onRefresh: () => provider.loadEarningsData(),
@@ -58,26 +60,30 @@ class _IncentiveScreenState extends State<IncentiveScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Weekly progress card
-                  _buildProgressCard(
-                    title: 'Weekly Trip Goal',
-                    current: weeklyTrips,
-                    target: 40,
-                    reward: '${CurrencyUtils.format(10000)} Bonus',
-                    icon: Icons.directions_car,
-                  ),
+                  if (!isChicago) ...[
+                    // Nigeria weekly trip goal
+                    _buildProgressCard(
+                      title: 'Weekly Trip Goal',
+                      current: weeklyTrips,
+                      target: 40,
+                      reward: '${CurrencyUtils.format(10000)} Bonus',
+                      icon: Icons.directions_car,
+                    ),
+                    const SizedBox(height: 16),
+                  ],
 
-                  const SizedBox(height: 16),
-
-                  // Chicago weekly guarantee (if applicable)
-                  _buildProgressCard(
-                    title: 'Weekly Guarantee (Chicago)',
-                    current: weeklyTrips,
-                    target: 20,
-                    reward: '${CurrencyUtils.format(1200, currency: 'USD')} Minimum',
-                    icon: Icons.verified,
-                    subtitle: 'Earn at least ${CurrencyUtils.format(1200, currency: 'USD')} for 20+ trips',
-                  ),
+                  if (isChicago) ...[
+                    // Chicago weekly guarantee
+                    _buildProgressCard(
+                      title: 'Weekly Guarantee',
+                      current: weeklyTrips,
+                      target: 20,
+                      reward: '${CurrencyUtils.format(1200, currency: 'USD')} Minimum',
+                      icon: Icons.verified,
+                      subtitle: 'Earn at least ${CurrencyUtils.format(1200, currency: 'USD')} for 20+ trips',
+                    ),
+                    const SizedBox(height: 16),
+                  ],
 
                   const SizedBox(height: 24),
 
@@ -189,12 +195,14 @@ class _IncentiveScreenState extends State<IncentiveScreen> {
                           ],
                         ),
                         const SizedBox(height: 12),
+                        if (!isChicago)
+                          _buildInfoLine(
+                              '• Complete 40 trips/week → ${CurrencyUtils.format(10000)} bonus'),
+                        if (isChicago)
+                          _buildInfoLine(
+                              '• Complete 20+ trips/week → ${CurrencyUtils.format(1200, currency: 'USD')} minimum guarantee'),
                         _buildInfoLine(
-                            '• Complete 40 trips/week → ${CurrencyUtils.format(10000)} bonus (Nigeria)'),
-                        _buildInfoLine(
-                            '• Complete 20+ trips/week → ${CurrencyUtils.format(1200, currency: 'USD')} minimum guarantee (Chicago)'),
-                        _buildInfoLine(
-                            '• Peak hours earn extra ${CurrencyUtils.format(300)}–${CurrencyUtils.format(500)} per trip'),
+                            '• Peak hours earn extra ${CurrencyUtils.format(isChicago ? 5 : 300, currency: isChicago ? 'USD' : 'NGN')}–${CurrencyUtils.format(isChicago ? 8 : 500, currency: isChicago ? 'USD' : 'NGN')} per trip'),
                         _buildInfoLine(
                             '• Bonuses are paid weekly on Mondays'),
                       ],

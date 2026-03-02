@@ -11,6 +11,7 @@ import '../../core/data/booking_state.dart';
 import '../../core/theme/app_color_theme.dart';
 import 'personal_info_screen.dart';
 import 'login_security_screen.dart';
+import 'notifications_screen.dart';
 import 'settings_screen.dart';
 import 'saved_places_screen.dart';
 import 'refer_earn_screen.dart';
@@ -273,6 +274,20 @@ class _AccountScreenState extends State<AccountScreen> {
                           icon: Icons.public_outlined,
                           title: 'Region — ${context.watch<RegionProvider>().current.label}',
                           onTap: () => _showRegionPicker(context),
+                        ),
+                        _buildMenuItem(
+                          context,
+                          icon: Icons.notifications_outlined,
+                          title: 'Notifications',
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) =>
+                                    const NotificationsScreen(),
+                              ),
+                            );
+                          },
                         ),
                         _buildMenuItem(
                           context,

@@ -6,6 +6,7 @@ import '../../core/theme/app_spacing.dart';
 import '../../core/utils/currency_utils.dart';
 import '../../core/data/booking_state.dart';
 import '../../core/models/ride_option_model.dart';
+import '../../core/providers/region_provider.dart';
 import '../widgets/vehicle_icon.dart';
 import '../widgets/custom_button.dart';
 import 'where_to_screen.dart';
@@ -71,6 +72,9 @@ class _AirportBookingScreenState extends State<AirportBookingScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final region = Provider.of<RegionProvider>(context, listen: false);
+    final isChicago = region.apiRegionKey == 'chicago' || region.isChicago;
+
     return Scaffold(
       backgroundColor: AppColors.bgPri,
       appBar: AppBar(
@@ -83,7 +87,45 @@ class _AirportBookingScreenState extends State<AirportBookingScreen> {
         title: Text('Airport Transfer', style: AppTextStyles.heading3),
         centerTitle: true,
       ),
-      body: Padding(
+      body: !isChicago
+          ? Center(
+              child: Padding(
+                padding: const EdgeInsets.all(32),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.airplanemode_inactive, color: AppColors.txtInactive, size: 64),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Not Available in Your Region',
+                      style: AppTextStyles.heading3,
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Airport transfers are currently only available in Chicago. '
+                      'Switch your region to Chicago in Settings to access this feature.',
+                      style: AppTextStyles.body.copyWith(color: AppColors.txtInactive),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 24),
+                    ElevatedButton(
+                      onPressed: () => Navigator.pop(context),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.yellow90,
+                        foregroundColor: AppColors.bgPri,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(30),
+                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
+                      ),
+                      child: const Text('Go Back'),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          : Padding(
         padding: const EdgeInsets.symmetric(
           horizontal: AppSpacing.screenHorizontal,
         ),

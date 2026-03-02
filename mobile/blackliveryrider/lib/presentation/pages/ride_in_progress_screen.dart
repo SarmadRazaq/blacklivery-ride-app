@@ -13,6 +13,8 @@ import '../widgets/custom_button.dart';
 
 import 'ride_completed_screen.dart';
 import '../../core/services/payment_service.dart';
+import '../../core/services/wallet_service.dart';
+import '../../core/utils/currency_utils.dart';
 import 'payment_webview_screen.dart';
 
 class RideInProgressScreen extends StatefulWidget {
@@ -307,6 +309,25 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
 
     // Wallet payment: instant debit from rider's on-platform balance — no WebView needed
     if (paymentMethod == 'wallet' && rideId != null && amount > 0) {
+      // Pre-flight balance check — warn user but don't block ride completion
+      try {
+        final balance = await WalletService().getBalance();
+        if (balance < amount && mounted) {
+          final shortfall = amount - balance;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Low wallet balance. Please top up ${CurrencyUtils.format(shortfall)} to cover this ride.',
+              ),
+              backgroundColor: Colors.orange,
+              duration: const Duration(seconds: 4),
+            ),
+          );
+        }
+      } catch (e) {
+        debugPrint('Balance pre-check failed: $e');
+      }
+
       setState(() => _isInitiatingPayment = true);
       try {
         await PaymentService().chargeRideWithWallet(

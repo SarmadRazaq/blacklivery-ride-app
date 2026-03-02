@@ -35,7 +35,10 @@ import {
     removeFcmToken,
     send2faOtp,
     verify2faOtp,
-    toggle2fa
+    toggle2fa,
+    getRiderNotifications,
+    markAllRiderNotificationsRead,
+    markRiderNotificationRead
 } from '../controllers/auth.controller';
 
 const router = Router();
@@ -659,5 +662,58 @@ router.post('/2fa/verify', verifyToken, wrap(verify2faOtp));
  *         description: 2FA setting updated
  */
 router.patch('/2fa/toggle', verifyToken, wrap(toggle2fa));
+
+/**
+ * @swagger
+ * /auth/notifications:
+ *   get:
+ *     summary: Get rider notifications
+ *     tags: [Auth]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: List of notifications
+ */
+router.get('/notifications', verifyToken, wrap(getRiderNotifications));
+
+/**
+ * @swagger
+ * /auth/notifications/read-all:
+ *   patch:
+ *     summary: Mark all rider notifications as read
+ *     tags: [Auth]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Notifications marked as read
+ */
+router.patch('/notifications/read-all', verifyToken, wrap(markAllRiderNotificationsRead));
+
+/**
+ * @swagger
+ * /auth/notifications/{id}/read:
+ *   patch:
+ *     summary: Mark a single rider notification as read
+ *     tags: [Auth]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         schema:
+ *           type: string
+ *         required: true
+ *     responses:
+ *       200:
+ *         description: Notification marked as read
+ */
+router.patch('/notifications/:id/read', verifyToken, wrap(markRiderNotificationRead));
 
 export default router;

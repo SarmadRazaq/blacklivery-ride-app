@@ -16,6 +16,7 @@ export const SocketProvider = ({ children }: { children: ReactNode }) => {
     const socketRef = useRef<Socket | null>(null);
     const [socket, setSocket] = useState<Socket | null>(null);
     const [isConnected, setIsConnected] = useState(false);
+    const wasConnectedRef = useRef(false);
     const { user } = useAuth();
 
     useEffect(() => {
@@ -32,6 +33,10 @@ export const SocketProvider = ({ children }: { children: ReactNode }) => {
             socketRef.current = newSocket;
 
             newSocket.on('connect', () => {
+                if (wasConnectedRef.current) {
+                    toast.success('Live updates reconnected');
+                }
+                wasConnectedRef.current = true;
                 setSocket(newSocket);
                 setIsConnected(true);
                 newSocket.emit('join:admin');
@@ -39,6 +44,7 @@ export const SocketProvider = ({ children }: { children: ReactNode }) => {
 
             newSocket.on('disconnect', () => {
                 setIsConnected(false);
+                toast.warn('Live updates disconnected. Data may be stale.');
                 setSocket((prev) => (prev === newSocket ? null : prev));
                 if (socketRef.current === newSocket) {
                     socketRef.current = null;

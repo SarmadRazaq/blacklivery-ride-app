@@ -3,7 +3,7 @@ import api from '../api/client';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/Table';
 import Badge from '../components/ui/Badge';
 import Button from '../components/ui/Button';
-import { Search, Star, Gift } from 'lucide-react';
+import { Search, Star, Gift, X } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { ADMIN_USERS } from '../api/endpoints';
 import { ADMIN_LOYALTY_AWARD } from '../api/endpoints';
@@ -36,6 +36,9 @@ const LoyaltyPage = () => {
     const [accounts, setAccounts] = useState<LoyaltyAccount[]>([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
+    const [bonusModal, setBonusModal] = useState<{ userId: string; name: string } | null>(null);
+    const [bonusPoints, setBonusPoints] = useState('');
+    const [awarding, setAwarding] = useState(false);
 
     const fetchAccounts = useCallback(async () => {
         setLoading(true);
@@ -68,21 +71,25 @@ const LoyaltyPage = () => {
         return () => clearTimeout(debounce);
     }, [fetchAccounts]);
 
-    const awardBonus = async (userId: string) => {
-        const pointsStr = prompt('Enter bonus points to award:');
-        if (!pointsStr) return;
-        const points = parseInt(pointsStr, 10);
+    const submitAwardBonus = async () => {
+        if (!bonusModal) return;
+        const points = parseInt(bonusPoints, 10);
         if (isNaN(points) || points <= 0) {
-            toast.error('Invalid points amount');
+            toast.error('Please enter a valid positive number of points');
             return;
         }
+        setAwarding(true);
         try {
-            await api.post(ADMIN_LOYALTY_AWARD, { userId, type: 'loyalty_bonus', amount: points });
-            toast.success(`Awarded ${points} bonus points`);
+            await api.post(ADMIN_LOYALTY_AWARD, { userId: bonusModal.userId, type: 'loyalty_bonus', amount: points });
+            toast.success(`Awarded ${points} bonus points to ${bonusModal.name}`);
+            setBonusModal(null);
+            setBonusPoints('');
             fetchAccounts();
         } catch (error) {
             console.error('Failed to award bonus', error);
             toast.error('Failed to award bonus points');
+        } finally {
+            setAwarding(false);
         }
     };
 
@@ -151,7 +158,7 @@ const LoyaltyPage = () => {
                                         <TableCell>{account.totalEarned.toLocaleString()}</TableCell>
                                         <TableCell>{account.totalRedeemed.toLocaleString()}</TableCell>
                                         <TableCell className="text-right">
-                                            <Button variant="outline" size="sm" onClick={() => awardBonus(account.userId)}>
+                                            <Button variant="outline" size="sm" onClick={() => { setBonusModal({ userId: account.userId, name: account.displayName || account.email || account.userId }); setBonusPoints(''); }}>
                                                 <Gift size={16} className="mr-1" /> Award Bonus
                                             </Button>
                                         </TableCell>
@@ -162,6 +169,44 @@ const LoyaltyPage = () => {
                     </Table>
                 )}
             </div>
+
+            {/* Award Bonus Modal */}
+            {bonusModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded-xl shadow-xl max-w-sm w-full mx-4">
+                        <div className="flex justify-between items-center p-6 border-b">
+                            <h2 className="text-xl font-bold">Award Bonus Points</h2>
+                            <button onClick={() => setBonusModal(null)} className="text-gray-400 hover:text-gray-600">
+                                <X size={24} />
+                            </button>
+                        </div>
+                        <div className="p-6 space-y-4">
+                            <p className="text-sm text-gray-600">
+                                Awarding bonus points to <span className="font-semibold text-gray-900">{bonusModal.name}</span>
+                            </p>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Points to Award</label>
+                                <input
+                                    type="number"
+                                    min="1"
+                                    placeholder="e.g. 100"
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    value={bonusPoints}
+                                    onChange={(e) => setBonusPoints(e.target.value)}
+                                    onKeyDown={(e) => e.key === 'Enter' && submitAwardBonus()}
+                                    autoFocus
+                                />
+                            </div>
+                        </div>
+                        <div className="flex justify-end gap-3 p-6 border-t">
+                            <Button variant="outline" onClick={() => setBonusModal(null)} disabled={awarding}>Cancel</Button>
+                            <Button onClick={submitAwardBonus} disabled={awarding}>
+                                {awarding ? 'Awarding...' : 'Award Points'}
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

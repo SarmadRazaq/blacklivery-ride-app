@@ -7,7 +7,7 @@ export class MonnifyProvider implements IPaymentProvider {
     private readonly baseUrl = process.env.MONNIFY_BASE_URL ?? 'https://api.monnify.com';
     private readonly contractCode = process.env.MONNIFY_CONTRACT_CODE ?? '';
     private readonly apiKey = process.env.MONNIFY_API_KEY ?? '';
-    private readonly apiSecret = process.env.MONNIFY_API_SECRET ?? '';
+    private readonly apiSecret = process.env.MONNIFY_SECRET_KEY ?? '';
 
     private async getAuthToken(): Promise<string> {
         const credentials = Buffer.from(`${this.apiKey}:${this.apiSecret}`).toString('base64');
@@ -139,7 +139,7 @@ export class MonnifyProvider implements IPaymentProvider {
                 destinationBankCode: recipient.bankCode,
                 destinationAccountNumber: recipient.accountNumber,
                 currency,
-                sourceAccountNumber: process.env.MONNIFY_WALLET_ACCOUNT_NUMBER,
+                sourceAccountNumber: process.env.MONNIFY_SOURCE_ACCOUNT,
                 destinationAccountName: recipient.name
             };
 

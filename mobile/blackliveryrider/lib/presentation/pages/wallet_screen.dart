@@ -19,8 +19,11 @@ class WalletScreen extends StatefulWidget {
 class _WalletScreenState extends State<WalletScreen> {
   final WalletService _walletService = WalletService();
   List<WalletTransaction> _transactions = [];
+  List<WalletTransaction> _filteredTransactions = [];
   double _balance = 0.0;
   bool _isLoading = true;
+  // 0 = all, 1 = debits only, 2 = credits only
+  int _activeFilter = 0;
 
   @override
   void initState() {
@@ -38,6 +41,7 @@ class _WalletScreenState extends State<WalletScreen> {
       setState(() {
         _balance = results[0] as double;
         _transactions = results[1] as List<WalletTransaction>;
+        _filteredTransactions = _transactions;
         _isLoading = false;
       });
     } catch (e) {
@@ -121,7 +125,7 @@ class _WalletScreenState extends State<WalletScreen> {
                                     ),
                                     child: Center(
                                       child: Text(
-                                        '+ withdraw',
+                                        '+ Add Money',
                                         style: AppTextStyles.body.copyWith(
                                           color: Colors.black,
                                           fontSize: 12,
@@ -236,11 +240,20 @@ class _WalletScreenState extends State<WalletScreen> {
                         ),
                         Row(
                           children: [
-                            _buildFilterChip(Icons.list, isSelected: true),
+                            GestureDetector(
+                              onTap: () => _applyFilter(0),
+                              child: _buildFilterChip(Icons.list, isSelected: _activeFilter == 0),
+                            ),
                             const SizedBox(width: 8),
-                            _buildFilterChip(Icons.filter_list),
+                            GestureDetector(
+                              onTap: () => _applyFilter(1),
+                              child: _buildFilterChip(Icons.arrow_upward, isSelected: _activeFilter == 1),
+                            ),
                             const SizedBox(width: 8),
-                            _buildFilterChip(Icons.calendar_today),
+                            GestureDetector(
+                              onTap: () => _applyFilter(2),
+                              child: _buildFilterChip(Icons.arrow_downward, isSelected: _activeFilter == 2),
+                            ),
                           ],
                         ),
                       ],
@@ -254,20 +267,64 @@ class _WalletScreenState extends State<WalletScreen> {
                     child: RefreshIndicator(
                       onRefresh: _loadWalletData,
                       color: AppColors.yellow90,
-                      child: ListView.builder(
-                        physics: const AlwaysScrollableScrollPhysics(),
-                        padding: const EdgeInsets.symmetric(horizontal: 20),
-                        itemCount: _transactions.length,
-                        itemBuilder: (context, index) {
-                          return _buildTransactionItem(_transactions[index]);
-                        },
-                      ),
+                      child: _filteredTransactions.isEmpty
+                          ? ListView(
+                              physics: const AlwaysScrollableScrollPhysics(),
+                              children: [
+                                const SizedBox(height: 40),
+                                Center(
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        Icons.receipt_long,
+                                        color: AppColors.txtInactive,
+                                        size: 48,
+                                      ),
+                                      const SizedBox(height: 12),
+                                      Text(
+                                        _activeFilter == 0
+                                            ? 'No transactions yet'
+                                            : 'No matching transactions',
+                                        style: AppTextStyles.body.copyWith(
+                                          color: AppColors.txtInactive,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            )
+                          : ListView.builder(
+                              physics: const AlwaysScrollableScrollPhysics(),
+                              padding: const EdgeInsets.symmetric(horizontal: 20),
+                              itemCount: _filteredTransactions.length,
+                              itemBuilder: (context, index) {
+                                return _buildTransactionItem(_filteredTransactions[index]);
+                              },
+                            ),
                     ),
                   ),
                 ],
               ),
             ),
     );
+  }
+
+  void _applyFilter(int filter) {
+    setState(() {
+      _activeFilter = filter;
+      switch (filter) {
+        case 1:
+          _filteredTransactions = _transactions.where((t) => t.type == 'debit').toList();
+          break;
+        case 2:
+          _filteredTransactions = _transactions.where((t) => t.type == 'credit').toList();
+          break;
+        default:
+          _filteredTransactions = _transactions;
+      }
+    });
   }
 
   Widget _buildMenuOption({

@@ -1,10 +1,10 @@
 import 'package:dio/dio.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import '../config/env_config.dart';
 
 class NavigationService {
-  // API key passed at build time: --dart-define=GOOGLE_MAPS_API_KEY=...
   // For Maps SDK (Android/iOS), check AndroidManifest/AppDelegate
-  static const String _googleApiKey = String.fromEnvironment('GOOGLE_MAPS_API_KEY');
+  static String get _googleApiKey => EnvConfig.googleMapsApiKey;
 
   // Shared Dio instance to avoid creating a new one on every call
   static final Dio _externalDio = Dio();
