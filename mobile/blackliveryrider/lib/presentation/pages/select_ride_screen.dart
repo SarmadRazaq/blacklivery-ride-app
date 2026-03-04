@@ -236,8 +236,7 @@ class _SelectRideScreenState extends State<SelectRideScreen> {
                         // Edit route button
                         GestureDetector(
                           onTap: () {
-                            // Pop back through ConfirmPickupScreen → WhereToScreen
-                            Navigator.pop(context);
+                            // Pop back to WhereToScreen where user can edit pickup/dropoff
                             Navigator.pop(context);
                           },
                           child: Container(
@@ -279,7 +278,9 @@ class _SelectRideScreenState extends State<SelectRideScreen> {
           ),
 
           // Bottom section with ride options
-          Container(
+          Expanded(
+            flex: 2,
+            child: Container(
             padding: EdgeInsets.fromLTRB(
               AppSpacing.screenHorizontal,
               AppSpacing.lg,
@@ -336,11 +337,10 @@ class _SelectRideScreenState extends State<SelectRideScreen> {
 
                 const SizedBox(height: AppSpacing.md),
 
-                // Ride options list
+                // Ride options list — Expanded so it fills remaining space
                 if (_isLoading)
-                  const Center(
-                    child: Padding(
-                      padding: EdgeInsets.all(24),
+                  const Expanded(
+                    child: Center(
                       child: CircularProgressIndicator(
                         valueColor: AlwaysStoppedAnimation<Color>(
                           AppColors.yellow90,
@@ -349,20 +349,21 @@ class _SelectRideScreenState extends State<SelectRideScreen> {
                     ),
                   )
                 else if (rideOptions.isEmpty)
-                  Center(
-                    child: Text(
-                      'No ride options available',
-                      style: AppTextStyles.body.copyWith(
-                        color: AppColors.txtInactive,
+                  Expanded(
+                    child: Center(
+                      child: Text(
+                        'No ride options available',
+                        style: AppTextStyles.body.copyWith(
+                          color: AppColors.txtInactive,
+                        ),
                       ),
                     ),
                   )
                 else
-                  SizedBox(
-                    height: 232,
+                  Expanded(
                     child: ListView.builder(
-                      scrollDirection: Axis.vertical,
                       padding: EdgeInsets.zero,
+                      physics: const BouncingScrollPhysics(),
                       itemCount: rideOptions.length,
                       itemBuilder: (context, index) {
                         final option = rideOptions[index];
@@ -393,7 +394,7 @@ class _SelectRideScreenState extends State<SelectRideScreen> {
                     ),
                   ),
 
-                const SizedBox(height: AppSpacing.lg),
+                const SizedBox(height: AppSpacing.sm),
 
                 // Book button
                 CustomButton.gradient(
@@ -417,6 +418,7 @@ class _SelectRideScreenState extends State<SelectRideScreen> {
                 ),
               ],
             ),
+          ),
           ),
         ],
       ),

@@ -59,9 +59,13 @@ class _AccountScreenState extends State<AccountScreen> {
       );
     } catch (e) {
       if (!mounted) return;
+      String message = 'Upload failed: $e';
+      if (e.toString().contains('unauthorized')) {
+        message = 'Upload not authorized. Please sign out and sign in again, then retry.';
+      }
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('Upload failed: $e')));
+      ).showSnackBar(SnackBar(content: Text(message)));
     } finally {
       if (mounted) {
         setState(() {
@@ -470,8 +474,8 @@ class _AccountScreenState extends State<AccountScreen> {
                 return ListTile(
                   onTap: () {
                     region.setRegion(r.code);
-                    // Sync region into RideService
-                    BookingState().rideService.setRegion(r.apiRegionKey);
+                    // Sync region into shared RideService
+                    context.read<BookingState>().rideService.setRegion(r.apiRegionKey);
                     Navigator.pop(context);
                   },
                   leading: Icon(

@@ -7,6 +7,7 @@ import {
     signupVerifySchema,
     phoneVerificationSchema,
     phoneVerifyOtpSchema,
+    phoneSignupSchema,
     emailVerificationSchema
 } from '../schemas/auth.schema';
 import {
@@ -18,6 +19,7 @@ import {
     login,
     startPhoneVerification,
     verifyPhoneVerification,
+    registerWithVerifiedPhone,
     startEmailVerification,
     verifyEmailVerification,
     signupStart,
@@ -255,6 +257,54 @@ router.post('/phone/start', validate(phoneVerificationSchema), wrap(startPhoneVe
  *         description: Phone verified successfully
  */
 router.post('/phone/verify', validate(phoneVerifyOtpSchema), wrap(verifyPhoneVerification));
+
+/**
+ * @swagger
+ * /auth/register-with-phone:
+ *   post:
+ *     summary: Register a new user using a verified phone number
+ *     tags: [Auth]
+ *     description: |
+ *       Creates a new account after the phone number has been verified via OTP.
+ *       The phone must have been verified within the last 30 minutes.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *               - password
+ *               - fullName
+ *               - phoneNumber
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 example: "user@example.com"
+ *               password:
+ *                 type: string
+ *                 example: "mySecure123"
+ *               fullName:
+ *                 type: string
+ *                 example: "John Doe"
+ *               phoneNumber:
+ *                 type: string
+ *                 example: "+2348012345678"
+ *               role:
+ *                 type: string
+ *                 enum: [rider, driver]
+ *               region:
+ *                 type: string
+ *     responses:
+ *       201:
+ *         description: Account created successfully
+ *       400:
+ *         description: Phone not verified or missing fields
+ *       409:
+ *         description: Email or phone already registered
+ */
+router.post('/register-with-phone', validate(phoneSignupSchema), wrap(registerWithVerifiedPhone));
 
 /**
  * @swagger

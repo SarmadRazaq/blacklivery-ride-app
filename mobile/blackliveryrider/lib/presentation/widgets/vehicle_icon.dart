@@ -1,14 +1,13 @@
 import 'package:flutter/material.dart';
 
-import '../../core/constants/assets.dart';
-
 /// Vehicle type enum matching backend VehicleCategory
-enum VehicleType { sedan, suv, xl, premium, motorbike }
+enum VehicleType { sedan, suv, xl, premium, motorbike, cargoVan }
 
 /// Maps a vehicle ID string or display name to a [VehicleType].
 ///
-/// Accepts backend IDs ('sedan', 'suv', 'xl', 'first_class', 'motorbike')
-/// and display names ('Standard', 'SUV', 'XL', 'Premium', 'Moto', 'Economy').
+/// Accepts backend IDs ('sedan', 'suv', 'xl', 'first_class', 'motorbike',
+/// 'cargo_van') and display names ('Standard', 'SUV', 'XL', 'Premium',
+/// 'Moto', 'Economy', 'Cargo Van').
 VehicleType vehicleTypeFromId(String id) {
   switch (id.toLowerCase()) {
     case 'sedan':
@@ -30,14 +29,24 @@ VehicleType vehicleTypeFromId(String id) {
     case 'moto':
     case 'motorcycle':
       return VehicleType.motorbike;
+    case 'cargo_van':
+    case 'cargo':
+    case 'van':
+      return VehicleType.cargoVan;
     default:
       return VehicleType.sedan;
   }
 }
 
-/// Uber-style isometric vehicle icon.
+/// Vehicle icon using built-in Flutter Material Icons.
 ///
-/// Displays the corresponding 3D isometric PNG icon for each vehicle type.
+/// Each [VehicleType] maps to a distinctive Material icon:
+///   - **sedan** — compact car
+///   - **suv** — filled car
+///   - **xl** — shuttle / minibus
+///   - **premium** — star + car
+///   - **motorbike** — two-wheeler
+///   - **cargoVan** — local shipping truck
 class VehicleIcon extends StatelessWidget {
   final VehicleType type;
   final double size;
@@ -65,29 +74,25 @@ class VehicleIcon extends StatelessWidget {
     );
   }
 
-  String get _assetPath {
+  IconData get _iconData {
     switch (type) {
       case VehicleType.sedan:
-        return AppAssets.sedanIcon;
+        return Icons.local_taxi_rounded;
       case VehicleType.suv:
-        return AppAssets.suvIcon;
+        return Icons.directions_car_filled_rounded;
       case VehicleType.xl:
-        return AppAssets.xlIcon;
+        return Icons.airport_shuttle_rounded;
       case VehicleType.premium:
-        return AppAssets.premiumIcon;
+        return Icons.star_rounded;
       case VehicleType.motorbike:
-        return AppAssets.motorbikeIcon;
+        return Icons.two_wheeler_rounded;
+      case VehicleType.cargoVan:
+        return Icons.local_shipping_rounded;
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    // The color parameter is ignored for the new 3D icons as they come
-    // pre-rendered in black/dark-grey realistic styling.
-    return SizedBox(
-      width: size * 1.5,
-      height: size,
-      child: Center(child: Image.asset(_assetPath, fit: BoxFit.contain)),
-    );
+    return Icon(_iconData, size: size, color: color);
   }
 }

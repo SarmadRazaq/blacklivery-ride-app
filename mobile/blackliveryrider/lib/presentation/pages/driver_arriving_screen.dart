@@ -179,14 +179,47 @@ class _DriverArrivingScreenState extends State<DriverArrivingScreen> {
   }
 
   void _cancelRide() {
+    final reasonController = TextEditingController();
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: AppColors.bgSec,
         title: Text('Cancel Ride?', style: AppTextStyles.heading3),
-        content: Text(
-          'Are you sure you want to cancel this ride? Cancellation fees may apply.',
-          style: AppTextStyles.body.copyWith(color: AppColors.txtInactive),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Are you sure you want to cancel this ride? Cancellation fees may apply.',
+              style: AppTextStyles.body.copyWith(color: AppColors.txtInactive),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              decoration: BoxDecoration(
+                color: AppColors.bgPri,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.inputBorder),
+              ),
+              child: TextField(
+                controller: reasonController,
+                maxLines: 3,
+                maxLength: 300,
+                style: AppTextStyles.body.copyWith(color: Colors.white),
+                decoration: InputDecoration(
+                  hintText: 'Reason for cancellation (optional)',
+                  hintStyle: AppTextStyles.body.copyWith(
+                    color: AppColors.txtInactive,
+                    fontSize: 13,
+                  ),
+                  border: InputBorder.none,
+                  counterStyle: AppTextStyles.caption.copyWith(
+                    color: AppColors.txtInactive,
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                ),
+              ),
+            ),
+          ],
         ),
         actions: [
           TextButton(
@@ -196,7 +229,10 @@ class _DriverArrivingScreenState extends State<DriverArrivingScreen> {
           TextButton(
             onPressed: () {
               Navigator.pop(context);
-              Provider.of<BookingState>(context, listen: false).cancelBooking();
+              final reason = reasonController.text.trim();
+              Provider.of<BookingState>(context, listen: false).cancelBooking(
+                reason: reason.isNotEmpty ? reason : null,
+              );
               Navigator.of(context).popUntil((route) => route.isFirst);
             },
             child: Text(

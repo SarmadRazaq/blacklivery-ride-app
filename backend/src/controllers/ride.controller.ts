@@ -10,7 +10,11 @@ import { socketService } from '../services/SocketService';
 export const createRide = async (req: AuthRequest, res: Response): Promise<void> => {
     try {
         const ride = await rideService.createRideRequest(req.user.uid, req.body);
-        await rideService.startDriverMatching(ride.id!);
+        // Only start driver matching immediately for non-scheduled rides
+        // Scheduled rides are dispatched by the cron job when scheduledAt time arrives
+        if (!req.body.scheduledAt) {
+            await rideService.startDriverMatching(ride.id!);
+        }
         res.status(201).json(ride);
     } catch (error) {
         logger.error({ err: error }, 'Failed to create ride');

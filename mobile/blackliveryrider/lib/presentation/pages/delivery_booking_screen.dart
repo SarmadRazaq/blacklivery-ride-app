@@ -308,11 +308,11 @@ class _DeliveryBookingScreenState extends State<DeliveryBookingScreen> {
             ),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(AppSpacing.inputRadius),
-              borderSide: BorderSide(color: AppColors.inputBorder),
+              borderSide: BorderSide.none,
             ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(AppSpacing.inputRadius),
-              borderSide: BorderSide(color: AppColors.inputBorder),
+              borderSide: BorderSide.none,
             ),
           ),
         ),
@@ -514,11 +514,11 @@ class _DeliveryBookingScreenState extends State<DeliveryBookingScreen> {
         prefixIcon: Icon(icon, color: AppColors.txtInactive, size: 20),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(AppSpacing.inputRadius),
-          borderSide: BorderSide(color: AppColors.inputBorder),
+          borderSide: BorderSide.none,
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(AppSpacing.inputRadius),
-          borderSide: BorderSide(color: AppColors.inputBorder),
+          borderSide: BorderSide.none,
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(AppSpacing.inputRadius),

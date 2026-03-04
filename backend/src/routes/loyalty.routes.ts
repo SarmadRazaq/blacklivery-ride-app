@@ -5,7 +5,8 @@ import {
     getLoyaltyHistory,
     getAvailableRewards,
     redeemPoints,
-    getActiveRedemptions
+    getActiveRedemptions,
+    backfillPoints
 } from '../controllers/loyalty.controller';
 
 const router = Router();
@@ -111,5 +112,19 @@ router.post('/redeem', wrap(redeemPoints));
  *         description: List of active redemptions
  */
 router.get('/redemptions', wrap(getActiveRedemptions));
+
+/**
+ * @swagger
+ * /loyalty/backfill:
+ *   post:
+ *     summary: Backfill loyalty points for completed rides that were missed
+ *     tags: [Loyalty]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Backfill results with points awarded
+ */
+router.post('/backfill', wrap(backfillPoints));
 
 export default router;

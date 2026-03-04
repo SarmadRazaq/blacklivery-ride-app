@@ -1,15 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:go_router/go_router.dart';
 import '../../core/providers/riverpod_providers.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/custom_button.dart';
 import '../../core/services/biometric_service.dart';
+import '../../features/auth/data/models/user_model.dart';
 import 'create_account_screen.dart';
-import 'vehicle_onboarding_screen.dart';
-import 'approval_screen.dart';
 import '../auth/screens/login_screen.dart';
-import '../ride/driver_map_screen.dart';
-import '../ride/ride_accepted_screen.dart';
 
 class SplashScreen extends ConsumerStatefulWidget {
   const SplashScreen({super.key});
@@ -19,6 +18,8 @@ class SplashScreen extends ConsumerStatefulWidget {
 }
 
 class _SplashScreenState extends ConsumerState<SplashScreen> {
+  bool _isNavigating = false;
+
   @override
   void initState() {
     super.initState();
@@ -26,8 +27,9 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
   }
 
   Future<void> _checkAuth() async {
+    if (_isNavigating) return;
     await Future.delayed(const Duration(milliseconds: 800)); // Minimum splash time
-    if (!mounted) return;
+    if (!mounted || _isNavigating) return;
 
     final authProvider = ref.read(authRiverpodProvider);
     // Check if user is logged in
@@ -45,9 +47,9 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
           reason: 'Please authenticate to access BlackLivery',
         );
         if (!authenticated) {
-          Navigator.of(context).pushReplacement(
-            MaterialPageRoute(builder: (context) => const LoginScreen()),
-          );
+          if (!mounted || _isNavigating) return;
+          _isNavigating = true;
+          context.go('/login');
           return;
         }
       }
@@ -62,14 +64,16 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
           (onboardingStatus == null && user?.driverProfile != null);
 
       if (!isApproved) {
-        if (onboardingStatus == 'pending_approval' || onboardingStatus == 'under_review') {
-          Navigator.of(context).pushReplacement(
-            MaterialPageRoute(builder: (context) => const ApprovalScreen()),
-          );
+        if (!mounted || _isNavigating) return;
+        _isNavigating = true;
+        if (onboardingStatus == 'pending_approval' ||
+            onboardingStatus == 'under_review' ||
+            onboardingStatus == 'pending_review') {
+          context.go('/approval');
         } else {
-          Navigator.of(context).pushReplacement(
-            MaterialPageRoute(builder: (context) => const VehicleOnboardingScreen()),
-          );
+          // Resume from the furthest incomplete onboarding step
+          final route = _resolveOnboardingRoute(user);
+          context.go(route);
         }
         return;
       }
@@ -84,21 +88,60 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
 
       if (!mounted) return;
 
+      // Ensure location permission before entering the map
+      await _ensureLocationPermission();
+      if (!mounted || _isNavigating) return;
+
+      _isNavigating = true;
       if (rideProvider.currentRide != null) {
-        // Jump straight into the active trip screen
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(
-            builder: (context) =>
-                RideAcceptedScreen(ride: rideProvider.currentRide!),
-          ),
-        );
+        context.go('/trip', extra: rideProvider.currentRide!);
       } else {
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (context) => const DriverMapScreen()),
-        );
+        context.go('/map');
       }
     }
     // If not authenticated, stay on this screen (shows Get Started / Login)
+  }
+
+  /// Keep requesting location permission via the native OS dialog until
+  /// the user grants it.  If permanently denied, opens App Settings and
+  /// waits for the user to return.
+  Future<void> _ensureLocationPermission() async {
+    while (mounted) {
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.whileInUse ||
+          permission == LocationPermission.always) {
+        return; // granted
+      }
+
+      if (permission == LocationPermission.deniedForever) {
+        // OS won't show the dialog again — open settings
+        await Geolocator.openAppSettings();
+        // Wait for user to come back from settings
+        await Future.delayed(const Duration(seconds: 1));
+        continue;
+      }
+
+      // Show native permission dialog
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.whileInUse ||
+          permission == LocationPermission.always) {
+        return; // granted
+      }
+
+      // Denied — brief pause then re-request
+      await Future.delayed(const Duration(milliseconds: 500));
+    }
+  }
+
+  /// Determine which onboarding route the driver should resume from.
+  String _resolveOnboardingRoute(User? user) {
+    if (user?.driverProfile?.vehicleId == null) return '/documents';
+    if (user!.emergencyContacts.isEmpty) return '/emergency-contacts';
+    final status = user.driverOnboarding?.status;
+    if (status == null || status == 'pending_documents' || status == 'rejected') {
+      return '/verification';
+    }
+    return '/documents';
   }
 
   @override

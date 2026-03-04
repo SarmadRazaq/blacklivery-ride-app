@@ -5,8 +5,13 @@ import '../../core/theme/app_text_styles.dart';
 
 class CustomNumpad extends StatelessWidget {
   final Function(String) onKeyPressed;
+  final bool isCheckEnabled;
 
-  const CustomNumpad({super.key, required this.onKeyPressed});
+  const CustomNumpad({
+    super.key,
+    required this.onKeyPressed,
+    this.isCheckEnabled = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -35,24 +40,37 @@ class CustomNumpad extends StatelessWidget {
 
   Widget _buildKey(String key) {
     final isSpecialKey = key == 'backspace' || key == 'check';
+    final isCheck = key == 'check';
 
-    return GestureDetector(
-      onTap: () {
-        HapticFeedback.selectionClick();
-        onKeyPressed(key);
-      },
-      onLongPress: key == 'backspace' ? () => onKeyPressed('clear') : null,
-      child: Container(
-        width: 72,
-        height: 72,
-        decoration: BoxDecoration(
-          color: isSpecialKey ? Colors.transparent : AppColors.inputBg,
-          borderRadius: BorderRadius.circular(36),
-          border: isSpecialKey
-              ? null
-              : Border.all(color: AppColors.inputBorder, width: 1),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () {
+          HapticFeedback.mediumImpact();
+          onKeyPressed(key);
+        },
+        onLongPress: key == 'backspace' ? () => onKeyPressed('clear') : null,
+        borderRadius: BorderRadius.circular(36),
+        splashColor: isCheck && isCheckEnabled
+            ? AppColors.yellow90.withOpacity(0.3)
+            : Colors.white.withOpacity(0.15),
+        highlightColor: Colors.white.withOpacity(0.08),
+        child: Ink(
+          width: 72,
+          height: 72,
+          decoration: BoxDecoration(
+            color: isCheck && isCheckEnabled
+                ? AppColors.yellow90
+                : isSpecialKey
+                    ? Colors.transparent
+                    : AppColors.inputBg,
+            borderRadius: BorderRadius.circular(36),
+            border: isSpecialKey
+                ? null
+                : Border.all(color: AppColors.inputBorder, width: 1),
+          ),
+          child: Center(child: _buildKeyContent(key)),
         ),
-        child: Center(child: _buildKeyContent(key)),
       ),
     );
   }
@@ -61,7 +79,11 @@ class CustomNumpad extends StatelessWidget {
     if (key == 'backspace') {
       return const Icon(Icons.chevron_left, color: Colors.white, size: 32);
     } else if (key == 'check') {
-      return const Icon(Icons.check, color: Colors.white, size: 28);
+      return Icon(
+        Icons.check,
+        color: isCheckEnabled ? Colors.black : Colors.white54,
+        size: 28,
+      );
     } else {
       return Text(key, style: AppTextStyles.numPad);
     }

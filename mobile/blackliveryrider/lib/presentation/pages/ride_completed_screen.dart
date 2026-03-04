@@ -20,10 +20,41 @@ class RideCompletedScreen extends StatefulWidget {
 }
 
 class _RideCompletedScreenState extends State<RideCompletedScreen> {
-  // final BookingState _bookingState = BookingState(); // Removed
   int _rating = 5;
+  double? _actualFare;
+  bool _loadingFare = false;
   final TextEditingController _tipController = TextEditingController();
   final TextEditingController _feedbackController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchActualFare();
+  }
+
+  /// Fetch completed ride details from backend to get the final fare.
+  void _fetchActualFare() async {
+    final bookingState = Provider.of<BookingState>(context, listen: false);
+    final rideId = widget.rideId ?? bookingState.currentBooking?.id ?? bookingState.rideId;
+    if (rideId == null || rideId.isEmpty) return;
+
+    setState(() => _loadingFare = true);
+    try {
+      final details = await RideService().getRideDetails(rideId);
+      if (details != null && mounted) {
+        final pricing = details['pricing'] as Map<String, dynamic>?;
+        final finalFare = (pricing?['finalFare'] as num?)?.toDouble()
+            ?? (details['finalFare'] as num?)?.toDouble();
+        if (finalFare != null && finalFare > 0) {
+          setState(() => _actualFare = finalFare);
+        }
+      }
+    } catch (e) {
+      debugPrint('Failed to fetch actual fare: $e');
+    } finally {
+      if (mounted) setState(() => _loadingFare = false);
+    }
+  }
 
   @override
   void dispose() {
@@ -144,12 +175,23 @@ class _RideCompletedScreenState extends State<RideCompletedScreen> {
                             color: AppColors.txtInactive,
                           ),
                         ),
-                        Text(
-                          CurrencyUtils.formatExact(booking?.estimatedPrice ?? 0),
-                          style: AppTextStyles.heading2.copyWith(
-                            color: Colors.white,
-                          ),
-                        ),
+                        _loadingFare
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: AppColors.yellow90,
+                                ),
+                              )
+                            : Text(
+                                CurrencyUtils.formatExact(
+                                  _actualFare ?? booking?.estimatedPrice ?? 0,
+                                ),
+                                style: AppTextStyles.heading2.copyWith(
+                                  color: Colors.white,
+                                ),
+                              ),
                       ],
                     ),
                     const SizedBox(height: 16),
@@ -258,11 +300,11 @@ class _RideCompletedScreenState extends State<RideCompletedScreen> {
                         fillColor: AppColors.bgPri,
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(color: AppColors.inputBorder),
+                          borderSide: BorderSide.none,
                         ),
                         enabledBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(color: AppColors.inputBorder),
+                          borderSide: BorderSide.none,
                         ),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),

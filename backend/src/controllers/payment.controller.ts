@@ -7,6 +7,47 @@ import { rideService } from '../services/RideService';
 import { db } from '../config/firebase';
 import { RegionCode } from '../config/region.config';
 import { logger } from '../utils/logger';
+import { PaymentVerificationResult, CardDetails } from '../services/payment/IPaymentProvider';
+
+/**
+ * Save a card as a payment method when a card_setup charge succeeds.
+ * Idempotent: uses the payment reference as the document ID to avoid duplicates.
+ */
+const saveCardPaymentMethod = async (
+    userId: string,
+    gateway: string,
+    reference: string,
+    cardDetails?: CardDetails
+): Promise<void> => {
+    try {
+        const docId = `card_${reference}`;
+        const docRef = db.collection('payment_methods').doc(docId);
+        const existing = await docRef.get();
+        if (existing.exists) return; // Already saved — idempotent
+
+        await docRef.set({
+            userId,
+            type: 'card',
+            brand: cardDetails?.brand || 'card',
+            last4: cardDetails?.last4 || '****',
+            expMonth: cardDetails?.expMonth || null,
+            expYear: cardDetails?.expYear || null,
+            gateway,
+            authorizationCode: cardDetails?.authorizationCode || null,
+            stripePaymentMethodId: cardDetails?.stripePaymentMethodId || null,
+            stripeCustomerId: cardDetails?.stripeCustomerId || null,
+            reference,
+            isDefault: false,
+            isActive: true,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+        });
+
+        logger.info({ userId, gateway, last4: cardDetails?.last4 }, 'Saved card payment method from card_setup');
+    } catch (e) {
+        logger.error({ err: e, userId, reference }, 'Failed to save card payment method');
+    }
+};
 
 /**
  * Validate webhook amount against the stored transaction amount.
@@ -19,13 +60,23 @@ const validateWebhookAmount = async (reference: string, webhookAmount: number): 
             .limit(1)
             .get();
 
-        if (txSnapshot.empty) {
-            // No matching transaction — fail closed to prevent fraudulent webhooks
-            logger.warn({ reference, webhookAmount }, 'No matching transaction found for webhook amount validation — rejecting');
+        let storedAmount: number | undefined;
+
+        if (!txSnapshot.empty) {
+            storedAmount = txSnapshot.docs[0].data().amount;
+        } else {
+            // Fallback: check pending_payments (created during initiation, before any transaction exists)
+            const pendingDoc = await db.collection('pending_payments').doc(reference).get();
+            if (pendingDoc.exists) {
+                storedAmount = pendingDoc.data()?.amount;
+            }
+        }
+
+        if (storedAmount === undefined) {
+            logger.warn({ reference, webhookAmount }, 'No matching transaction or pending payment found for webhook amount validation — rejecting');
             return false;
         }
 
-        const storedAmount = txSnapshot.docs[0].data().amount;
         if (typeof storedAmount !== 'number') return false;
 
         // Allow up to 1% tolerance for currency conversion/rounding
@@ -80,18 +131,41 @@ const handleWebhook = async (
 
             if (userId) {
                 try {
-                    await walletService.recordEscrowDeposit({
-                        reference: result.reference,
-                        amount: result.amount,
-                        currency: result.currency as 'NGN' | 'USD',
-                        riderId: userId,
-                        rideId,
-                        purpose: purpose || 'wallet_topup',
-                        gateway: gateway as 'paystack' | 'flutterwave' | 'stripe' | 'monnify',
-                        metadata: result.metadata
-                    });
+                    const webhookPurpose = purpose || 'wallet_topup';
+                    if (webhookPurpose === 'wallet_topup') {
+                        // Direct credit to rider's wallet
+                        await walletService.processTransaction(
+                            userId,
+                            result.amount,
+                            'credit',
+                            'wallet_topup',
+                            `Wallet top-up via ${gateway}`,
+                            result.reference,
+                            {
+                                walletCurrency: result.currency as 'NGN' | 'USD',
+                                metadata: { gateway, ...result.metadata }
+                            }
+                        );
+                    } else {
+                        // Ride payment — hold in escrow
+                        await walletService.recordEscrowDeposit({
+                            reference: result.reference,
+                            amount: result.amount,
+                            currency: result.currency as 'NGN' | 'USD',
+                            riderId: userId,
+                            rideId,
+                            purpose: webhookPurpose,
+                            gateway: gateway as 'paystack' | 'flutterwave' | 'stripe' | 'monnify',
+                            metadata: result.metadata
+                        });
+                    }
                 } catch (e) {
                     logger.error({ err: e, reference: result.reference }, `${gateway} webhook wallet deposit failed`);
+                }
+
+                // Save card as payment method when this was a card_setup charge
+                if (purpose === 'card_setup' && result.cardDetails) {
+                    await saveCardPaymentMethod(userId, gateway, result.reference, result.cardDetails);
                 }
 
                 // If ride is already completed (driver marked done before webhook arrived),
@@ -123,7 +197,7 @@ export const handleMonnifyWebhook = (req: Request, res: Response) =>
     handleWebhook('monnify', 'monnify-signature', req, res);
 
 export const initiatePayment = async (req: AuthRequest, res: Response) => {
-    const { amount, currency, metadata = {}, description, callbackUrl, captureNow = true, purpose, region, rideId } = req.body;
+    const { amount, currency, metadata = {}, description, callbackUrl, captureNow = true, purpose, region, rideId, sdkMode } = req.body;
     const { uid, email, name, phone_number } = req.user; // Standard Firebase token claims
 
     if (!amount || typeof amount !== 'number' || amount <= 0) {
@@ -150,7 +224,8 @@ export const initiatePayment = async (req: AuthRequest, res: Response) => {
             riderId: uid,
             rideId: rideId || metadata.rideId,
             purpose: purpose ?? metadata.purpose ?? 'wallet_topup',
-            captureMode: captureNow ? 'auto' : 'manual'
+            captureMode: captureNow ? 'auto' : 'manual',
+            ...(sdkMode ? { sdkMode: true } : {}),
         };
 
         let targetRegion = (region as RegionCode) || 'NG';
@@ -238,6 +313,22 @@ export const initiatePayment = async (req: AuthRequest, res: Response) => {
             req.body.gateway // Allow explicit provider selection (e.g., 'flutterwave', 'monnify')
         );
 
+        // Include the resolved email in the response so mobile SDKs (e.g. Flutterwave)
+        // that require a customer email can use it without a second lookup.
+        (result as any).email = userEmail;
+
+        // Persist payment context so verifyPayment can route to the correct provider
+        // even when the client doesn't resend region/gateway/purpose.
+        db.collection('pending_payments').doc(reference).set({
+            userId: uid,
+            region: targetRegion,
+            gateway: req.body.gateway || null,
+            purpose: mergedMetadata.purpose,
+            amount: paymentAmount,
+            currency: paymentCurrency || 'NGN',
+            createdAt: new Date(),
+        }).catch(err => logger.error({ err, reference }, 'Failed to store pending_payments context'));
+
         // Write the payment reference to the ride document so settleRidePayment()
         // can find it when the ride completes (the escrow hold key must match this reference).
         if (rideId) {
@@ -271,27 +362,61 @@ export const verifyPayment = async (req: AuthRequest, res: Response) => {
     }
 
     try {
-        const targetRegion = (region as RegionCode) || 'NG';
-        const verification = await paymentService.verifyPayment(targetRegion, paymentReference);
+        // Look up payment context stored during initiation so we route to the
+        // correct provider even when the client only sends a reference.
+        const pendingDoc = await db.collection('pending_payments').doc(paymentReference).get();
+        const pendingData = pendingDoc.exists ? pendingDoc.data() : null;
+
+        const targetRegion = (region as RegionCode) || pendingData?.region || 'NG';
+        const verification = await paymentService.verifyPayment(targetRegion, paymentReference, pendingData?.gateway);
 
         if (verification.success) {
             const verifiedRideId = verification.metadata?.rideId;
-            // Credit wallet on successful payment verification
-            try {
-                await walletService.recordEscrowDeposit({
-                    reference: paymentReference,
-                    amount: verification.amount,
-                    currency: (verification.currency || currency || 'NGN') as 'NGN' | 'USD',
-                    riderId: uid,
-                    rideId: verifiedRideId,
-                    purpose: purpose || verification.metadata?.purpose || 'wallet_topup',
-                    gateway: (verification.gateway || 'paystack') as 'paystack' | 'flutterwave' | 'stripe' | 'monnify',
-                    metadata: verification.metadata || {}
-                });
-            } catch (walletError) {
-                logger.error({ err: walletError, reference: paymentReference }, 'Failed to credit wallet after payment verification');
-                // Still return verification success — webhook will also attempt credit
+            const verifiedPurpose = purpose || pendingData?.purpose || verification.metadata?.purpose || 'wallet_topup';
+            const verifiedGateway = (verification.gateway || pendingData?.gateway || 'paystack') as 'paystack' | 'flutterwave' | 'stripe' | 'monnify';
+
+            // Save card as payment method when this was a card_setup flow.
+            // The charge is real money — also credit the wallet below.
+            if (verifiedPurpose === 'card_setup' && verification.cardDetails) {
+                await saveCardPaymentMethod(uid, verifiedGateway, paymentReference, verification.cardDetails);
             }
+
+            // Credit wallet asynchronously — don't block the response.
+            // Webhook will also attempt credit as a fallback.
+            (async () => {
+                if (verifiedPurpose === 'wallet_topup' || verifiedPurpose === 'card_setup') {
+                    // Direct credit to rider's wallet — no escrow hold needed.
+                    // card_setup charges are real money that goes to the wallet.
+                    await walletService.processTransaction(
+                        uid,
+                        verification.amount,
+                        'credit',
+                        verifiedPurpose === 'card_setup' ? 'card_setup' : 'wallet_topup',
+                        verifiedPurpose === 'card_setup'
+                            ? `Card setup charge via ${verifiedGateway}`
+                            : `Wallet top-up via ${verifiedGateway}`,
+                        paymentReference,
+                        {
+                            walletCurrency: (verification.currency || currency || 'NGN') as 'NGN' | 'USD',
+                            metadata: { gateway: verifiedGateway, ...verification.metadata }
+                        }
+                    );
+                } else {
+                    // Ride payment or other purpose — hold in escrow until ride completes
+                    await walletService.recordEscrowDeposit({
+                        reference: paymentReference,
+                        amount: verification.amount,
+                        currency: (verification.currency || currency || 'NGN') as 'NGN' | 'USD',
+                        riderId: uid,
+                        rideId: verifiedRideId,
+                        purpose: verifiedPurpose,
+                        gateway: verifiedGateway,
+                        metadata: verification.metadata || {}
+                    });
+                }
+            })().catch(walletError => {
+                logger.error({ err: walletError, reference: paymentReference }, 'Failed to credit wallet after payment verification');
+            });
 
             // If ride already completed before client called verify, trigger settlement now.
             if (verifiedRideId) {
@@ -486,9 +611,122 @@ export const addToWallet = async (req: AuthRequest, res: Response) => {
         // Default to NG region for now, or infer from currency
         const region = currency === 'USD' ? 'US-CHI' : 'NG';
 
+        // ── Saved card: attempt off-session direct charge ──────────
+        if (paymentMethod) {
+            try {
+                const methodDoc = await db.collection('payment_methods').doc(paymentMethod).get();
+                if (methodDoc.exists) {
+                    const methodData = methodDoc.data()!;
+                    if (methodData.userId !== uid) {
+                        res.status(403).json({ error: 'Unauthorized' });
+                        return;
+                    }
+
+                    // Stripe off-session charge
+                    if (methodData.gateway === 'stripe' && methodData.stripePaymentMethodId && methodData.stripeCustomerId) {
+                        const stripeKey = process.env.STRIPE_SECRET_KEY;
+                        if (stripeKey) {
+                            const Stripe = require('stripe');
+                            const stripe = new Stripe(stripeKey, { apiVersion: '2025-01-27.acacia' });
+                            const centsAmount = Math.round(amount * 100);
+
+                            const pi = await stripe.paymentIntents.create({
+                                amount: centsAmount,
+                                currency: (currency || 'USD').toLowerCase(),
+                                customer: methodData.stripeCustomerId,
+                                payment_method: methodData.stripePaymentMethodId,
+                                off_session: true,
+                                confirm: true,
+                                metadata: {
+                                    purpose: 'wallet_topup',
+                                    userId: uid,
+                                    reference,
+                                },
+                            });
+
+                            if (pi.status === 'succeeded') {
+                                // Credit wallet immediately
+                                await walletService.processTransaction(
+                                    uid,
+                                    amount,
+                                    'credit',
+                                    'wallet_topup',
+                                    `Wallet top-up via Stripe (saved card)`,
+                                    reference,
+                                    {
+                                        walletCurrency: currency as 'NGN' | 'USD',
+                                        metadata: { gateway: 'stripe', paymentMethod, paymentIntentId: pi.id }
+                                    }
+                                );
+
+                                res.status(200).json({ success: true, data: { charged: true, reference } });
+                                return;
+                            }
+                            // If requires_action (3DS), fall through to normal flow
+                            if (pi.status === 'requires_action' && pi.client_secret) {
+                                res.status(200).json({ success: true, data: { reference, clientSecret: pi.client_secret } });
+                                return;
+                            }
+                        }
+                    }
+
+                    // Paystack recurring charge via authorization code
+                    if (methodData.gateway === 'paystack' && methodData.authorizationCode) {
+                        const paystackKey = process.env.PAYSTACK_SECRET_KEY;
+                        if (paystackKey) {
+                            const axios = require('axios');
+                            let userEmail = email;
+                            if (!userEmail || userEmail.endsWith('.test') || !userEmail.includes('@')) {
+                                userEmail = `user-${uid}@blacklivery.app`;
+                            }
+                            const koboAmount = Math.round(amount * 100);
+                            const chargeResult = await axios.post(
+                                'https://api.paystack.co/transaction/charge_authorization',
+                                {
+                                    authorization_code: methodData.authorizationCode,
+                                    email: userEmail,
+                                    amount: koboAmount,
+                                    currency: (currency || 'NGN').toUpperCase(),
+                                    reference,
+                                },
+                                { headers: { Authorization: `Bearer ${paystackKey}` } }
+                            );
+
+                            if (chargeResult.data?.data?.status === 'success') {
+                                await walletService.processTransaction(
+                                    uid,
+                                    amount,
+                                    'credit',
+                                    'wallet_topup',
+                                    `Wallet top-up via Paystack (saved card)`,
+                                    reference,
+                                    {
+                                        walletCurrency: currency as 'NGN' | 'USD',
+                                        metadata: { gateway: 'paystack', paymentMethod, paystackReference: chargeResult.data.data.reference }
+                                    }
+                                );
+
+                                res.status(200).json({ success: true, data: { charged: true, reference } });
+                                return;
+                            }
+                        }
+                    }
+                }
+            } catch (offSessionErr: any) {
+                logger.warn({ err: offSessionErr, paymentMethod }, 'Off-session charge failed — falling back to normal flow');
+            }
+        }
+
+        // ── Fallback: normal payment initialization ────────────────
+        // Paystack rejects '.test' TLDs
+        let userEmail = email;
+        if (!userEmail || userEmail.endsWith('.test') || !userEmail.includes('@')) {
+            userEmail = `user-${uid}@blacklivery.app`;
+        }
+
         const result = await paymentService.initializePayment(
             region,
-            email,
+            userEmail,
             amount,
             currency,
             reference,
@@ -499,6 +737,17 @@ export const addToWallet = async (req: AuthRequest, res: Response) => {
                 captureMode: 'auto'
             }
         );
+
+        // Store pending payment context so verifyPayment routes to correct provider
+        db.collection('pending_payments').doc(reference).set({
+            userId: uid,
+            region,
+            gateway: null,
+            purpose: 'wallet_topup',
+            amount,
+            currency: currency || 'NGN',
+            createdAt: new Date(),
+        }).catch(err => logger.error({ err, reference }, 'Failed to store pending_payments context for wallet topup'));
 
         res.status(200).json({ success: true, data: result });
     } catch (error: any) {

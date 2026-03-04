@@ -1,11 +1,13 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
+import 'package:uuid/uuid.dart';
 import '../network/api_client.dart';
 import '../models/driver_model.dart';
 import '../models/ride_option_model.dart';
 
 class RideService {
   final Dio _dio = ApiClient().dio;
+  final Uuid _uuid = const Uuid();
 
   Map<String, dynamic> _extractMapData(dynamic raw) {
     if (raw is Map<String, dynamic>) {
@@ -30,8 +32,13 @@ class RideService {
     double? dropoffLat,
     double? dropoffLng,
   }) async {
-    // Vehicle categories matching backend VehicleCategory enum
-    final categories = [
+    // Vehicle categories filtered by region to match backend pricing strategies.
+    // Nigeria: sedan, suv, xl, motorbike, cargo_van
+    // Chicago: business_sedan, business_suv, first_class
+    final isChicago =
+        _region == 'chicago' || _region == 'us-chi' || _region == 'us';
+
+    final nigeriaCategories = [
       {
         'id': 'sedan',
         'name': 'Standard',
@@ -54,12 +61,22 @@ class RideService {
         'capacity': 6,
       },
       {
-        'id': 'first_class',
-        'name': 'Premium',
-        'desc': 'Luxury rides for special occasions',
-        'icon': 'first_class',
-        'capacity': 4,
+        'id': 'motorbike',
+        'name': 'Moto',
+        'desc': 'Fastest way through traffic',
+        'icon': 'motorbike',
+        'capacity': 1,
       },
+      {
+        'id': 'cargo_van',
+        'name': 'Cargo Van',
+        'desc': 'Large items and bulk deliveries',
+        'icon': 'cargo_van',
+        'capacity': 2,
+      },
+    ];
+
+    final chicagoCategories = [
       {
         'id': 'business_sedan',
         'name': 'Business Sedan',
@@ -75,20 +92,15 @@ class RideService {
         'capacity': 6,
       },
       {
-        'id': 'motorbike',
-        'name': 'Moto',
-        'desc': 'Fastest way through traffic',
-        'icon': 'motorbike',
-        'capacity': 1,
-      },
-      {
-        'id': 'cargo_van',
-        'name': 'Cargo Van',
-        'desc': 'Large items and bulk deliveries',
-        'icon': 'cargo_van',
-        'capacity': 2,
+        'id': 'first_class',
+        'name': 'Premium',
+        'desc': 'Luxury rides for special occasions',
+        'icon': 'first_class',
+        'capacity': 4,
       },
     ];
+
+    final categories = isChicago ? chicagoCategories : nigeriaCategories;
 
     // If we have pickup/dropoff coordinates, get real estimates from backend
     if (pickupLat != null &&
@@ -258,6 +270,7 @@ class RideService {
     String bookingType = 'on_demand',
     int? hoursBooked,
     String? airportCode,
+    DateTime? scheduledAt,
   }) async {
     try {
       final payload = <String, dynamic>{
@@ -282,10 +295,16 @@ class RideService {
       if (airportCode != null && airportCode.isNotEmpty) {
         payload['airportCode'] = airportCode;
       }
+      if (scheduledAt != null) {
+        payload['scheduledAt'] = scheduledAt.toUtc().toIso8601String();
+      }
 
       final response = await _dio.post(
         '/api/v1/rides',
         data: payload,
+        options: Options(
+          headers: {'Idempotency-Key': _uuid.v4()},
+        ),
       );
       final data = _extractMapData(response.data);
 
@@ -375,6 +394,9 @@ class RideService {
               ? reason.trim()
               : 'Cancelled by rider',
         },
+        options: Options(
+          headers: {'Idempotency-Key': _uuid.v4()},
+        ),
       );
       return true;
     } catch (e) {
@@ -389,6 +411,9 @@ class RideService {
       await _dio.put(
         '/api/v1/rides/$rideId/status',
         data: {'status': 'completed'},
+        options: Options(
+          headers: {'Idempotency-Key': _uuid.v4()},
+        ),
       );
       return true;
     } catch (e) {

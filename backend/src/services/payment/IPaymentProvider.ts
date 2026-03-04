@@ -5,6 +5,16 @@ export interface PaymentInitResult {
     clientSecret?: string; // For Stripe
 }
 
+export interface CardDetails {
+    last4: string;
+    brand: string;
+    expMonth?: number;
+    expYear?: number;
+    authorizationCode?: string; // Paystack reusable auth code
+    stripePaymentMethodId?: string; // Stripe PM id for off-session charges
+    stripeCustomerId?: string; // Stripe Customer id for off-session charges
+}
+
 export interface PaymentVerificationResult {
     success: boolean;
     amount: number;
@@ -13,6 +23,7 @@ export interface PaymentVerificationResult {
     status: string;
     gateway: string;
     metadata?: any;
+    cardDetails?: CardDetails;
 }
 
 export interface IPaymentProvider {

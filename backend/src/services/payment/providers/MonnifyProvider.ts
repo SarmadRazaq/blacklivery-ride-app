@@ -20,18 +20,19 @@ export class MonnifyProvider implements IPaymentProvider {
     }
 
     async initializeTransaction(email: string, amount: number, currency: string, reference: string, metadata?: any): Promise<PaymentInitResult> {
+        const { sdkMode, ...cleanMeta } = metadata || {};
         try {
             const token = await this.getAuthToken();
             const payload = {
                 amount,
-                customerName: metadata?.customerName || 'Customer',
+                customerName: cleanMeta?.customerName || 'Customer',
                 customerEmail: email,
                 paymentReference: reference,
-                paymentDescription: metadata?.description || 'Blacklivery Ride',
+                paymentDescription: cleanMeta?.description || 'Blacklivery Ride',
                 currencyCode: currency,
                 contractCode: this.contractCode,
                 redirectUrl: process.env.MONNIFY_CALLBACK_URL,
-                metadata
+                metadata: cleanMeta
             };
 
             const { data } = await axios.post(`${this.baseUrl}/api/v1/merchant/transactions/init-transaction`, payload, {

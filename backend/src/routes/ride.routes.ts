@@ -63,7 +63,7 @@ const router = Router();
  *       201:
  *         description: Ride created successfully
  */
-router.post('/', verifyToken, rideLimiter, validate(createRideSchema), idempotency, createRide as any);
+router.post('/', verifyToken, checkRole(['rider']), rideLimiter, validate(createRideSchema), idempotency, createRide as any);
 
 /**
  * @swagger
@@ -276,7 +276,7 @@ router.put(
  *       200:
  *         description: Driver rated successfully
  */
-router.post('/:id/rate', verifyToken, rateDriver as any);
+router.post('/:id/rate', verifyToken, checkRole(['rider']), rateDriver as any);
 
 /**
  * @swagger
@@ -311,7 +311,7 @@ router.post('/:id/rate', verifyToken, rateDriver as any);
  *       200:
  *         description: Rider rated successfully
  */
-router.post('/:id/rate-rider', verifyToken, rateRider as any);
+router.post('/:id/rate-rider', verifyToken, checkRole(['driver']), rateRider as any);
 
 /**
  * @swagger
@@ -340,7 +340,7 @@ router.post('/:id/rate-rider', verifyToken, rateRider as any);
  *       200:
  *         description: Tip added successfully
  */
-router.post('/:id/tip', verifyToken, addTip as any);
+router.post('/:id/tip', verifyToken, checkRole(['rider']), addTip as any);
 
 /**
  * @swagger

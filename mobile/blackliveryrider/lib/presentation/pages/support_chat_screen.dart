@@ -67,8 +67,8 @@ class _SupportChatScreenState extends State<SupportChatScreen> {
             // Add conversation messages
             for (final msg in messages) {
               _messages.add(ChatMessage(
-                text: msg['message'] ?? msg['text'] ?? '',
-                isFromSupport: msg['senderRole'] == 'admin' || msg['sender'] == 'support',
+                text: msg['content'] ?? msg['message'] ?? msg['text'] ?? '',
+                isFromSupport: msg['role'] == 'admin' || msg['senderRole'] == 'admin' || msg['sender'] == 'support',
                 timestamp: _parseDate(msg['createdAt'] ?? msg['timestamp']),
               ));
             }

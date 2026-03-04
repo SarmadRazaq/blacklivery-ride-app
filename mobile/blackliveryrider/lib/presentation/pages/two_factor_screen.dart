@@ -204,7 +204,7 @@ class _TwoFactorScreenState extends State<TwoFactorScreen> {
                           borderSide: BorderSide(
                             color: _error != null
                                 ? Colors.red
-                                : AppColors.inputBorder,
+                                : Colors.transparent,
                           ),
                         ),
                         enabledBorder: OutlineInputBorder(
@@ -212,7 +212,7 @@ class _TwoFactorScreenState extends State<TwoFactorScreen> {
                           borderSide: BorderSide(
                             color: _error != null
                                 ? Colors.red
-                                : AppColors.inputBorder,
+                                : Colors.transparent,
                           ),
                         ),
                         focusedBorder: OutlineInputBorder(

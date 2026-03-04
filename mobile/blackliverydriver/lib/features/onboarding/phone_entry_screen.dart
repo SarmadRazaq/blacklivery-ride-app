@@ -17,7 +17,11 @@ class _PhoneEntryScreenState extends ConsumerState<PhoneEntryScreen> {
   final _phoneController = TextEditingController();
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
-  final String _selectedRegion = 'US';
+
+  String get _selectedRegion {
+    final rp = ref.read(regionRiverpodProvider);
+    return rp.current.code == RegionCode.ng ? 'NG' : 'US';
+  }
 
   String get _countryCode => _selectedRegion == 'NG' ? '+234' : '+1';
 
@@ -141,6 +145,7 @@ class _PhoneEntryScreenState extends ConsumerState<PhoneEntryScreen> {
                   ),
                 ),
               ),
+
 
               // ── Input Fields ──
               Padding(

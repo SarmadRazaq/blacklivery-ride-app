@@ -149,6 +149,35 @@ export const addRecentLocation = async (req: AuthRequest, res: Response): Promis
             return;
         }
 
+        const collRef = db.collection('users').doc(uid).collection('recentLocations');
+
+        // De-duplicate: round to ~11 m precision and check for existing entry
+        const roundedLat = Math.round(lat * 10000) / 10000;
+        const roundedLng = Math.round(lng * 10000) / 10000;
+
+        const existing = await collRef
+            .where('lat', '>=', roundedLat - 0.0002)
+            .where('lat', '<=', roundedLat + 0.0002)
+            .limit(10)
+            .get();
+
+        // Check if any existing doc is effectively the same location
+        const duplicate = existing.docs.find(doc => {
+            const d = doc.data();
+            return Math.abs(d.lng - lng) < 0.0002;
+        });
+
+        if (duplicate) {
+            // Just bump the timestamp so it appears at the top
+            await duplicate.ref.update({
+                timestamp: new Date().toISOString(),
+                name: name || duplicate.data().name || '',
+                address,
+            });
+            res.status(200).json({ message: 'Recent location updated' });
+            return;
+        }
+
         const locationData = {
             address,
             lat,
@@ -157,8 +186,16 @@ export const addRecentLocation = async (req: AuthRequest, res: Response): Promis
             timestamp: new Date().toISOString(),
         };
 
-        await db.collection('users').doc(uid)
-            .collection('recentLocations').add(locationData);
+        await collRef.add(locationData);
+
+        // Keep collection capped at 20 entries
+        const allDocs = await collRef.orderBy('timestamp', 'desc').get();
+        if (allDocs.size > 20) {
+            const toDelete = allDocs.docs.slice(20);
+            const batch = db.batch();
+            toDelete.forEach(doc => batch.delete(doc.ref));
+            await batch.commit();
+        }
 
         res.status(201).json({ message: 'Location added to recent' });
     } catch (error) {
@@ -212,8 +249,10 @@ export const searchLocations = async (req: AuthRequest, res: Response): Promise<
             }
 
             const predictions = (response.data.predictions || []).map((p: any) => ({
+                id: p.place_id,
                 placeId: p.place_id,
-                description: p.description,
+                name: p.structured_formatting?.main_text || p.description || '',
+                address: p.description || '',
                 mainText: p.structured_formatting?.main_text || '',
                 secondaryText: p.structured_formatting?.secondary_text || '',
                 types: p.types || [],
@@ -228,5 +267,116 @@ export const searchLocations = async (req: AuthRequest, res: Response): Promise<
     } catch (error) {
         logger.error({ err: error }, 'Error searching locations');
         res.status(500).json({ error: 'Failed to search locations' });
+    }
+};
+
+/**
+ * Get place details (coordinates) from a Google Place ID
+ */
+export const getPlaceDetails = async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const { placeId } = req.params;
+
+        if (!placeId) {
+            res.status(400).json({ error: 'placeId is required' });
+            return;
+        }
+
+        const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+        if (!apiKey) {
+            logger.warn('GOOGLE_MAPS_API_KEY not set — cannot resolve place details');
+            res.status(503).json({ error: 'Location service unavailable' });
+            return;
+        }
+
+        // Try Place Details API first
+        let placeResult: { id: string; name: string; address: string; lat: number; lng: number } | null = null;
+
+        try {
+            const response = await axios.get(
+                'https://maps.googleapis.com/maps/api/place/details/json',
+                {
+                    params: {
+                        place_id: placeId,
+                        key: apiKey,
+                        fields: 'geometry,name,formatted_address,place_id',
+                    },
+                    timeout: 10000,
+                }
+            );
+
+            if (response.data.status === 'OK' && response.data.result) {
+                const result = response.data.result;
+                placeResult = {
+                    id: result.place_id || placeId,
+                    name: result.name || '',
+                    address: result.formatted_address || '',
+                    lat: result.geometry?.location?.lat ?? 0,
+                    lng: result.geometry?.location?.lng ?? 0,
+                };
+            } else {
+                logger.warn({
+                    status: response.data.status,
+                    errorMessage: response.data.error_message,
+                    placeId,
+                }, 'Place Details API non-OK — trying Geocoding fallback');
+            }
+        } catch (detailsError) {
+            logger.warn({ err: detailsError, placeId }, 'Place Details API failed — trying Geocoding fallback');
+        }
+
+        // Fallback: use Geocoding API with place_id
+        if (!placeResult) {
+            try {
+                const geoResponse = await axios.get(
+                    'https://maps.googleapis.com/maps/api/geocode/json',
+                    {
+                        params: {
+                            place_id: placeId,
+                            key: apiKey,
+                        },
+                        timeout: 10000,
+                    }
+                );
+
+                if (geoResponse.data.status === 'OK' && geoResponse.data.results?.length > 0) {
+                    const geoResult = geoResponse.data.results[0];
+                    placeResult = {
+                        id: geoResult.place_id || placeId,
+                        name: geoResult.address_components?.[0]?.long_name || geoResult.formatted_address || '',
+                        address: geoResult.formatted_address || '',
+                        lat: geoResult.geometry?.location?.lat ?? 0,
+                        lng: geoResult.geometry?.location?.lng ?? 0,
+                    };
+                } else {
+                    logger.warn({
+                        status: geoResponse.data.status,
+                        errorMessage: geoResponse.data.error_message,
+                        placeId,
+                    }, 'Geocoding fallback also failed');
+                }
+            } catch (geoError) {
+                logger.warn({ err: geoError, placeId }, 'Geocoding fallback request failed');
+            }
+        }
+
+        if (!placeResult) {
+            res.status(404).json({ error: 'Place not found' });
+            return;
+        }
+
+        res.status(200).json({
+            data: {
+                id: placeResult.id,
+                placeId: placeResult.id,
+                name: placeResult.name,
+                address: placeResult.address,
+                lat: placeResult.lat,
+                lng: placeResult.lng,
+            }
+        });
+    } catch (error) {
+        logger.error({ err: error }, 'Error fetching place details');
+        res.status(500).json({ error: 'Failed to fetch place details' });
     }
 };

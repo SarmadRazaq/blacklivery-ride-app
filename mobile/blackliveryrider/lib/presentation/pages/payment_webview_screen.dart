@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../core/services/payment_service.dart';
@@ -63,6 +64,7 @@ class _PaymentWebViewScreenState extends State<PaymentWebViewScreen> {
   late final WebViewController _controller;
   bool _isLoading = true;
   bool _isVerifying = false;
+  bool _rendererCrashed = false;
   double _loadingProgress = 0;
 
   // Known callback/success patterns from payment providers
@@ -115,7 +117,14 @@ class _PaymentWebViewScreenState extends State<PaymentWebViewScreen> {
             return NavigationDecision.navigate;
           },
           onWebResourceError: (error) {
-            debugPrint('WebView error: ${error.description}');
+            debugPrint('WebView error: ${error.description} (code=${error.errorCode}, type=${error.errorType})');
+            // Detect renderer crashes — fatal errors with large negative codes
+            // or specific WebResourceErrorType values indicate the renderer died.
+            if ((error.isForMainFrame ?? false) && error.errorCode < -10) {
+              if (mounted) {
+                setState(() => _rendererCrashed = true);
+              }
+            }
           },
         ),
       )
@@ -157,7 +166,9 @@ class _PaymentWebViewScreenState extends State<PaymentWebViewScreen> {
     if (ref != null && ref.isNotEmpty) {
       try {
         final result = await PaymentService().verifyPayment(reference: ref);
-        verified = result != null;
+        // Check the actual success field — a non-null response with success:false
+        // means the provider rejected the payment.
+        verified = result != null && result['success'] == true;
       } catch (e) {
         debugPrint('Payment verification error: $e');
       }
@@ -249,7 +260,10 @@ class _PaymentWebViewScreenState extends State<PaymentWebViewScreen> {
         ),
         body: Stack(
           children: [
-            WebViewWidget(controller: _controller),
+            if (_rendererCrashed)
+              _buildCrashRecoveryUI()
+            else
+              WebViewWidget(controller: _controller),
             if (_isLoading)
               LinearProgressIndicator(
                 value: _loadingProgress,
@@ -283,5 +297,144 @@ class _PaymentWebViewScreenState extends State<PaymentWebViewScreen> {
         ),
       ),
     );
+  }
+
+  /// Recovery UI shown when the WebView renderer process crashes
+  /// (common on Android emulators when Stripe/hCaptcha uses WebGPU).
+  Widget _buildCrashRecoveryUI() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.warning_amber_rounded,
+              color: AppColors.yellow90,
+              size: 64,
+            ),
+            const SizedBox(height: 20),
+            Text(
+              'Payment page crashed',
+              style: AppTextStyles.heading3.copyWith(fontSize: 18),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'The in-app browser encountered an issue loading the payment page. '
+              'You can retry or open it in your external browser instead.',
+              style: AppTextStyles.body.copyWith(
+                color: AppColors.txtInactive,
+                fontSize: 13,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            // Retry in WebView
+            GestureDetector(
+              onTap: () {
+                setState(() => _rendererCrashed = false);
+                _controller.loadRequest(
+                  Uri.parse(widget.authorizationUrl),
+                );
+              },
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                decoration: BoxDecoration(
+                  color: AppColors.yellow90,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Center(
+                  child: Text(
+                    'Retry',
+                    style: AppTextStyles.body.copyWith(
+                      color: Colors.black,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            // Open in external browser
+            GestureDetector(
+              onTap: _openInExternalBrowser,
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                decoration: BoxDecoration(
+                  color: AppColors.inputBg,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppColors.inputBorder),
+                ),
+                child: Center(
+                  child: Text(
+                    'Open in browser',
+                    style: AppTextStyles.body.copyWith(
+                      color: AppColors.yellow90,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Opens the payment URL in the device's default browser and
+  /// returns a pending result so the user can come back and verify.
+  Future<void> _openInExternalBrowser() async {
+    final url = Uri.parse(widget.authorizationUrl);
+    if (await canLaunchUrl(url)) {
+      await launchUrl(url, mode: LaunchMode.externalApplication);
+      // After returning from browser, ask user if payment was completed
+      if (!mounted) return;
+      final completed = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: AppColors.bgSec,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: Text(
+            'Payment completed?',
+            style: AppTextStyles.heading3.copyWith(fontSize: 18),
+          ),
+          content: Text(
+            'Did you complete the payment in the browser?',
+            style: AppTextStyles.body.copyWith(color: AppColors.txtInactive),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text(
+                'No',
+                style: AppTextStyles.body.copyWith(color: Colors.red),
+              ),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(
+                'Yes, verify',
+                style:
+                    AppTextStyles.body.copyWith(color: AppColors.yellow90),
+              ),
+            ),
+          ],
+        ),
+      );
+      if (completed == true) {
+        _handlePaymentComplete(widget.authorizationUrl);
+      } else if (mounted) {
+        Navigator.pop(
+          context,
+          const PaymentWebViewResult(success: false),
+        );
+      }
+    }
   }
 }

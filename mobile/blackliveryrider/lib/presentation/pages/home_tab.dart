@@ -18,6 +18,8 @@ import 'airport_booking_screen.dart';
 import 'delivery_booking_screen.dart';
 import 'account_screen.dart';
 
+import '../../core/utils/region_geofence.dart';
+
 class HomeTab extends StatefulWidget {
   const HomeTab({super.key});
 
@@ -40,7 +42,7 @@ class _HomeTabState extends State<HomeTab> {
     "elementType": "geometry",
     "stylers": [
       {
-        "color": "#212121"
+        "color": "#00000000"
       }
     ]
   },
@@ -225,7 +227,7 @@ class _HomeTabState extends State<HomeTab> {
   @override
   void initState() {
     super.initState();
-    _getCurrentLocation();
+    _ensureLocationPermission();
 
     // Listen to changes in booking state to update markers
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -239,6 +241,35 @@ class _HomeTabState extends State<HomeTab> {
       bookingState.initialize();
       bookingState.useCurrentLocation(); // Pre-fetch location
     });
+  }
+
+  /// Keep requesting location permission via the native OS dialog until
+  /// the user grants it. If permanently denied, opens App Settings.
+  Future<void> _ensureLocationPermission() async {
+    while (mounted) {
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.whileInUse ||
+          permission == LocationPermission.always) {
+        _getCurrentLocation();
+        return;
+      }
+
+      if (permission == LocationPermission.deniedForever) {
+        await Geolocator.openAppSettings();
+        await Future.delayed(const Duration(seconds: 1));
+        continue;
+      }
+
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.whileInUse ||
+          permission == LocationPermission.always) {
+        _getCurrentLocation();
+        return;
+      }
+
+      // Denied — brief pause then re-request
+      await Future.delayed(const Duration(milliseconds: 500));
+    }
   }
 
   @override
@@ -270,16 +301,28 @@ class _HomeTabState extends State<HomeTab> {
           desiredAccuracy: LocationAccuracy.high,
         );
 
-        setState(() {
-          _currentLocation = LatLng(position.latitude, position.longitude);
-        });
+        // If GPS is outside service area, default to region center
+        final gpsLat = position.latitude;
+        final gpsLng = position.longitude;
+        if (RegionGeofence.isSupported(gpsLat, gpsLng)) {
+          setState(() {
+            _currentLocation = LatLng(gpsLat, gpsLng);
+          });
+        } else {
+          final regionProvider = context.read<RegionProvider>();
+          setState(() {
+            _currentLocation = regionProvider.isChicago
+                ? const LatLng(41.8781, -87.6298)
+                : const LatLng(6.5244, 3.3792);
+          });
+        }
 
         // Auto-detect region from GPS coordinates
         if (mounted) {
           final regionProvider = context.read<RegionProvider>();
           regionProvider.detectFromLocation(position.latitude, position.longitude);
-          // Sync into RideService
-          BookingState().rideService.setRegion(regionProvider.apiRegionKey);
+          // Sync into shared RideService
+          context.read<BookingState>().rideService.setRegion(regionProvider.apiRegionKey);
         }
 
         final GoogleMapController controller = await _mapController.future;
@@ -595,23 +638,32 @@ class _HomeTabState extends State<HomeTab> {
 
                   const SizedBox(height: 16),
 
-                  // Recent Locations
+                  // Recent Locations (max 2 visible on home screen)
                   Consumer<BookingState>(
                     builder: (context, bookingState, child) {
-                      if (bookingState.recentLocations.isEmpty) {
+                      // De-duplicate by name+address on the client side as well
+                      final seen = <String>{};
+                      final unique = bookingState.recentLocations.where((loc) {
+                        final key = '${loc.name}|${loc.address}';
+                        if (seen.contains(key)) return false;
+                        seen.add(key);
+                        return true;
+                      }).take(2).toList(); // Limit to 2 on home
+
+                      if (unique.isEmpty) {
                         return const SizedBox.shrink();
                       }
+
                       return Column(
-                        children: bookingState.recentLocations.map((location) {
+                        mainAxisSize: MainAxisSize.min,
+                        children: unique.map((location) {
                           return Padding(
                             padding: const EdgeInsets.only(bottom: 8.0),
                             child: RecentLocationCard(
                               title: location.name,
                               subtitle: location.address,
-                              distance:
-                                  '', // Calculate if needed, or leave empty
+                              distance: '',
                               onTap: () {
-                                // Handle location selection
                                 bookingState.setDropoffLocation(location);
                                 Navigator.push(
                                   context,

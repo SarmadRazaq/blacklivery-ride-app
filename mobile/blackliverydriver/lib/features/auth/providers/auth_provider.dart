@@ -362,13 +362,55 @@ class AuthProvider with ChangeNotifier {
     }
   }
 
-  Future<void> verifyOtp(String phoneNumber, String code) async {
+  /// Verify phone OTP. Returns true if logged in (existing account),
+  /// false if phone verified but no account exists (needs signup).
+  Future<bool> verifyOtp(String phoneNumber, String code) async {
     _isLoading = true;
     _error = null;
     notifyListeners();
 
     try {
-      await _featuresAuthService.verifyOtp(phoneNumber, code);
+      final result = await _featuresAuthService.verifyOtp(phoneNumber, code);
+      final token = result['token'] as String?;
+
+      if (token != null && token.isNotEmpty) {
+        // Account exists — sign in and fetch profile
+        await _firebaseAuth.signInWithCustomToken(token);
+        await getProfile();
+        return true;
+      }
+
+      // Phone verified but no account — caller should show signup form
+      return false;
+    } catch (e) {
+      _error = e.toString();
+      rethrow;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  /// Complete phone-based signup after OTP verification showed no existing account.
+  Future<void> registerWithVerifiedPhone({
+    required String email,
+    required String password,
+    required String fullName,
+    required String phoneNumber,
+    String? region,
+  }) async {
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+
+    try {
+      await _featuresAuthService.registerWithVerifiedPhone(
+        email: email,
+        password: password,
+        fullName: fullName,
+        phoneNumber: phoneNumber,
+        region: region,
+      );
       await getProfile();
     } catch (e) {
       _error = e.toString();

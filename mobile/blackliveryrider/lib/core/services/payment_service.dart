@@ -83,18 +83,26 @@ class PaymentService {
 
   /// Initiate payment
   /// Endpoint: POST /api/v1/payments/initiate
+  ///
+  /// When [sdkMode] is `true` the backend returns provider-specific tokens
+  /// (e.g. Stripe `clientSecret`, Paystack `accessCode`) instead of a
+  /// redirect URL, enabling the native SDK checkout flow.
   Future<Map<String, dynamic>?> initiatePayment({
     required double amount,
-    required String rideId,
+    String? rideId,
     String? currency,
     String? purpose,
     String? gateway,
+    String? region,
+    bool sdkMode = false,
   }) async {
     try {
       final payload = <String, dynamic>{
         'amount': amount,
-        'rideId': rideId,
       };
+      if (rideId != null && rideId.isNotEmpty) {
+        payload['rideId'] = rideId;
+      }
       if (currency != null && currency.isNotEmpty) {
         payload['currency'] = currency;
       }
@@ -103,6 +111,12 @@ class PaymentService {
       }
       if (gateway != null && gateway.isNotEmpty) {
         payload['gateway'] = gateway;
+      }
+      if (region != null && region.isNotEmpty) {
+        payload['region'] = region;
+      }
+      if (sdkMode) {
+        payload['sdkMode'] = true;
       }
 
       final response = await _dio.post(
@@ -138,6 +152,9 @@ class PaymentService {
           headers: {
             'Idempotency-Key': _uuid.v4(),
           },
+          // Payment verification calls an external provider API — needs more time
+          receiveTimeout: const Duration(seconds: 30),
+          sendTimeout: const Duration(seconds: 15),
         ),
       );
       final data = _extractData(response.data);

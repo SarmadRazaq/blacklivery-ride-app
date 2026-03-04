@@ -60,10 +60,38 @@ export const getMyTickets = async (req: AuthRequest, res: Response): Promise<voi
     }
 };
 
+/**
+ * Get a single support ticket by ID (owner only)
+ */
+export const getTicketById = async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const { id } = req.params;
+        const doc = await db.collection('support_tickets').doc(id).get();
+
+        if (!doc.exists) {
+            res.status(404).json({ message: 'Ticket not found' });
+            return;
+        }
+
+        const data = doc.data()!;
+        // Only the ticket owner or an admin can view
+        if (data.userId !== req.user.uid && req.user.role !== 'admin') {
+            res.status(403).json({ message: 'Unauthorized' });
+            return;
+        }
+
+        res.status(200).json({ id: doc.id, ...data });
+    } catch (error) {
+        logger.error({ err: error }, 'Failed to get ticket by ID');
+        res.status(500).json({ message: 'Internal server error' });
+    }
+};
+
 export const replyToTicket = async (req: AuthRequest, res: Response): Promise<void> => {
     try {
         const { id } = req.params;
-        const { content } = req.body;
+        // Schema validates 'message'; accept both 'message' and 'content' for backward compat
+        const replyContent = req.body.message || req.body.content;
 
         const ticketRef = db.collection('support_tickets').doc(id);
         const doc = await ticketRef.get();
@@ -81,7 +109,7 @@ export const replyToTicket = async (req: AuthRequest, res: Response): Promise<vo
         const message = {
             senderId: req.user.uid,
             role: 'user',
-            content,
+            content: replyContent,
             createdAt: new Date()
         };
 

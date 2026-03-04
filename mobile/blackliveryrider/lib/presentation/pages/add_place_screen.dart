@@ -4,7 +4,9 @@ import '../../core/theme/app_text_styles.dart';
 import '../../core/models/saved_place_model.dart';
 import '../../core/models/location_model.dart';
 import '../../core/services/places_service.dart';
+import '../../core/services/location_service.dart';
 import 'name_place_screen.dart';
+import 'map_picker_screen.dart';
 
 class AddPlaceScreen extends StatefulWidget {
   const AddPlaceScreen({super.key});
@@ -16,9 +18,11 @@ class AddPlaceScreen extends StatefulWidget {
 class _AddPlaceScreenState extends State<AddPlaceScreen> {
   final TextEditingController _searchController = TextEditingController();
   final PlacesService _placesService = PlacesService();
+  final LocationService _locationService = LocationService();
   String _searchQuery = '';
   List<Location> _searchResults = [];
   bool _isSearching = false;
+  bool _isFetchingLocation = false;
 
   @override
   void initState() {
@@ -63,6 +67,8 @@ class _AddPlaceScreenState extends State<AddPlaceScreen> {
         builder: (context) => NamePlaceScreen(
           address: result.address,
           suggestedName: result.name,
+          latitude: result.latitude,
+          longitude: result.longitude,
         ),
       ),
     );
@@ -72,19 +78,76 @@ class _AddPlaceScreenState extends State<AddPlaceScreen> {
     }
   }
 
-  void _useCurrentLocation() async {
-    final savedPlace = await Navigator.push<SavedPlace>(
+  Future<void> _useCurrentLocation() async {
+    setState(() => _isFetchingLocation = true);
+    try {
+      final position = await _locationService.getCurrentLocation();
+      final placemark = await _locationService.getAddressFromCoordinates(
+        position.latitude,
+        position.longitude,
+      );
+      if (!mounted) return;
+
+      String address = 'Current Location';
+      if (placemark != null) {
+        final parts = [
+          placemark.street,
+          placemark.locality,
+          placemark.administrativeArea,
+          placemark.postalCode,
+        ].where((p) => p != null && p.isNotEmpty).toList();
+        if (parts.isNotEmpty) address = parts.join(', ');
+      }
+
+      setState(() => _isFetchingLocation = false);
+
+      final savedPlace = await Navigator.push<SavedPlace>(
+        context,
+        MaterialPageRoute(
+          builder: (context) => NamePlaceScreen(
+            address: address,
+            suggestedName: '',
+            latitude: position.latitude,
+            longitude: position.longitude,
+          ),
+        ),
+      );
+
+      if (savedPlace != null && mounted) {
+        Navigator.pop(context, savedPlace);
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isFetchingLocation = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not get current location')),
+        );
+      }
+    }
+  }
+
+  Future<void> _pickOnMap() async {
+    final location = await Navigator.push<Location>(
       context,
       MaterialPageRoute(
-        builder: (context) => const NamePlaceScreen(
-          address: 'Current Location',
-          suggestedName: '',
-        ),
+        builder: (_) => const MapPickerScreen(title: 'Pick a Place'),
       ),
     );
-
-    if (savedPlace != null && mounted) {
-      Navigator.pop(context, savedPlace);
+    if (location != null && mounted) {
+      final savedPlace = await Navigator.push<SavedPlace>(
+        context,
+        MaterialPageRoute(
+          builder: (context) => NamePlaceScreen(
+            address: location.address,
+            suggestedName: location.name,
+            latitude: location.latitude,
+            longitude: location.longitude,
+          ),
+        ),
+      );
+      if (savedPlace != null && mounted) {
+        Navigator.pop(context, savedPlace);
+      }
     }
   }
 
@@ -173,10 +236,13 @@ class _AddPlaceScreenState extends State<AddPlaceScreen> {
                 ? const Center(child: CircularProgressIndicator())
                 : ListView.builder(
                     padding: const EdgeInsets.symmetric(horizontal: 20),
-                    itemCount: _searchResults.length + 1, // +1 for current location
+                    itemCount: _searchResults.length + 2, // +2 for current location & map
                     itemBuilder: (context, index) {
                       if (index == _searchResults.length) {
                         return _buildCurrentLocationItem();
+                      }
+                      if (index == _searchResults.length + 1) {
+                        return _buildMapPickerItem();
                       }
                       final result = _searchResults[index];
                       return _buildSearchResultItem(result);
@@ -246,7 +312,7 @@ class _AddPlaceScreenState extends State<AddPlaceScreen> {
 
   Widget _buildCurrentLocationItem() {
     return GestureDetector(
-      onTap: _useCurrentLocation,
+      onTap: _isFetchingLocation ? null : _useCurrentLocation,
       child: Container(
         margin: const EdgeInsets.only(bottom: 8, top: 8),
         padding: const EdgeInsets.all(16),
@@ -256,14 +322,56 @@ class _AddPlaceScreenState extends State<AddPlaceScreen> {
         ),
         child: Row(
           children: [
+            _isFetchingLocation
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: AppColors.yellow90,
+                    ),
+                  )
+                : Icon(
+                    Icons.my_location,
+                    color: AppColors.yellow90,
+                    size: 20,
+                  ),
+            const SizedBox(width: 12),
+            Text(
+              _isFetchingLocation
+                  ? 'Getting your location...'
+                  : 'Use My Current Location',
+              style: AppTextStyles.body.copyWith(
+                color: AppColors.yellow90,
+                fontSize: 14,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMapPickerItem() {
+    return GestureDetector(
+      onTap: _pickOnMap,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.transparent,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
             Icon(
-              Icons.my_location,
+              Icons.map_outlined,
               color: AppColors.yellow90,
               size: 20,
             ),
             const SizedBox(width: 12),
             Text(
-              'Use My Current Location',
+              'Pick on Map',
               style: AppTextStyles.body.copyWith(
                 color: AppColors.yellow90,
                 fontSize: 14,

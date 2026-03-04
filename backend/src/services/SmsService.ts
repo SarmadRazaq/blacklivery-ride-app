@@ -81,9 +81,9 @@ export class SmsService {
                 provider: 'twilio-verify'
             };
         } catch (error: any) {
-            const errMsg = error.response?.data?.message || error.message;
-            logger.error({ err: error, phoneNumber }, 'Twilio Verify start failed');
-            return { success: false, provider: 'twilio-verify', error: errMsg };
+            const rawMsg = error.response?.data?.message || error.message;
+            logger.error({ err: error, rawMsg, phoneNumber }, 'Twilio Verify start failed');
+            return { success: false, provider: 'twilio-verify', error: 'Unable to send verification code. Please try again.' };
         }
     }
 
@@ -123,9 +123,9 @@ export class SmsService {
                 ...(approved ? {} : { error: 'Invalid or expired verification code' })
             };
         } catch (error: any) {
-            const errMsg = error.response?.data?.message || error.message;
-            logger.error({ err: error, phoneNumber }, 'Twilio Verify check failed');
-            return { success: false, provider: 'twilio-verify', error: errMsg };
+            const rawMsg = error.response?.data?.message || error.message;
+            logger.error({ err: error, rawMsg, phoneNumber }, 'Twilio Verify check failed');
+            return { success: false, provider: 'twilio-verify', error: 'Unable to verify code. Please request a new one and try again.' };
         }
     }
 

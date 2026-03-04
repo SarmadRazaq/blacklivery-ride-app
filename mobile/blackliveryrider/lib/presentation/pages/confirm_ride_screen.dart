@@ -26,12 +26,13 @@ class _ConfirmRideScreenState extends State<ConfirmRideScreen> {
   final TextEditingController _promoController = TextEditingController();
   String? _promoDiscount;
   double _discountAmount = 0;
-  String? _defaultPaymentLabel;
+  String? _savedCardLabel;
+  List<Map<String, dynamic>> _savedCards = [];
 
   @override
   void initState() {
     super.initState();
-    _loadDefaultPaymentMethod();
+    _loadSavedCards();
   }
 
   @override
@@ -40,20 +41,124 @@ class _ConfirmRideScreenState extends State<ConfirmRideScreen> {
     super.dispose();
   }
 
-  Future<void> _loadDefaultPaymentMethod() async {
+  Future<void> _loadSavedCards() async {
     try {
       final methods = await PaymentService().getPaymentMethods();
       if (methods.isNotEmpty && mounted) {
-        final m = methods.first;
-        final brand = m['brand'] ?? m['type'] ?? 'Card';
-        final last4 = m['last4'] ?? '';
         setState(() {
-          _defaultPaymentLabel = last4.isNotEmpty ? '$brand •••• $last4' : brand;
+          _savedCards = List<Map<String, dynamic>>.from(methods);
+          final m = methods.first;
+          final brand = m['brand'] ?? m['type'] ?? 'Card';
+          final last4 = m['last4'] ?? '';
+          _savedCardLabel = last4.isNotEmpty ? '$brand •••• $last4' : brand;
         });
       }
     } catch (e) {
-      // Ignore — fallback to 'Default Method'
+      // Ignore — fallback
     }
+  }
+
+  String _paymentMethodLabel(String method) {
+    switch (method) {
+      case 'wallet':
+        return 'Wallet';
+      case 'cash':
+        return 'Cash';
+      case 'card':
+        return _savedCardLabel ?? 'Card';
+      default:
+        return 'Wallet';
+    }
+  }
+
+  IconData _paymentMethodIcon(String method) {
+    switch (method) {
+      case 'wallet':
+        return Icons.account_balance_wallet;
+      case 'cash':
+        return Icons.payments_outlined;
+      case 'card':
+        return Icons.credit_card;
+      default:
+        return Icons.account_balance_wallet;
+    }
+  }
+
+  void _showPaymentMethodSheet() {
+    final bookingState = Provider.of<BookingState>(context, listen: false);
+    final current = bookingState.paymentMethod;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.bgPri,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) {
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: AppColors.inputBorder,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 20),
+              Text('Payment Method', style: AppTextStyles.heading3),
+              const SizedBox(height: 20),
+              _paymentOption(ctx, 'wallet', Icons.account_balance_wallet, 'Wallet', current == 'wallet'),
+              const SizedBox(height: 10),
+              if (_savedCards.isNotEmpty)
+                _paymentOption(ctx, 'card', Icons.credit_card, _savedCardLabel ?? 'Card', current == 'card'),
+              if (_savedCards.isNotEmpty) const SizedBox(height: 10),
+              _paymentOption(ctx, 'cash', Icons.payments_outlined, 'Cash', current == 'cash'),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _paymentOption(BuildContext ctx, String method, IconData icon, String label, bool selected) {
+    return GestureDetector(
+      onTap: () {
+        Provider.of<BookingState>(context, listen: false).setPaymentMethod(method);
+        Navigator.pop(ctx);
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: selected ? AppColors.yellow90.withOpacity(0.12) : AppColors.inputBg,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: selected ? AppColors.yellow90 : AppColors.inputBorder,
+            width: selected ? 2 : 1,
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: selected ? AppColors.yellow90 : AppColors.txtInactive, size: 22),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Text(
+                label,
+                style: AppTextStyles.body.copyWith(
+                  color: selected ? AppColors.yellow90 : Colors.white,
+                  fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                ),
+              ),
+            ),
+            if (selected)
+              const Icon(Icons.check_circle, color: AppColors.yellow90, size: 22),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _applyPromoCode() async {
@@ -81,15 +186,49 @@ class _ConfirmRideScreenState extends State<ConfirmRideScreen> {
     setState(() => _isLoading = true);
 
     try {
-      await Provider.of<BookingState>(context, listen: false).createBooking();
+      final bookingState = Provider.of<BookingState>(context, listen: false);
+      await bookingState.createBooking();
 
       if (mounted) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (context) => const SearchingDriverScreen(),
-          ),
-        );
+        // Scheduled rides → confirmation dialog, then back to home
+        if (bookingState.bookingStatus == 'scheduled') {
+          await showDialog(
+            context: context,
+            barrierDismissible: false,
+            builder: (ctx) => AlertDialog(
+              backgroundColor: AppColors.inputBg,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              title: Row(
+                children: [
+                  const Icon(Icons.check_circle, color: AppColors.yellow90, size: 28),
+                  const SizedBox(width: 10),
+                  Text('Ride Scheduled', style: AppTextStyles.heading3),
+                ],
+              ),
+              content: Text(
+                'Your ride has been scheduled for ${bookingState.formattedScheduledTime}.\n\nYou can view it in My Rides.',
+                style: AppTextStyles.body.copyWith(color: AppColors.txtSec),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    Navigator.of(ctx).pop();
+                    Navigator.of(context).popUntil((route) => route.isFirst);
+                  },
+                  child: Text('OK', style: AppTextStyles.body.copyWith(color: AppColors.yellow90, fontWeight: FontWeight.w600)),
+                ),
+              ],
+            ),
+          );
+        } else {
+          // Immediate ride → searching for driver
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (context) => const SearchingDriverScreen(),
+            ),
+          );
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -290,32 +429,41 @@ class _ConfirmRideScreenState extends State<ConfirmRideScreen> {
                             const SizedBox(height: 16),
                           ],
 
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(
-                                'Payment',
-                                style: AppTextStyles.body.copyWith(
-                                  color: AppColors.txtInactive,
+                          GestureDetector(
+                            onTap: _showPaymentMethodSheet,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  'Payment',
+                                  style: AppTextStyles.body.copyWith(
+                                    color: AppColors.txtInactive,
+                                  ),
                                 ),
-                              ),
-                              Row(
-                                children: [
-                                  const Icon(
-                                    Icons.credit_card,
-                                    color: AppColors.yellow90,
-                                    size: 20,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    _defaultPaymentLabel ?? 'Default Method',
-                                    style: AppTextStyles.body.copyWith(
-                                      color: Colors.white,
+                                Row(
+                                  children: [
+                                    Icon(
+                                      _paymentMethodIcon(bookingState.paymentMethod),
+                                      color: AppColors.yellow90,
+                                      size: 20,
                                     ),
-                                  ),
-                                ],
-                              ),
-                            ],
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      _paymentMethodLabel(bookingState.paymentMethod),
+                                      style: AppTextStyles.body.copyWith(
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    const Icon(
+                                      Icons.chevron_right,
+                                      color: AppColors.txtInactive,
+                                      size: 18,
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
                           ),
                           // Promo code section
                           const SizedBox(height: 16),
@@ -359,11 +507,11 @@ class _ConfirmRideScreenState extends State<ConfirmRideScreen> {
                                       contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                                       border: OutlineInputBorder(
                                         borderRadius: BorderRadius.circular(10),
-                                        borderSide: BorderSide(color: AppColors.inputBorder),
+                                        borderSide: BorderSide.none,
                                       ),
                                       enabledBorder: OutlineInputBorder(
                                         borderRadius: BorderRadius.circular(10),
-                                        borderSide: BorderSide(color: AppColors.inputBorder),
+                                        borderSide: BorderSide.none,
                                       ),
                                     ),
                                   ),
@@ -425,7 +573,11 @@ class _ConfirmRideScreenState extends State<ConfirmRideScreen> {
             Padding(
               padding: const EdgeInsets.all(20),
               child: CustomButton.main(
-                text: _isLoading ? 'Processing...' : 'Confirm & Book',
+                text: _isLoading
+                    ? 'Processing...'
+                    : (Provider.of<BookingState>(context).isPickupNow
+                        ? 'Confirm & Book'
+                        : 'Schedule Ride'),
                 onTap: _isLoading ? null : _confirmRide,
               ),
             ),

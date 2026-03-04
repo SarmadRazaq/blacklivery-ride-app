@@ -12,7 +12,7 @@ class WalletTransaction {
     required this.date,
     required this.amount,
     required this.type,
-    this.currency = 'NGN',
+    this.currency = 'USD',
   });
 
   factory WalletTransaction.fromJson(Map<String, dynamic> json) {
@@ -36,7 +36,7 @@ class WalletTransaction {
       date: parsedDate,
       amount: (json['amount'] as num?)?.toDouble() ?? 0.0,
       type: json['type'] ?? 'debit',
-      currency: json['currency'] ?? 'NGN',
+      currency: json['currency'] ?? 'USD',
     );
   }
 

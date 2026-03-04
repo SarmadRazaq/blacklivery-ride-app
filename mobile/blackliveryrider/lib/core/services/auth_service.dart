@@ -7,8 +7,17 @@ import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'dart:async';
 import 'dart:io';
 import '../network/api_client.dart';
+import '../network/api_error_message.dart';
 import '../models/user_model.dart';
 import 'firebase_storage_service.dart';
+
+/// Thrown when a user with the wrong role tries to log into this app.
+class RoleException implements Exception {
+  final String message;
+  RoleException(this.message);
+  @override
+  String toString() => message;
+}
 
 class AuthService {
   final firebase_auth.FirebaseAuth _firebaseAuth =
@@ -21,6 +30,19 @@ class AuthService {
   /// Never persisted to storage.
   static String? _pendingPassword;
   static String? _pendingDisplayName;
+
+  /// Validate the logged-in user has the 'rider' role.
+  /// If the account is a driver, sign out immediately and throw.
+  User _validateRiderRole(User user) {
+    if (user.role != null && user.role!.isNotEmpty && user.role != 'rider') {
+      _firebaseAuth.signOut();
+      throw RoleException(
+        'This account is registered as a ${user.role}. '
+        'Please use the ${user.role == "driver" ? "Driver" : user.role!} app instead.',
+      );
+    }
+    return user;
+  }
 
   /// Get current Firebase user
   firebase_auth.User? get currentUser => _firebaseAuth.currentUser;
@@ -68,9 +90,11 @@ class AuthService {
         );
         final user = await getProfile();
         debugPrint(
-          '=== AuthService.login: Profile fetched: ${user.fullName} ===',
+          '=== AuthService.login: Profile fetched: ${user.fullName} (role=${user.role}) ===',
         );
-        return user;
+        return _validateRiderRole(user);
+      } on RoleException {
+        rethrow;
       } catch (profileError) {
         debugPrint(
           '=== AuthService.login: Profile not found ($profileError), creating backend profile... ===',
@@ -123,7 +147,10 @@ class AuthService {
 
       // 6. Fetch and return user profile
       try {
-        return await getProfile();
+        final user = await getProfile();
+        return _validateRiderRole(user);
+      } on RoleException {
+        rethrow;
       } catch (_) {
         return await _createBackendProfile(
           userCredential.user!.email ?? googleUser.email,
@@ -177,7 +204,10 @@ class AuthService {
 
       // Fetch/Create profile
       try {
-        return await getProfile();
+        final user = await getProfile();
+        return _validateRiderRole(user);
+      } on RoleException {
+        rethrow;
       } catch (_) {
         // Use Apple-info if available, otherwise fallback
         final email = userCredential.user!.email ?? appleCredential.email;
@@ -306,7 +336,10 @@ class AuthService {
       _pendingDisplayName = null;
 
       try {
-        return await getProfile();
+        final user = await getProfile();
+        return _validateRiderRole(user);
+      } on RoleException {
+        rethrow;
       } catch (_) {
         if (pendingName != null && pendingName.isNotEmpty) {
           await refreshedUser.updateDisplayName(pendingName);
@@ -348,8 +381,10 @@ class AuthService {
     }
   }
 
-  /// Verify phone with OTP
-  Future<User> verifyPhone(String phone, String otp) async {
+  /// Verify phone with OTP.
+  /// Returns a [User] if the phone is linked to an existing account.
+  /// Returns null if the phone was verified but no account exists (phone-based signup flow).
+  Future<User?> verifyPhone(String phone, String otp) async {
     try {
       final response = await ApiClient().dio.post(
         '/api/v1/auth/phone/verify',
@@ -369,15 +404,76 @@ class AuthService {
       }
 
       try {
-        return await getProfile();
+        final user = await getProfile();
+        return _validateRiderRole(user);
+      } on RoleException {
+        rethrow;
       } catch (profileError) {
         if (_firebaseAuth.currentUser == null) {
-          throw 'Phone verified, but no account is linked to this number. Please sign up with email first.';
+          // Phone verified but no account — signal caller to show signup form
+          return null;
         }
         rethrow;
       }
+    } on DioException catch (e) {
+      throw apiErrorMessage(e);
     } catch (e) {
-      throw e.toString();
+      // If it's already a clean string, pass it through
+      final msg = e.toString();
+      if (msg.contains('DioException') || msg.contains('bad response')) {
+        throw 'Verification failed. Please check your code and try again.';
+      }
+      throw msg;
+    }
+  }
+
+  /// Complete registration using a phone number that was already verified via OTP.
+  /// Called after verifyPhone returns null (no existing account).
+  Future<User> registerWithVerifiedPhone({
+    required String email,
+    required String password,
+    required String fullName,
+    required String phoneNumber,
+    String? region,
+  }) async {
+    try {
+      final response = await ApiClient().dio.post(
+        '/api/v1/auth/register-with-phone',
+        data: {
+          'email': email.trim().toLowerCase(),
+          'password': password,
+          'fullName': fullName,
+          'phoneNumber': phoneNumber,
+          'role': 'rider',
+          if (region != null) 'region': region,
+        },
+        options: Options(extra: {'suppressGlobalError': true}),
+      );
+
+      // Auto-login with custom token if returned
+      final token = response.data is Map<String, dynamic>
+          ? response.data['token'] as String?
+          : null;
+
+      if (token != null && token.isNotEmpty) {
+        await _firebaseAuth.signInWithCustomToken(token);
+      } else {
+        // Fallback: sign in with email/password
+        await _firebaseAuth.signInWithEmailAndPassword(
+          email: email.trim().toLowerCase(),
+          password: password,
+        );
+      }
+
+      return await getProfile();
+    } on DioException catch (e) {
+      throw apiErrorMessage(e);
+    } catch (e) {
+      final msg = e.toString();
+      if (msg.contains('DioException') || msg.contains('bad response')) {
+        throw 'Registration failed. Please try again.';
+      }
+      throw msg;
     }
   }
 
@@ -392,7 +488,9 @@ class AuthService {
       if (data == null) {
         throw 'User profile not found. Please register first.';
       }
-      return User.fromJson(data as Map<String, dynamic>);
+      return _mergeWithFirebaseAuth(
+        User.fromJson(data as Map<String, dynamic>),
+      );
     } catch (e) {
       rethrow;
     }
@@ -407,20 +505,54 @@ class AuthService {
   }) async {
     final dio = ApiClient().dio;
     try {
+      // Only include non-null fields to avoid overwriting existing data
+      // (backend treats null as an intentional clear since JS null !== undefined)
+      final data = <String, dynamic>{};
+      if (fullName != null) data['fullName'] = fullName;
+      if (email != null) data['email'] = email;
+      if (phoneNumber != null) data['phoneNumber'] = phoneNumber;
+      if (profileImage != null) data['profileImage'] = profileImage;
+
       final response = await dio.patch(
         '/api/v1/auth/profile',
-        data: {
-          'fullName': fullName,
-          'email': email,
-          'phoneNumber': phoneNumber,
-          'profileImage': profileImage,
-        },
+        data: data,
       );
-      final data = response.data['data'] ?? response.data;
-      return User.fromJson(data as Map<String, dynamic>);
+      final respData = response.data['data'] ?? response.data;
+      return _mergeWithFirebaseAuth(
+        User.fromJson(respData as Map<String, dynamic>),
+      );
     } catch (e) {
       throw _handleError(e);
     }
+  }
+
+  /// Fill missing email/phone/photo from Firebase Auth when Firestore doc
+  /// doesn't have them (e.g. user signed up via Google or phone only).
+  User _mergeWithFirebaseAuth(User user) {
+    final fbUser = _firebaseAuth.currentUser;
+    if (fbUser == null) return user;
+
+    final needsEmail = user.email.isEmpty && (fbUser.email ?? '').isNotEmpty;
+    final needsPhone = user.phone.isEmpty && (fbUser.phoneNumber ?? '').isNotEmpty;
+    final needsPhoto = (user.profileImage == null || user.profileImage!.isEmpty) &&
+        (fbUser.photoURL ?? '').isNotEmpty;
+
+    if (!needsEmail && !needsPhone && !needsPhoto) return user;
+
+    return User(
+      id: user.id,
+      email: needsEmail ? fbUser.email! : user.email,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      phone: needsPhone ? fbUser.phoneNumber! : user.phone,
+      profileImage: needsPhoto ? fbUser.photoURL : user.profileImage,
+      region: user.region,
+      role: user.role,
+      rating: user.rating,
+      totalTrips: user.totalTrips,
+      driverDetails: user.driverDetails,
+      twoFactorEnabled: user.twoFactorEnabled,
+    );
   }
 
   Future<String> uploadProfileImage(File file) async {

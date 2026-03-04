@@ -11,7 +11,9 @@ export const initiatePaymentSchema = z.object({
         callbackUrl: z.string().url().optional(),
         captureNow: z.boolean().optional(),
         reference: z.string().optional(),
+        gateway: z.string().optional(),
         metadata: z.record(z.string(), z.any()).optional(),
+        sdkMode: z.boolean().optional(),
     })
 });
 

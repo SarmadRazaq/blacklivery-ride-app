@@ -409,11 +409,11 @@ class _LoginSecurityScreenState extends State<LoginSecurityScreen> {
                   fillColor: AppColors.inputBg,
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(8),
-                    borderSide: BorderSide(color: AppColors.inputBorder),
+                    borderSide: BorderSide.none,
                   ),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(8),
-                    borderSide: BorderSide(color: AppColors.inputBorder),
+                    borderSide: BorderSide.none,
                   ),
                 ),
               ),

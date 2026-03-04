@@ -13,6 +13,13 @@ class FirebaseStorageService {
       throw Exception('You must be signed in to upload profile image.');
     }
 
+    // Force token refresh to ensure auth is current for storage rules
+    try {
+      await user.getIdToken(true);
+    } catch (_) {
+      // Ignore refresh errors — proceed with existing token
+    }
+
     final extension = _fileExtension(file.path);
     final path = 'profiles/${user.uid}/avatar_${DateTime.now().millisecondsSinceEpoch}.$extension';
     final ref = _storage.ref().child(path);

@@ -8,9 +8,12 @@ import 'package:provider/provider.dart';
 import '../../core/data/booking_state.dart';
 import '../../core/services/socket_service.dart';
 import '../../core/services/location_service.dart';
+import '../../core/services/navigation_service.dart';
 import '../widgets/vehicle_icon.dart';
 import '../widgets/ride_map_view.dart';
 import 'arriving_destination_screen.dart';
+import 'ride_chat_screen.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class DrivingToDestinationScreen extends StatefulWidget {
   const DrivingToDestinationScreen({super.key});
@@ -25,14 +28,17 @@ class _DrivingToDestinationScreenState
   bool _quietModeEnabled = false;
   int _minutesRemaining = 0;
   LatLng? _driverLatLng;
+  List<LatLng> _routePoints = [];
   final SocketService _socketService = SocketService();
   final LocationService _locationService = LocationService();
+  final NavigationService _navigationService = NavigationService();
   StreamSubscription? _locationSub;
 
   @override
   void initState() {
     super.initState();
     _initEta();
+    _fetchRoutePolyline();
     _listenToDriverLocation();
     _startRiderLocationTracking();
   }
@@ -69,6 +75,41 @@ class _DrivingToDestinationScreenState
     final bookingState = Provider.of<BookingState>(context, listen: false);
     final minutes = bookingState.selectedRideOption?.estimatedMinutes ?? 15;
     setState(() => _minutesRemaining = minutes);
+  }
+
+  /// Fetch real route polyline from Google Directions API
+  Future<void> _fetchRoutePolyline() async {
+    try {
+      final bookingState = Provider.of<BookingState>(context, listen: false);
+      final pickup = bookingState.pickupLocation;
+      final dropoff = bookingState.dropoffLocation;
+      if (pickup == null || dropoff == null) return;
+
+      final origin = LatLng(pickup.latitude, pickup.longitude);
+      final destination = LatLng(dropoff.latitude, dropoff.longitude);
+      final routeData = await _navigationService.getRoute(origin, destination);
+
+      if (routeData['status'] == 'OK' && mounted) {
+        final routes = routeData['routes'] as List;
+        if (routes.isNotEmpty) {
+          final encodedPolyline =
+              routes[0]['overview_polyline']['points'] as String;
+          final decoded = _navigationService.decodePolyline(encodedPolyline);
+
+          // Also update ETA from Directions API
+          final leg = routes[0]['legs'][0];
+          final durationSeconds = leg['duration']['value'] as int;
+          final etaMinutes = (durationSeconds / 60).ceil();
+
+          setState(() {
+            _routePoints = decoded;
+            _minutesRemaining = etaMinutes < 1 ? 1 : etaMinutes;
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('DrivingToDestination: Failed to fetch route polyline: $e');
+    }
   }
 
   void _listenToDriverLocation() {
@@ -129,6 +170,37 @@ class _DrivingToDestinationScreenState
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(const SnackBar(content: Text('Share link copied!')));
+  }
+
+  void _callDriver() {
+    final bookingState = Provider.of<BookingState>(context, listen: false);
+    final phone = bookingState.assignedDriver?.phone;
+    if (phone != null && phone.isNotEmpty) {
+      launchUrl(Uri.parse('tel:$phone'));
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Driver phone number not available')),
+      );
+    }
+  }
+
+  void _messageDriver() {
+    final bookingState = Provider.of<BookingState>(context, listen: false);
+    final rideId = bookingState.rideId;
+    final driverName = bookingState.assignedDriver?.name ?? 'Driver';
+    if (rideId != null) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) =>
+              RideChatScreen(rideId: rideId, driverName: driverName),
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Chat not available')),
+      );
+    }
   }
 
   void _openSafety() {
@@ -294,6 +366,7 @@ class _DrivingToDestinationScreenState
                   dropoff: dropoffLatLng,
                   driverLocation: _driverLatLng,
                   showRoute: true,
+                  routePoints: _routePoints.isNotEmpty ? _routePoints : null,
                 ),
               ],
             ),
@@ -660,20 +733,29 @@ class _DrivingToDestinationScreenState
                   ),
                 ),
 
-                const SizedBox(height: 12),
+                const SizedBox(height: 16),
 
-                // Safety button
-                Center(
-                  child: GestureDetector(
-                    onTap: _openSafety,
-                    child: Text(
-                      'Safety',
-                      style: AppTextStyles.body.copyWith(
-                        color: AppColors.txtInactive,
-                        fontSize: 14,
-                      ),
+                // Call, Chat, Safety buttons
+                Row(
+                  children: [
+                    _buildActionButton(
+                      icon: Icons.phone,
+                      label: 'Call',
+                      onTap: _callDriver,
                     ),
-                  ),
+                    const SizedBox(width: 12),
+                    _buildActionButton(
+                      icon: Icons.chat_bubble_outline,
+                      label: 'Chat',
+                      onTap: _messageDriver,
+                    ),
+                    const SizedBox(width: 12),
+                    _buildActionButton(
+                      icon: Icons.shield_outlined,
+                      label: 'Safety',
+                      onTap: _openSafety,
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -740,6 +822,39 @@ class _DrivingToDestinationScreenState
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildActionButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          decoration: BoxDecoration(
+            color: AppColors.inputBg,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppColors.inputBorder),
+          ),
+          child: Column(
+            children: [
+              Icon(icon, color: AppColors.yellow90, size: 20),
+              const SizedBox(height: 4),
+              Text(
+                label,
+                style: AppTextStyles.caption.copyWith(
+                  color: Colors.white,
+                  fontSize: 11,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

@@ -23,7 +23,12 @@ class SupportService {
           'category': category,
         },
       );
-      return response.data['data'];
+      // Backend returns ticket directly (no 'data' wrapper)
+      final raw = response.data;
+      if (raw is Map<String, dynamic>) {
+        return raw['data'] is Map<String, dynamic> ? raw['data'] : raw;
+      }
+      return null;
     } catch (e) {
       debugPrint('SupportService.createTicket error: $e');
       return null;
@@ -69,7 +74,11 @@ class SupportService {
   Future<Map<String, dynamic>?> getTicketDetails(String ticketId) async {
     try {
       final response = await _dio.get('/api/v1/support/$ticketId');
-      return response.data['data'];
+      final raw = response.data;
+      if (raw is Map<String, dynamic>) {
+        return raw['data'] is Map<String, dynamic> ? raw['data'] : raw;
+      }
+      return null;
     } catch (e) {
       debugPrint('SupportService.getTicketDetails error: $e');
       return null;

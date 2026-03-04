@@ -5,7 +5,7 @@ class AppAlert {
 
   static void showError(String message) {
     final messenger = messengerKey.currentState;
-    if (messenger == null || message.trim().isEmpty) return;
+    if (messenger == null || !messenger.mounted || message.trim().isEmpty) return;
 
     messenger
       ..hideCurrentSnackBar()

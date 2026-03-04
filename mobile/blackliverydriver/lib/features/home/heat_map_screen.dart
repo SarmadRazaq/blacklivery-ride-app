@@ -20,6 +20,8 @@ class _HeatMapScreenState extends State<HeatMapScreen> {
   String _selectedFilter = 'All';
   Set<Circle> _demandCircles = {};
   bool _isLoadingZones = false;
+  bool _hasLoadedOnce = false;
+  bool _hasError = false;
 
   static const CameraPosition _initialPosition = CameraPosition(
     target: LatLng(41.8781, -87.6298),
@@ -45,6 +47,7 @@ class _HeatMapScreenState extends State<HeatMapScreen> {
   void initState() {
     super.initState();
     _getCurrentLocation();
+    _loadDemandZones(); // Always fetch demand data, even if location fails
   }
 
   Future<void> _getCurrentLocation() async {
@@ -64,8 +67,9 @@ class _HeatMapScreenState extends State<HeatMapScreen> {
           ),
         ),
       );
-      await _loadDemandZones();
-    } catch (_) {}
+    } catch (_) {
+      // Location may fail but map still renders via myLocationEnabled
+    }
   }
 
   Future<void> _loadDemandZones() async {
@@ -120,15 +124,20 @@ class _HeatMapScreenState extends State<HeatMapScreen> {
       if (!mounted) return;
       setState(() {
         _demandCircles = circles;
+        _hasError = false;
       });
     } catch (_) {
       if (!mounted) return;
+      setState(() => _hasError = true);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Unable to load demand zones')),
       );
     } finally {
       if (mounted) {
-        setState(() => _isLoadingZones = false);
+        setState(() {
+          _isLoadingZones = false;
+          _hasLoadedOnce = true;
+        });
       }
     }
   }
@@ -196,7 +205,10 @@ class _HeatMapScreenState extends State<HeatMapScreen> {
                     const Spacer(),
                     // Refresh button
                     IconButton(
-                      onPressed: _getCurrentLocation,
+                      onPressed: () {
+                        _getCurrentLocation();
+                        _loadDemandZones();
+                      },
                       icon: Container(
                         padding: const EdgeInsets.all(8),
                         decoration: BoxDecoration(
@@ -315,9 +327,13 @@ class _HeatMapScreenState extends State<HeatMapScreen> {
                             Text(
                               _isLoadingZones
                                 ? 'Syncing live demand...'
-                                : _demandCircles.isEmpty
-                                  ? 'Loading demand data...'
-                                  : '${_demandCircles.length} active zones nearby',
+                                : _hasError
+                                  ? 'Tap refresh to retry'
+                                  : !_hasLoadedOnce
+                                    ? 'Loading demand data...'
+                                    : _demandCircles.isEmpty
+                                      ? 'No active demand zones nearby'
+                                      : '${_demandCircles.length} active zones nearby',
                               style: const TextStyle(
                                 color: Colors.grey,
                                 fontSize: 12,

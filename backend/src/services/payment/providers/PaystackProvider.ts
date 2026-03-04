@@ -27,6 +27,7 @@ export class PaystackProvider implements IPaymentProvider {
     async initializeTransaction(email: string, amount: number, currency: string, reference: string, metadata?: any): Promise<PaymentInitResult> {
         // Paystack expects amount in kobo (x100)
         const koboAmount = Math.round(amount * 100);
+        const { sdkMode, ...cleanMeta } = metadata || {};
 
         try {
             const response = await axios.post(
@@ -36,7 +37,7 @@ export class PaystackProvider implements IPaymentProvider {
                     amount: koboAmount,
                     currency: 'NGN',
                     reference,
-                    metadata,
+                    metadata: cleanMeta,
                     callback_url: process.env.PAYSTACK_CALLBACK_URL
                 },
                 { headers: this.headers }
@@ -70,6 +71,14 @@ export class PaystackProvider implements IPaymentProvider {
                 { headers: this.headers }
             );
             const data = response.data.data;
+            const auth = data.authorization;
+            const cardDetails = auth ? {
+                last4: auth.last4,
+                brand: auth.brand || auth.card_type,
+                expMonth: parseInt(auth.exp_month, 10) || undefined,
+                expYear: parseInt(auth.exp_year, 10) || undefined,
+                authorizationCode: auth.authorization_code,
+            } : undefined;
             return {
                 success: data.status === 'success',
                 amount: data.amount / 100, // Convert back to unit
@@ -77,18 +86,18 @@ export class PaystackProvider implements IPaymentProvider {
                 reference: data.reference,
                 status: data.status,
                 gateway: 'paystack',
-                metadata: data.metadata
+                metadata: data.metadata,
+                cardDetails,
             };
         } catch (error: any) {
             logger.error({ err: error }, 'Paystack verify error');
             return {
-
                 success: false,
                 amount: 0,
                 currency: '',
                 reference,
                 status: 'failed',
-                gateway: 'paystack'
+                gateway: 'paystack',
             };
         }
     }
@@ -109,6 +118,14 @@ export class PaystackProvider implements IPaymentProvider {
         const data = payload.data;
 
         if (event === 'charge.success') {
+            const auth = data.authorization;
+            const cardDetails = auth ? {
+                last4: auth.last4,
+                brand: auth.brand || auth.card_type,
+                expMonth: parseInt(auth.exp_month, 10) || undefined,
+                expYear: parseInt(auth.exp_year, 10) || undefined,
+                authorizationCode: auth.authorization_code,
+            } : undefined;
             return {
                 success: true,
                 amount: data.amount / 100,
@@ -116,7 +133,8 @@ export class PaystackProvider implements IPaymentProvider {
                 reference: data.reference,
                 status: 'success',
                 gateway: 'paystack',
-                metadata: data.metadata
+                metadata: data.metadata,
+                cardDetails,
             };
         }
 

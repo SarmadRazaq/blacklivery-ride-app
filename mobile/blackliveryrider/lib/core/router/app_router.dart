@@ -29,7 +29,12 @@ abstract class AppRoutes {
   static const savedPlaces = '/saved-places';
 }
 
-/// Global [GoRouter] instance.
+/// Singleton [GoRouter] instance — set once by [_AppShellState] via
+/// [buildAppRouter], then available globally for notification deep-links etc.
+late GoRouter appRouter;
+
+/// Creates a [GoRouter] wired to [authProvider] so route redirects re-run
+/// whenever the auth state changes.
 ///
 /// Supports:
 /// - Custom URL scheme: `blacklivery://` (e.g. blacklivery://ride/abc123)
@@ -40,9 +45,10 @@ abstract class AppRoutes {
 ///   `android:scheme="https" android:host="blacklivery.com"` in AndroidManifest.xml
 /// - iOS:  `blacklivery` in CFBundleURLSchemes + Associated Domains entitlement
 ///   (`applinks:blacklivery.com`) in Runner.entitlements
-final GoRouter appRouter = GoRouter(
+GoRouter buildAppRouter(AuthProvider authProvider) => GoRouter(
   initialLocation: '/home',
   debugLogDiagnostics: false,
+  refreshListenable: authProvider,
   redirect: _globalRedirect,
   routes: [
     // Root redirect
@@ -137,16 +143,25 @@ final GoRouter appRouter = GoRouter(
   ],
 );
 
-/// Redirect unauthenticated users to onboarding; let authenticated users through.
+/// Redirect unauthenticated users to onboarding and authenticated users away
+/// from public-only screens (onboarding / login).
 String? _globalRedirect(BuildContext context, GoRouterState state) {
   final auth = Provider.of<AuthProvider>(context, listen: false);
+  final loggedIn = auth.isLoggedIn;
   final publicPaths = {AppRoutes.onboarding, AppRoutes.login};
 
   final isPublic = publicPaths.any((p) => state.matchedLocation.startsWith(p));
 
-  if (!auth.isLoggedIn && !isPublic) {
+  // Not logged in → force to onboarding (unless already there or on login).
+  if (!loggedIn && !isPublic) {
     return AppRoutes.onboarding;
   }
+
+  // Logged in but sitting on a public page → send to home.
+  if (loggedIn && isPublic) {
+    return AppRoutes.home;
+  }
+
   return null;
 }
 

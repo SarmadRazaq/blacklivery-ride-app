@@ -697,6 +697,152 @@ export const verifyPhoneVerification = async (req: Request, res: Response): Prom
     }
 };
 
+/**
+ * Register a new user using a phone number that was already verified via OTP.
+ * Checks phone_verifications collection for verified status.
+ * Creates Firebase Auth user + Firestore user doc, returns custom token.
+ */
+export const registerWithVerifiedPhone = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { email, password, fullName, phoneNumber, role, region: explicitRegion } = req.body;
+
+        if (!email || !password || !fullName || !phoneNumber) {
+            res.status(400).json({ error: 'Email, password, full name, and phone number are required' });
+            return;
+        }
+
+        if (password.length < 8) {
+            res.status(400).json({ error: 'Password must be at least 8 characters' });
+            return;
+        }
+
+        const normalizedEmail = email.toLowerCase().trim();
+        const normalizedPhone = normalizePhone(phoneNumber);
+
+        // Verify that this phone was actually verified via OTP
+        const phoneVerifDoc = await db.collection('phone_verifications').doc(normalizedPhone).get();
+        if (!phoneVerifDoc.exists || !phoneVerifDoc.data()?.verified) {
+            res.status(400).json({ error: 'Phone number has not been verified. Please verify your phone first.' });
+            return;
+        }
+
+        // Check verification is not too old (30 min window)
+        const verifiedAt = phoneVerifDoc.data()?.verifiedAt;
+        if (verifiedAt) {
+            const verifiedTime = verifiedAt?.toDate?.() ?? new Date(verifiedAt);
+            const elapsed = Date.now() - verifiedTime.getTime();
+            if (elapsed > 30 * 60 * 1000) {
+                res.status(400).json({ error: 'Phone verification expired. Please verify your phone again.' });
+                return;
+            }
+        }
+
+        // Check if email or phone already exists
+        await ensureUniqueUser(normalizedEmail, normalizedPhone);
+
+        // Create Firebase Auth user
+        let userRecord;
+        const phoneFormatted = phoneNumber.startsWith('+')
+            ? phoneNumber
+            : `+${normalizedPhone}`;
+
+        try {
+            userRecord = await auth.createUser({
+                email: normalizedEmail,
+                password,
+                displayName: fullName,
+                phoneNumber: phoneFormatted,
+            });
+        } catch (createError: any) {
+            if (createError.code === 'auth/phone-number-already-exists') {
+                // Phone linked to a Firebase Auth account but no Firestore doc — create without phone
+                userRecord = await auth.createUser({
+                    email: normalizedEmail,
+                    password,
+                    displayName: fullName,
+                });
+            } else if (createError.code === 'auth/email-already-exists') {
+                res.status(409).json({ error: 'Email already registered' });
+                return;
+            } else {
+                throw createError;
+            }
+        }
+
+        // Detect region
+        const region = detectRegion(explicitRegion, phoneNumber);
+        const now = new Date();
+
+        // Create Firestore user document
+        const newUser = {
+            uid: userRecord.uid,
+            email: normalizedEmail,
+            displayName: fullName,
+            phoneNumber: phoneNumber,
+            photoURL: '',
+            role: role || 'rider',
+            createdAt: now,
+            updatedAt: now,
+            isActive: true,
+            region: region.code,
+            currency: region.currency,
+            countryCode: region.code === 'NG' ? 'NG' : 'US',
+            emailLowercase: normalizedEmail,
+            phoneNumberNormalized: normalizedPhone,
+            phoneVerified: true,
+            emailVerified: false,
+            ...(role === 'driver' && {
+                driverDetails: {
+                    isOnline: false,
+                    rating: 5.0,
+                    totalTrips: 0,
+                    earnings: 0
+                },
+                driverOnboarding: {
+                    status: 'pending_documents',
+                    submittedAt: null,
+                    approvedAt: null
+                }
+            })
+        };
+
+        await db.collection('users').doc(userRecord.uid).set(newUser);
+
+        // Clean up phone verification doc
+        await phoneVerifDoc.ref.delete().catch(() => {});
+
+        logger.info({ uid: userRecord.uid, email: normalizedEmail, phone: phoneNumber }, 'Phone-based signup completed');
+
+        // Generate custom token for auto-login
+        let customToken: string | null = null;
+        try {
+            customToken = await auth.createCustomToken(userRecord.uid);
+        } catch (tokenError) {
+            logger.warn({ err: tokenError }, 'Could not generate custom token for phone signup');
+        }
+
+        res.status(201).json({
+            message: 'Account created successfully',
+            data: {
+                uid: userRecord.uid,
+                email: newUser.email,
+                displayName: newUser.displayName,
+                role: newUser.role,
+                region: newUser.region,
+                currency: newUser.currency,
+            },
+            ...(customToken && { token: customToken })
+        });
+    } catch (error: any) {
+        logger.error({ err: error }, 'registerWithVerifiedPhone failed');
+        if (error.message?.includes('already registered')) {
+            res.status(409).json({ error: error.message });
+        } else {
+            res.status(500).json({ error: 'Unable to complete registration' });
+        }
+    }
+};
+
 export const register = async (req: AuthRequest, res: Response): Promise<void> => {
     const { uid, email, picture } = req.user;
     const { role, displayName, phoneNumber, deviceId, country } = req.body;

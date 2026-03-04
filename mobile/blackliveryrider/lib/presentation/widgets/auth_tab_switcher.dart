@@ -33,9 +33,6 @@ class AuthTabSwitcher extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: isSelected ? AppColors.bgPri : Colors.transparent,
                   borderRadius: BorderRadius.circular(10),
-                  border: isSelected
-                      ? Border.all(color: AppColors.inputBorder, width: 1)
-                      : null,
                 ),
                 child: Center(
                   child: Text(

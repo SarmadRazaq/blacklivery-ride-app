@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:provider/provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../core/models/location_model.dart';
 import '../../core/services/location_service.dart';
+import '../../core/utils/region_geofence.dart';
+import '../../core/providers/region_provider.dart';
 import '../widgets/custom_button.dart';
 
 class MapPickerScreen extends StatefulWidget {
@@ -246,20 +249,41 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
 
       if (!mounted) return;
 
-      setState(() {
-        _selectedLocation = LatLng(position.latitude, position.longitude);
-        _isLoading = false;
-      });
+      // If GPS position is outside service area, default to region center
+      final gpsLat = position.latitude;
+      final gpsLng = position.longitude;
+      if (RegionGeofence.isSupported(gpsLat, gpsLng)) {
+        setState(() {
+          _selectedLocation = LatLng(gpsLat, gpsLng);
+          _isLoading = false;
+        });
+      } else {
+        setState(() {
+          _selectedLocation = _regionCenter();
+          _isLoading = false;
+        });
+      }
 
       _getAddressFromLatLng(_selectedLocation);
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _selectedLocation = const LatLng(6.5244, 3.3792); // Default to Lagos
+        _selectedLocation = _regionCenter();
         _isLoading = false;
       });
       _getAddressFromLatLng(_selectedLocation);
     }
+  }
+
+  /// Returns the center of the user's selected region (Chicago or Lagos).
+  LatLng _regionCenter() {
+    try {
+      final region = Provider.of<RegionProvider>(context, listen: false);
+      if (region.isChicago) {
+        return const LatLng(41.8781, -87.6298); // Downtown Chicago
+      }
+    } catch (_) {}
+    return const LatLng(6.5244, 3.3792); // Lagos fallback
   }
 
   final LocationService _locationService = LocationService();

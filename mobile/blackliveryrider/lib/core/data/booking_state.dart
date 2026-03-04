@@ -246,12 +246,26 @@ class BookingState extends ChangeNotifier {
         position.longitude,
       );
 
+      String name = 'Current Location';
+      String address = 'Lat: ${position.latitude}, Lng: ${position.longitude}';
+      if (placemark != null) {
+        final parts = [
+          placemark.street,
+          placemark.locality,
+          placemark.administrativeArea,
+          placemark.postalCode,
+        ].where((p) => p != null && p.isNotEmpty).toList();
+        if (parts.isNotEmpty) {
+          address = parts.join(', ');
+          // Use street + locality as the display name if available
+          name = placemark.street ?? placemark.locality ?? 'Current Location';
+        }
+      }
+
       _currentLocation = Location(
         id: 'current',
-        name: 'Current Location',
-        address: placemark != null
-            ? '${placemark.street}, ${placemark.locality}'
-            : 'Lat: ${position.latitude}, Lng: ${position.longitude}',
+        name: name,
+        address: address,
         latitude: position.latitude,
         longitude: position.longitude,
       );
@@ -424,10 +438,14 @@ class BookingState extends ChangeNotifier {
         bookingType: _bookingType,
         hoursBooked: _bookingType == 'hourly' ? _hoursBooked : null,
         airportCode: _bookingType == 'airport_transfer' ? _airportCode : null,
+        scheduledAt: _isPickupNow ? null : _scheduledTime,
       );
 
       if (result != null) {
         _rideId = result['id']; // Capture Ride ID
+
+        final isScheduled = !_isPickupNow;
+        final initialStatus = isScheduled ? 'scheduled' : 'finding_driver';
 
         // 3. Update Local State
         _currentBooking = Booking(
@@ -440,19 +458,21 @@ class BookingState extends ChangeNotifier {
           distanceKm:
               (result['distanceKm'] as num?)?.toDouble() ??
               _estimatedDistanceKm,
-          status: 'finding_driver', // Initial status
+          status: initialStatus,
           isForSomeoneElse: _isForSomeoneElse,
           recipientName: _recipientName,
           recipientPhone: _recipientPhone,
         );
-        _bookingStatus = 'searching_driver';
-        _isLoading = false; // Loading complete - now waiting for driver match
+        _bookingStatus = isScheduled ? 'scheduled' : 'searching_driver';
+        _isLoading = false;
         notifyListeners();
 
-        // 4. Listen for Socket Updates
-        _socketService.listenToRideUpdates(_rideId!, (data) {
-          _handleRideUpdate(data);
-        });
+        // 4. Listen for Socket Updates (only for immediate rides)
+        if (!isScheduled) {
+          _socketService.listenToRideUpdates(_rideId!, (data) {
+            _handleRideUpdate(data);
+          });
+        }
       } else {
         // Handle error
         _isLoading = false;

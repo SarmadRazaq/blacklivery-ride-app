@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../utils/region_geofence.dart';
 
 /// Region codes matching backend region.config.ts
 enum RegionCode { ng, usChi }
@@ -97,12 +98,14 @@ class RegionProvider extends ChangeNotifier {
     return RegionCode.ng;
   }
 
-  /// Auto-detect region from latitude/longitude.
-  /// Chicago metro bounding box: ~41.6–42.1 N, 87.5–88.0 W.
+  /// Auto-detect region from latitude/longitude using real service-area
+  /// geofences (Chicago metro and Nigeria). Falls back to Nigeria for
+  /// locations outside both areas.
   void detectFromLocation(double lat, double lng) {
-    final isChicagoArea =
-        lat >= 41.5 && lat <= 42.2 && lng >= -88.1 && lng <= -87.4;
-    final detected = isChicagoArea ? RegionCode.usChi : RegionCode.ng;
+    final regionKey = RegionGeofence.regionOf(lat, lng);
+    final detected = regionKey == RegionGeofence.chicago
+        ? RegionCode.usChi
+        : RegionCode.ng;
     if (_currentCode != detected) {
       _currentCode = detected;
       notifyListeners();

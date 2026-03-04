@@ -490,7 +490,7 @@ class _LoginScreenState extends State<LoginScreen> {
             border: Border.all(
               color: isSelected
                   ? AppColors.yellow90.withOpacity(0.6)
-                  : AppColors.inputBorder,
+                  : AppColors.inputBg,
               width: isSelected ? 1.5 : 1,
             ),
           ),

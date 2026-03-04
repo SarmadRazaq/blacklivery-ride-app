@@ -4,19 +4,56 @@ import '../../core/theme/app_text_styles.dart';
 import '../widgets/custom_button.dart';
 
 class PickupTimeSheet extends StatefulWidget {
-  const PickupTimeSheet({super.key});
+  final DateTime? initialDateTime;
+  final bool initialIsNow;
+
+  const PickupTimeSheet({
+    super.key,
+    this.initialDateTime,
+    this.initialIsNow = true,
+  });
 
   @override
   State<PickupTimeSheet> createState() => _PickupTimeSheetState();
 }
 
 class _PickupTimeSheetState extends State<PickupTimeSheet> {
-  DateTime _selectedDate = DateTime.now();
-  int _selectedHour = 4;
-  int _selectedMinute = 30;
-  bool _isPM = true;
+  late DateTime _selectedDate;
+  late int _selectedHour;
+  late int _selectedMinute;
+  late bool _isPM;
+
+  @override
+  void initState() {
+    super.initState();
+    // Use the passed-in time if available and not "now", otherwise default to current time + 30 min
+    final init = (widget.initialDateTime != null && !widget.initialIsNow)
+        ? widget.initialDateTime!
+        : DateTime.now().add(const Duration(minutes: 30));
+    _selectedDate = DateTime(init.year, init.month, init.day);
+    final h = init.hour;
+    _isPM = h >= 12;
+    _selectedHour = h > 12 ? h - 12 : (h == 0 ? 12 : h);
+    _selectedMinute = init.minute;
+  }
 
   final List<String> _days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+  String get _dayLabel {
+    final now = DateTime.now();
+    if (_selectedDate.year == now.year &&
+        _selectedDate.month == now.month &&
+        _selectedDate.day == now.day) {
+      return 'Today';
+    }
+    final tomorrow = now.add(const Duration(days: 1));
+    if (_selectedDate.year == tomorrow.year &&
+        _selectedDate.month == tomorrow.month &&
+        _selectedDate.day == tomorrow.day) {
+      return 'Tomorrow';
+    }
+    return _days[_selectedDate.weekday - 1];
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -65,7 +102,9 @@ class _PickupTimeSheetState extends State<PickupTimeSheet> {
               // Days of week
               ...List.generate(7, (index) {
                 final date = DateTime.now().add(Duration(days: index));
-                final isSelected = index == 0;
+                final isSelected = _selectedDate.year == date.year &&
+                    _selectedDate.month == date.month &&
+                    _selectedDate.day == date.day;
                 
                 return GestureDetector(
                   onTap: () {
@@ -117,7 +156,7 @@ class _PickupTimeSheetState extends State<PickupTimeSheet> {
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              // Today label
+              // Day label (Today / day name)
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 decoration: BoxDecoration(
@@ -126,7 +165,7 @@ class _PickupTimeSheetState extends State<PickupTimeSheet> {
                   border: Border.all(color: AppColors.inputBorder),
                 ),
                 child: Text(
-                  'Today',
+                  _dayLabel,
                   style: AppTextStyles.body.copyWith(
                     color: Colors.white,
                     fontSize: 14,

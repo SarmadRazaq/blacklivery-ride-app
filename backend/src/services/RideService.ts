@@ -169,9 +169,13 @@ export class RideService {
         const pickupGeohash = encodeGeohash(pickupLocation.lat, pickupLocation.lng, 7);
         const dropoffGeohash = dropoffLocation ? encodeGeohash(dropoffLocation.lat, dropoffLocation.lng, 7) : undefined;
 
+        // If scheduledAt is provided, ride is scheduled for later dispatch by cron
+        const isScheduled = requestData.scheduledAt ? true : false;
+        const initialStatus = isScheduled ? 'scheduled' : 'finding_driver';
+
         const rideRecord: IRide = {
             riderId,
-            status: 'finding_driver',
+            status: initialStatus,
             bookingType: requestData.bookingType ?? 'on_demand',
             pickupLocation,
             dropoffLocation,
@@ -184,6 +188,7 @@ export class RideService {
             ...(requestData.hourlyStartTime && { hourlyStartTime: requestData.hourlyStartTime }),
             ...(requestData.deliveryDetails && { deliveryDetails: requestData.deliveryDetails }),
             ...(requestData.addOns && { addOns: requestData.addOns }),
+            ...(requestData.scheduledAt && { scheduledAt: new Date(requestData.scheduledAt) }),
             pricing: {
                 estimatedFare: finalFare,
                 currency: authoritativePrice.currency as 'NGN' | 'USD',
@@ -762,8 +767,16 @@ export class RideService {
                     }).catch(err => logger.warn({ err, driverId: ride.driverId }, 'Failed to clear driver currentRideId on completion'));
                 }
                 // Award loyalty points to rider (fire-and-forget)
-                loyaltyService.awardPoints(ride.riderId, ride.pricing.estimatedFare, ride.pricing.currency)
-                    .catch(err => logger.warn({ err, rideId: ride.id }, 'Failed to award loyalty points'));
+                // Prefer finalFare (actual settled fare) over estimatedFare
+                const loyaltyFare = ride.pricing?.finalFare ?? ride.pricing?.estimatedFare ?? 0;
+                const loyaltyCurrency = ride.pricing?.currency ?? 'USD';
+                if (loyaltyFare > 0) {
+                    loyaltyService.awardPoints(ride.riderId, loyaltyFare, loyaltyCurrency)
+                        .then(result => logger.info({ rideId: ride.id, pointsAwarded: result.pointsAwarded, newTotal: result.newTotal }, 'Loyalty points awarded'))
+                        .catch(err => logger.warn({ err, rideId: ride.id, fare: loyaltyFare, currency: loyaltyCurrency }, 'Failed to award loyalty points'));
+                } else {
+                    logger.warn({ rideId: ride.id, pricing: ride.pricing }, 'No fare found for loyalty points award');
+                }
                 // Send receipt email (fire-and-forget)
                 this.sendRideReceiptEmail(ride).catch(err => logger.warn({ err, rideId: ride.id }, 'Failed to send ride receipt email'));
                 break;

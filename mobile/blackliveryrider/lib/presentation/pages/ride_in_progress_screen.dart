@@ -15,6 +15,7 @@ import 'ride_completed_screen.dart';
 import '../../core/services/payment_service.dart';
 import '../../core/services/wallet_service.dart';
 import '../../core/utils/currency_utils.dart';
+import '../../core/payment/gateway_factory.dart';
 import 'payment_webview_screen.dart';
 
 class RideInProgressScreen extends StatefulWidget {
@@ -270,35 +271,68 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
     final rideId = bookingState.currentBooking?.id;
     final amount = bookingState.currentBooking?.estimatedPrice ?? 0;
 
-    // Card payment: redirect to payment gateway WebView
+    // Card payment: use native SDK (preferred) or WebView fallback
     if (paymentMethod == 'card' && rideId != null && amount > 0) {
       setState(() => _isInitiatingPayment = true);
       try {
-        final paymentData = await PaymentService().initiatePayment(
-          amount: amount,
-          rideId: rideId,
-          purpose: 'ride',
-        );
+          final isChicago = Provider.of<RegionProvider>(context, listen: false).isChicago;
+          final regionKey = isChicago ? 'US-CHI' : 'NG';
+          final gatewayId = isChicago ? 'stripe' : 'paystack';
+
+          final paymentData = await PaymentService().initiatePayment(
+            amount: amount,
+            rideId: rideId,
+            purpose: 'ride',
+            region: regionKey,
+            gateway: gatewayId,
+            sdkMode: true,
+          );
 
         if (!mounted) return;
         setState(() => _isInitiatingPayment = false);
 
-        // Backend normalizes all providers to 'authorizationUrl'
-        final authUrl = paymentData?['authorizationUrl'] as String? ??
-            paymentData?['authorization_url'] as String?;
-        final reference = paymentData?['reference'] as String?;
+        if (paymentData == null) return;
 
-        if (authUrl != null && authUrl.isNotEmpty) {
-          await Navigator.push<PaymentWebViewResult>(
-            context,
-            MaterialPageRoute(
-              builder: (_) => PaymentWebViewScreen(
-                authorizationUrl: authUrl,
-                reference: reference,
-                title: 'Pay for Ride',
-              ),
-            ),
+        // ── Try native SDK first ──────────────────────────────────────
+        final gateway = PaymentGatewayFactory.get(gatewayId);
+        final hasNativeToken = (paymentData['clientSecret'] != null) ||
+            (paymentData['accessCode'] != null) ||
+            (paymentData['authorizationUrl'] != null) ||
+            (paymentData['reference'] != null);
+
+        if (hasNativeToken && gateway.isSupported) {
+          final nativeResult = await gateway.processPayment(
+            context: context,
+            backendData: paymentData,
+            amount: amount,
+            currency: isChicago ? 'USD' : 'NGN',
+            email: paymentData['email'] as String? ?? '',
           );
+
+          if (nativeResult.success) {
+            final ref = nativeResult.reference ?? paymentData['reference']?.toString();
+            if (ref != null) {
+              await PaymentService().verifyPayment(reference: ref);
+            }
+          }
+        } else {
+          // ── Fallback to WebView ────────────────────────────────────
+          final authUrl = paymentData['authorizationUrl'] as String? ??
+              paymentData['authorization_url'] as String?;
+          final reference = paymentData['reference'] as String?;
+
+          if (authUrl != null && authUrl.isNotEmpty) {
+            await Navigator.push<PaymentWebViewResult>(
+              context,
+              MaterialPageRoute(
+                builder: (_) => PaymentWebViewScreen(
+                  authorizationUrl: authUrl,
+                  reference: reference,
+                  title: 'Pay for Ride',
+                ),
+              ),
+            );
+          }
         }
       } catch (e) {
         debugPrint('Payment initiation error: $e');

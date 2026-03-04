@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import { AuthRequest } from '../types/express';
 import { loyaltyService } from '../services/LoyaltyService';
+import { db } from '../config/firebase';
 import { logger } from '../utils/logger';
 
 /**
@@ -87,5 +88,92 @@ export const getActiveRedemptions = async (req: AuthRequest, res: Response): Pro
     } catch (error) {
         logger.error({ err: error }, 'Failed to get active redemptions');
         res.status(500).json({ error: 'Failed to get active redemptions' });
+    }
+};
+
+/**
+ * Backfill loyalty points for completed rides that were missed.
+ * Scans the user's completed rides and awards points for any not yet recorded.
+ */
+export const backfillPoints = async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const userId = req.user.uid;
+
+        // Get all completed rides for this user
+        const ridesSnap = await db.collection('rides')
+            .where('riderId', '==', userId)
+            .where('status', '==', 'completed')
+            .orderBy('completedAt', 'desc')
+            .limit(50)
+            .get();
+
+        if (ridesSnap.empty) {
+            res.status(200).json({ message: 'No completed rides found', pointsAwarded: 0, ridesProcessed: 0 });
+            return;
+        }
+
+        // Get existing loyalty history to find already-awarded ride IDs
+        const historySnap = await db.collection('loyalty_history')
+            .where('userId', '==', userId)
+            .where('type', '==', 'earn')
+            .get();
+
+        const awardedDescriptions = new Set(historySnap.docs.map(d => d.data().description as string));
+
+        let totalPointsAwarded = 0;
+        let ridesProcessed = 0;
+
+        for (const rideDoc of ridesSnap.docs) {
+            const ride = rideDoc.data();
+            const rideId = rideDoc.id;
+
+            // Check if already awarded (description pattern: "Earned X points from ride")
+            const alreadyAwarded = historySnap.docs.some(d => {
+                const data = d.data();
+                return data.rideId === rideId || (data.description && data.description.includes(rideId));
+            }) || awardedDescriptions.has(`Earned points from ride ${rideId}`);
+
+            if (alreadyAwarded) continue;
+
+            const fare = ride.pricing?.finalFare ?? ride.pricing?.estimatedFare ?? 0;
+            const currency = ride.pricing?.currency ?? 'USD';
+
+            if (fare <= 0) continue;
+
+            try {
+                const result = await loyaltyService.awardPoints(userId, fare, currency);
+                // Tag the history entry with rideId for dedup
+                await db.collection('loyalty_history')
+                    .where('userId', '==', userId)
+                    .where('type', '==', 'earn')
+                    .orderBy('createdAt', 'desc')
+                    .limit(1)
+                    .get()
+                    .then(snap => {
+                        if (!snap.empty) {
+                            snap.docs[0].ref.update({ rideId });
+                        }
+                    });
+
+                totalPointsAwarded += result.pointsAwarded;
+                ridesProcessed++;
+                logger.info({ rideId, pointsAwarded: result.pointsAwarded }, 'Backfilled loyalty points');
+            } catch (err) {
+                logger.warn({ err, rideId }, 'Failed to backfill points for ride');
+            }
+        }
+
+        const account = await loyaltyService.getAccount(userId);
+
+        res.status(200).json({
+            message: `Backfilled ${ridesProcessed} ride(s)`,
+            pointsAwarded: totalPointsAwarded,
+            ridesProcessed,
+            currentPoints: account?.points ?? 0,
+            tier: account?.tier ?? 'bronze'
+        });
+    } catch (error) {
+        logger.error({ err: error }, 'Failed to backfill loyalty points');
+        res.status(500).json({ error: 'Failed to backfill loyalty points' });
     }
 };

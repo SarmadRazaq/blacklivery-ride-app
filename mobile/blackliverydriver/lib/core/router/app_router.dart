@@ -4,8 +4,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../features/onboarding/splash_screen.dart';
 import '../../features/onboarding/vehicle_onboarding_screen.dart';
+import '../../features/onboarding/emergency_contacts_screen.dart';
+import '../../features/onboarding/verification_screen.dart';
 import '../../features/onboarding/approval_screen.dart';
 import '../../features/onboarding/account_setup_screen.dart';
+import '../../features/auth/data/models/user_model.dart';
 import '../../features/auth/screens/login_screen.dart';
 import '../../features/home/home_screen.dart';
 import '../../features/ride/driver_map_screen.dart';
@@ -20,7 +23,9 @@ import '../providers/riverpod_providers.dart';
 final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
 
 final goRouterProvider = Provider<GoRouter>((ref) {
-  final authProvider = ref.watch(authRiverpodProvider);
+  // Use ref.read (NOT ref.watch) so GoRouter is created once and stays stable.
+  // refreshListenable handles re-evaluating redirects on auth state changes.
+  final authProvider = ref.read(authRiverpodProvider);
 
   return GoRouter(
     navigatorKey: rootNavigatorKey,
@@ -54,10 +59,13 @@ final goRouterProvider = Provider<GoRouter>((ref) {
             (onboardingStatus == null && authProvider.user?.driverProfile != null);
 
         if (!isApproved) {
-          if (onboardingStatus == 'pending_approval' || onboardingStatus == 'under_review') {
+          if (onboardingStatus == 'pending_approval' ||
+              onboardingStatus == 'under_review' ||
+              onboardingStatus == 'pending_review') {
             return '/approval';
           }
-          return '/documents';
+          // Resume from the furthest completed onboarding step
+          return _resolveOnboardingRoute(authProvider.user);
         }
       }
 
@@ -87,6 +95,14 @@ final goRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/documents',
         builder: (context, state) => const VehicleOnboardingScreen(),
+      ),
+      GoRoute(
+        path: '/emergency-contacts',
+        builder: (context, state) => const EmergencyContactsScreen(),
+      ),
+      GoRoute(
+        path: '/verification',
+        builder: (context, state) => const VerificationScreen(),
       ),
       GoRoute(
         path: '/approval',
@@ -132,3 +148,22 @@ final goRouterProvider = Provider<GoRouter>((ref) {
     ],
   );
 });
+
+/// Determine which onboarding route the driver should resume from.
+String _resolveOnboardingRoute(User? user) {
+  // No vehicle yet → step 1
+  if (user?.driverProfile?.vehicleId == null) {
+    return '/documents';
+  }
+  // Vehicle exists but no emergency contact → step 2
+  if (user!.emergencyContacts.isEmpty) {
+    return '/emergency-contacts';
+  }
+  // Emergency contacts done → step 3 (documents/verification)
+  final status = user.driverOnboarding?.status;
+  if (status == null || status == 'pending_documents' || status == 'rejected') {
+    return '/verification';
+  }
+  // Fallback
+  return '/documents';
+}

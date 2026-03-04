@@ -170,7 +170,7 @@ class _MyRidesScreenState extends State<MyRidesScreen> {
                                           : Colors.white70,
                                       size: 20,
                                     ),
-                                    const SizedBox(width: 8),
+                                    const SizedBox(width: 8, height: 40),
                                     Text(
                                       'Rides',
                                       style: AppTextStyles.body.copyWith(
@@ -212,7 +212,7 @@ class _MyRidesScreenState extends State<MyRidesScreen> {
                                           : Colors.white70,
                                       size: 20,
                                     ),
-                                    const SizedBox(width: 8),
+                                    const SizedBox(width: 8, height: 40),
                                     Text(
                                       'Delivery',
                                       style: AppTextStyles.body.copyWith(

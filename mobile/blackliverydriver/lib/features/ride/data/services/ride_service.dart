@@ -1,9 +1,12 @@
+import 'package:dio/dio.dart';
+import 'package:uuid/uuid.dart';
 import '../../../../core/constants/api_constants.dart';
 import '../../../../core/network/api_client.dart';
 import '../models/ride_model.dart';
 
 class RideService {
   final ApiClient _apiClient = ApiClient();
+  final Uuid _uuid = const Uuid();
 
   Future<void> setAvailability(bool isOnline) async {
     try {
@@ -40,6 +43,9 @@ class RideService {
       await _apiClient.dio.put(
         ApiConstants.rideStatus.replaceAll('{rideId}', rideId),
         data: data,
+        options: Options(
+          headers: {'Idempotency-Key': _uuid.v4()},
+        ),
       );
     } catch (e) {
       rethrow;

@@ -168,6 +168,43 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen> {
                   subtitle: bookingState.dropoffLocation?.address ?? '',
                 ),
 
+                // Recipient info (when booking for someone else)
+                if (bookingState.isForSomeoneElse) ...[
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.yellow90.withOpacity(0.08),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: AppColors.yellow90.withOpacity(0.25),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.person_outline,
+                          color: AppColors.yellow90,
+                          size: 18,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            'For ${bookingState.recipientName ?? 'Someone Else'}'
+                            '${bookingState.recipientPhone != null && bookingState.recipientPhone!.isNotEmpty ? ' • ${bookingState.recipientPhone}' : ''}',
+                            style: AppTextStyles.bodySmall.copyWith(
+                              color: AppColors.yellow90,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+
                 const SizedBox(height: 16),
 
                 // Price card

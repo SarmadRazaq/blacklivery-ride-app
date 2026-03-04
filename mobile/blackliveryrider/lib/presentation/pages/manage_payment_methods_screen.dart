@@ -140,77 +140,157 @@ class _ManagePaymentMethodsScreenState
   }
 
   Widget _buildPaymentMethodCard(SavedPaymentMethod method) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.inputBg,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.inputBorder),
-      ),
-      child: Row(
-        children: [
-          // Card type indicator
-          Container(
-            width: 50,
-            height: 35,
-            decoration: BoxDecoration(
-              color: AppColors.bgPri,
-              borderRadius: BorderRadius.circular(6),
-              border: Border.all(color: AppColors.inputBorder),
+    return GestureDetector(
+      onTap: () => _showCardOptions(method),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppColors.inputBg,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.inputBorder),
+        ),
+        child: Row(
+          children: [
+            // Card type indicator
+            Container(
+              width: 50,
+              height: 35,
+              decoration: BoxDecoration(
+                color: AppColors.bgPri,
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: AppColors.inputBorder),
+              ),
+              child: Center(child: _buildCardTypeIcon(method.type)),
             ),
-            child: Center(child: _buildCardTypeIcon(method.type)),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '${_getCardTypeName(method.type)} ${method.lastFour}',
+                    style: AppTextStyles.body.copyWith(
+                      color: Colors.white,
+                      fontSize: 14,
+                    ),
+                  ),
+                  if (method.gatewayDisplayName.isNotEmpty) ...[                  const SizedBox(height: 2),
+                    Text(
+                      'via ${method.gatewayDisplayName}',
+                      style: AppTextStyles.caption.copyWith(
+                        color: AppColors.txtInactive,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right, color: AppColors.txtInactive, size: 20),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showCardOptions(SavedPaymentMethod method) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.bgSec,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: AppColors.inputBorder,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 20),
+            // Card info header
+            Row(
               children: [
-                Text(
-                  '${_getCardTypeName(method.type)} ${method.lastFour}',
-                  style: AppTextStyles.body.copyWith(
-                    color: Colors.white,
-                    fontSize: 14,
+                Container(
+                  width: 50,
+                  height: 35,
+                  decoration: BoxDecoration(
+                    color: AppColors.bgPri,
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: AppColors.inputBorder),
+                  ),
+                  child: Center(child: _buildCardTypeIcon(method.type)),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '${_getCardTypeName(method.type)} ending in ${method.lastFour}',
+                        style: AppTextStyles.body.copyWith(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      if (method.gatewayDisplayName.isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          'via ${method.gatewayDisplayName}',
+                          style: AppTextStyles.caption.copyWith(
+                            color: AppColors.txtInactive,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
               ],
             ),
-          ),
-          // Options menu
-          PopupMenuButton<String>(
-            icon: Icon(Icons.more_vert, color: AppColors.txtInactive, size: 20),
-            color: AppColors.bgSec,
-            onSelected: (value) {
-              if (value == 'delete') {
+            const SizedBox(height: 24),
+            // Delete option
+            GestureDetector(
+              onTap: () {
+                Navigator.pop(context);
                 _deletePaymentMethod(method);
-              } else if (value == 'default') {
-                // _setAsDefault(method); // Backend API for this not confirmed
-              }
-            },
-            itemBuilder: (context) => [
-              // PopupMenuItem(
-              //   value: 'default',
-              //   child: Text(
-              //     'Set as default',
-              //     style: AppTextStyles.body.copyWith(
-              //       color: Colors.white,
-              //       fontSize: 13,
-              //     ),
-              //   ),
-              // ),
-              PopupMenuItem(
-                value: 'delete',
-                child: Text(
-                  'Delete',
-                  style: AppTextStyles.body.copyWith(
-                    color: Colors.red,
-                    fontSize: 13,
-                  ),
+              },
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                decoration: BoxDecoration(
+                  color: Colors.red.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.red.withOpacity(0.3)),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.delete_outline, color: Colors.red, size: 20),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Remove Card',
+                      style: AppTextStyles.body.copyWith(
+                        color: Colors.red,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ],
-          ),
-        ],
+            ),
+            const SizedBox(height: 16),
+          ],
+        ),
       ),
     );
   }
@@ -328,22 +408,45 @@ class SavedPaymentMethod {
   final String id;
   final String type;
   final String lastFour;
+  final String gateway;
   bool isDefault;
 
   SavedPaymentMethod({
     required this.id,
     required this.type,
     required this.lastFour,
+    this.gateway = '',
     this.isDefault = false,
   });
 
   factory SavedPaymentMethod.fromJson(Map<String, dynamic> json) {
+    // Card details may be at top level (new saveCardPaymentMethod)
+    // or nested under 'details' (legacy addPaymentMethod)
+    final details =
+        json['details'] is Map<String, dynamic> ? json['details'] as Map<String, dynamic> : <String, dynamic>{};
     return SavedPaymentMethod(
       id: json['id'] ?? json['_id'] ?? '',
       type:
-          json['brand'] ?? json['type'] ?? 'card', // Handle 'brand' from Stripe
-      lastFour: json['last4'] ?? json['lastFour'] ?? '****',
+          json['brand'] ?? details['brand'] ?? json['type'] ?? 'card',
+      lastFour: json['last4'] ?? details['last4'] ?? json['lastFour'] ?? details['lastFour'] ?? '****',
+      gateway: json['gateway'] ?? details['gateway'] ?? '',
       isDefault: json['isDefault'] ?? false,
     );
+  }
+
+  /// Human-readable gateway display name.
+  String get gatewayDisplayName {
+    switch (gateway.toLowerCase()) {
+      case 'paystack':
+        return 'Paystack';
+      case 'flutterwave':
+        return 'Flutterwave';
+      case 'monnify':
+        return 'Monnify';
+      case 'stripe':
+        return 'Stripe';
+      default:
+        return '';
+    }
   }
 }

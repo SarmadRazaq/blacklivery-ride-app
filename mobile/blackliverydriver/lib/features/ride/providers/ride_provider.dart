@@ -10,6 +10,7 @@ import '../data/services/navigation_service.dart';
 import '../data/models/ride_model.dart';
 import '../../delivery/data/models/delivery_model.dart';
 import '../../home/providers/driver_preferences_provider.dart';
+import '../../../../core/providers/region_provider.dart';
 
 class RideProvider with ChangeNotifier {
   final RideService _rideService = RideService();
@@ -65,6 +66,7 @@ class RideProvider with ChangeNotifier {
   void initWebSocket(
     String authToken, {
     DriverPreferencesProvider? prefsProvider,
+    RegionProvider? regionProvider,
   }) {
     _socketService.initSocket(authToken);
 
@@ -102,6 +104,47 @@ class RideProvider with ChangeNotifier {
       try {
         final eventType = data['type'] as String? ?? '';
         final requestData = data.containsKey('data') ? data['data'] : data;
+
+        // Auto-decline cross-region requests based on active region
+        if (regionProvider != null && requestData != null) {
+          double? pLat;
+          double? pLng;
+
+          if (requestData['pickupLocation'] is Map) {
+            final loc = requestData['pickupLocation'] as Map;
+            pLat = (loc['lat'] ?? loc['latitude'])?.toDouble();
+            pLng = (loc['lng'] ?? loc['longitude'])?.toDouble();
+          } else if (requestData['pickupLat'] != null && requestData['pickupLng'] != null) {
+            pLat = requestData['pickupLat']?.toDouble();
+            pLng = requestData['pickupLng']?.toDouble();
+          }
+
+          if (pLat != null && pLng != null) {
+            bool isUSA(double lat, double lng) {
+              return lat >= 24.5 && lat <= 49.5 && lng >= -125.0 && lng <= -66.5;
+            }
+
+            bool rideIsUS = isUSA(pLat, pLng);
+
+            if (rideIsUS && regionProvider.isNigeria) {
+              debugPrint('RideProvider: Auto-declining cross-region ride (Driver: NG, Ride: US)');
+              final id = requestData['id'] ?? requestData['_id'];
+              if (id != null) {
+                _socketService.declineRide(id, reason: 'out_of_region');
+              }
+              return;
+            }
+
+            if (!rideIsUS && regionProvider.isChicago) {
+              debugPrint('RideProvider: Auto-declining cross-region ride (Driver: US, Ride: NG)');
+              final id = requestData['id'] ?? requestData['_id'];
+              if (id != null) {
+                _socketService.declineRide(id, reason: 'out_of_region');
+              }
+              return;
+            }
+          }
+        }
 
         // Auto-decline delivery requests if driver has disabled deliveries
         if (prefsProvider != null) {

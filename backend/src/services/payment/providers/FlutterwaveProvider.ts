@@ -18,6 +18,7 @@ export class FlutterwaveProvider implements IPaymentProvider {
     }
 
     async initializeTransaction(email: string, amount: number, currency: string, reference: string, metadata?: any): Promise<PaymentInitResult> {
+        const { sdkMode, ...cleanMeta } = metadata || {};
         try {
             const response = await axios.post(
                 `${this.baseUrl}/payments`,
@@ -28,10 +29,10 @@ export class FlutterwaveProvider implements IPaymentProvider {
                     redirect_url: process.env.FLUTTERWAVE_CALLBACK_URL,
                     customer: {
                         email,
-                        name: metadata?.customerName,
-                        phonenumber: metadata?.customerPhone
+                        name: cleanMeta?.customerName,
+                        phonenumber: cleanMeta?.customerPhone
                     },
-                    meta: metadata,
+                    meta: cleanMeta,
                     customizations: {
                         title: 'Blacklivery Ride',
                         logo: 'https://blacklivery.com/logo.png'

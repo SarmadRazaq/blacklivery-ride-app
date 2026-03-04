@@ -455,7 +455,6 @@ const DisputesPage = () => {
                     </Table>
                 )}
             </div>
-        </div>
 
             {/* Resolve Dispute Modal */}
             {resolveModal && (

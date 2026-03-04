@@ -6,11 +6,15 @@ import '../../core/models/saved_place_model.dart';
 class NamePlaceScreen extends StatefulWidget {
   final String address;
   final String suggestedName;
+  final double latitude;
+  final double longitude;
 
   const NamePlaceScreen({
     super.key,
     required this.address,
     this.suggestedName = '',
+    this.latitude = 0.0,
+    this.longitude = 0.0,
   });
 
   @override
@@ -36,6 +40,9 @@ class _NamePlaceScreenState extends State<NamePlaceScreen> {
   void initState() {
     super.initState();
     _nameController.text = widget.suggestedName;
+    _nameController.addListener(() {
+      if (mounted) setState(() {});
+    });
   }
 
   @override
@@ -51,6 +58,8 @@ class _NamePlaceScreenState extends State<NamePlaceScreen> {
         name: _nameController.text,
         address: widget.address,
         type: 'other',
+        latitude: widget.latitude,
+        longitude: widget.longitude,
       );
       Navigator.pop(context, savedPlace);
     }

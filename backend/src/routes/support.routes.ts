@@ -3,7 +3,7 @@ import { verifyToken } from '../middlewares/auth.middleware';
 import { checkRole } from '../middlewares/roles.middleware';
 import { validate } from '../middlewares/validate.middleware';
 import { createSupportTicketSchema, replyToTicketSchema } from '../schemas/support.schema';
-import { createSupportTicket, getMyTickets, replyToTicket, adminReplyToTicket, getAllTickets, closeTicket } from '../controllers/support.controller';
+import { createSupportTicket, getMyTickets, getTicketById, replyToTicket, adminReplyToTicket, getAllTickets, closeTicket } from '../controllers/support.controller';
 
 const router = Router();
 
@@ -58,6 +58,28 @@ router.post('/', validate(createSupportTicketSchema), wrap(createSupportTicket))
  *         description: List of tickets
  */
 router.get('/', wrap(getMyTickets));
+
+/**
+ * @swagger
+ * /support/{id}:
+ *   get:
+ *     summary: Get a single support ticket by ID
+ *     tags: [Support]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         schema:
+ *           type: string
+ *         required: true
+ *     responses:
+ *       200:
+ *         description: Ticket details
+ *       404:
+ *         description: Not found
+ */
+router.get('/:id', wrap(getTicketById));
 
 /**
  * @swagger

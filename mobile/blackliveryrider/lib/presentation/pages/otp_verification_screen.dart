@@ -1,12 +1,15 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:dio/dio.dart';
 import 'package:provider/provider.dart';
 import '../../core/providers/auth_provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
+import '../../core/network/api_error_message.dart';
 import '../widgets/custom_numpad.dart';
 import '../widgets/otp_input_box.dart';
 import 'home_screen.dart';
+import 'phone_signup_screen.dart';
 
 class OtpVerificationScreen extends StatefulWidget {
   final String? phoneNumber;
@@ -23,6 +26,7 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
   int _remainingSeconds = 59;
   Timer? _timer;
   bool _isVerified = false;
+  bool _isLoading = false;
   bool get _isEmailFlow => widget.email != null && widget.phoneNumber == null;
 
   @override
@@ -50,6 +54,8 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
   }
 
   void _onKeyPressed(String key) {
+    if (_isLoading) return; // Ignore input while verifying
+
     if (key == 'backspace') {
       if (_otpCode.isNotEmpty) {
         setState(() {
@@ -62,6 +68,10 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
         _otpCode = '';
       });
     } else if (key == 'check') {
+      if (_otpCode.length < 6) {
+        _showErrorDialog('Incomplete Code', 'Please enter all 6 digits before submitting.');
+        return;
+      }
       _verifyOtp();
     } else if (_otpCode.length < 6) {
       setState(() {
@@ -75,34 +85,102 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
     }
   }
 
+  /// Show a user-friendly error dialog instead of a raw SnackBar
+  void _showErrorDialog(String title, String message) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.inputBg,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            const Icon(Icons.error_outline, color: Colors.redAccent, size: 24),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                title,
+                style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w600),
+              ),
+            ),
+          ],
+        ),
+        content: Text(
+          message,
+          style: const TextStyle(color: Colors.white70, fontSize: 14, height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('OK', style: TextStyle(color: AppColors.yellow90, fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Extract a clean user-friendly message from any error
+  String _cleanErrorMessage(dynamic error) {
+    if (error is DioException) {
+      return apiErrorMessage(error);
+    }
+    final msg = error.toString();
+    // Strip Dart exception class prefixes
+    if (msg.startsWith('Exception: ')) return msg.substring(11);
+    if (msg.contains('DioException')) return 'Something went wrong. Please try again.';
+    if (msg.contains('No token provided')) return 'Session expired. Please try again.';
+    if (msg.length > 120) return 'Verification failed. Please try again.';
+    return msg;
+  }
+
   Future<void> _verifyOtp() async {
+    if (_otpCode.length < 6 || _isLoading) return;
+
+    setState(() => _isLoading = true);
+
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     try {
       if (widget.phoneNumber != null) {
-        // Phone verification
-        await authProvider.verifyPhone(widget.phoneNumber!, _otpCode);
+        // Phone verification — returns true if logged in, false if needs signup
+        final loggedIn = await authProvider.verifyPhone(widget.phoneNumber!, _otpCode);
+
+        if (!mounted) return;
+
+        if (!loggedIn) {
+          // Phone verified but no account — navigate to signup form
+          setState(() => _isLoading = false);
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (context) => PhoneSignupScreen(
+                phoneNumber: widget.phoneNumber!,
+              ),
+            ),
+          );
+          return;
+        }
       } else if (widget.email != null) {
         // Email verification
         await authProvider.verifyEmailOtp(widget.email!, _otpCode);
       }
 
+      if (!mounted) return;
       setState(() {
         _isVerified = true;
+        _isLoading = false;
       });
 
-      if (mounted) {
-        Navigator.pushAndRemoveUntil(
-          context,
-          MaterialPageRoute(builder: (context) => const HomeScreen()),
-          (route) => false,
-        );
-      }
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (context) => const HomeScreen()),
+        (route) => false,
+      );
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Verification Failed: ${e.toString()}')),
-        );
-      }
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _otpCode = ''; // Clear for retry
+      });
+      _showErrorDialog('Verification Failed', _cleanErrorMessage(e));
     }
   }
 
@@ -156,7 +234,7 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
               ),
             ),
 
-            const SizedBox(height: 40),
+            const SizedBox(height: 20),
 
             // OTP Box
             Padding(
@@ -202,13 +280,28 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
                       // OTP Input Display
                       OtpInputBox(code: _otpCode),
 
-                      const SizedBox(height: 24),
+                      const SizedBox(height: 16),
+
+                      // Loading indicator (inline to avoid overflow)
+                      if (_isLoading)
+                        const Padding(
+                          padding: EdgeInsets.only(bottom: 8),
+                          child: SizedBox(
+                            width: 24,
+                            height: 24,
+                            child: CircularProgressIndicator(
+                              color: AppColors.yellow90,
+                              strokeWidth: 2.5,
+                            ),
+                          ),
+                        ),
 
                       // Timer
-                      Text(
-                        _formattedTime,
-                        style: AppTextStyles.body.copyWith(color: Colors.white),
-                      ),
+                      if (!_isLoading)
+                        Text(
+                          _formattedTime,
+                          style: AppTextStyles.body.copyWith(color: Colors.white),
+                        ),
                     ] else ...[
                       // Success Message
                       const SizedBox(height: 40),
@@ -228,7 +321,10 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
             const Spacer(),
 
             // Number Pad
-            CustomNumpad(onKeyPressed: _onKeyPressed),
+            CustomNumpad(
+              onKeyPressed: _onKeyPressed,
+              isCheckEnabled: _otpCode.length == 6,
+            ),
 
             TextButton(
               onPressed: _remainingSeconds > 0
@@ -253,9 +349,7 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
                         _startTimer();
                       } catch (e) {
                         if (!mounted) return;
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Resend failed: $e')),
-                        );
+                        _showErrorDialog('Resend Failed', _cleanErrorMessage(e));
                       }
                     },
               child: Text(

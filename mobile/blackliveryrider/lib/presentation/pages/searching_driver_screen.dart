@@ -97,7 +97,6 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen>
       _searchTimeout?.cancel();
 
       if (mounted) {
-        ScaffoldMessenger.of(context).hideCurrentMaterialBanner();
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (context) => const DriverArrivingScreen()),
@@ -142,37 +141,12 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen>
     final connected = _socketService.isConnected;
     if (connected == _socketConnected) return;
     setState(() => _socketConnected = connected);
-
-    if (connected) {
-      ScaffoldMessenger.of(context).hideCurrentMaterialBanner();
-    } else {
-      ScaffoldMessenger.of(context).showMaterialBanner(
-        MaterialBanner(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          content: const Text(
-            'Reconnecting to server...',
-            style: TextStyle(color: Colors.white),
-          ),
-          leading: const SizedBox(
-            width: 16,
-            height: 16,
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
-              color: Colors.white,
-            ),
-          ),
-          backgroundColor: Colors.red.shade700,
-          actions: [const SizedBox.shrink()],
-        ),
-      );
-    }
   }
 
   @override
   void dispose() {
     _searchTimeout?.cancel();
     _socketService.removeListener(_onSocketStateChanged);
-    ScaffoldMessenger.maybeOf(context)?.hideCurrentMaterialBanner();
 
     // Ensure we remove listener
     final bookingState = Provider.of<BookingState>(context, listen: false);
@@ -204,6 +178,33 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen>
       backgroundColor: AppColors.bgPri,
       body: Column(
         children: [
+          // Local reconnection banner (scoped to this screen only)
+          if (!_socketConnected)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              color: Colors.red.shade700,
+              child: SafeArea(
+                bottom: false,
+                child: Row(
+                  children: const [
+                    SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    ),
+                    SizedBox(width: 12),
+                    Text(
+                      'Reconnecting to server...',
+                      style: TextStyle(color: Colors.white),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           // Map area with route
           Expanded(
             flex: 3,

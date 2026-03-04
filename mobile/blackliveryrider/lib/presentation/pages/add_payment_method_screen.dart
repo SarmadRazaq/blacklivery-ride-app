@@ -6,6 +6,7 @@ import '../../core/theme/app_text_styles.dart';
 import '../../core/services/payment_service.dart';
 import '../../core/providers/region_provider.dart';
 import '../../core/utils/currency_utils.dart';
+import '../../core/payment/gateway_factory.dart';
 import 'payment_webview_screen.dart';
 
 class AddPaymentMethodScreen extends StatefulWidget {
@@ -47,7 +48,7 @@ class _AddPaymentMethodScreenState extends State<AddPaymentMethodScreen> {
   /// Returns the list of gateway options for the current region.
   List<_GatewayOption> _gatewaysForRegion(RegionProvider region) {
     if (region.isChicago) {
-      return [
+      return const [
         _GatewayOption(
           id: 'stripe',
           label: 'Credit Card (Stripe)',
@@ -61,17 +62,20 @@ class _AddPaymentMethodScreenState extends State<AddPaymentMethodScreen> {
       ];
     }
     // Nigeria (default)
-    return [
+    return const [
       _GatewayOption(id: 'paystack', label: 'Paystack', icon: Icons.payment),
       _GatewayOption(
         id: 'flutterwave',
         label: 'Flutterwave',
         icon: Icons.account_balance_wallet,
       ),
+      _GatewayOption(
+        id: 'monnify',
+        label: 'Monnify',
+        icon: Icons.account_balance,
+      ),
     ];
   }
-
-  // ─── Build ──────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -307,6 +311,8 @@ class _AddPaymentMethodScreenState extends State<AddPaymentMethodScreen> {
         return 'Paystack';
       case 'flutterwave':
         return 'Flutterwave';
+      case 'monnify':
+        return 'Monnify';
       case 'stripe':
         return 'Stripe';
       case 'apple_pay':
@@ -398,58 +404,125 @@ class _AddPaymentMethodScreenState extends State<AddPaymentMethodScreen> {
     setState(() => _isLoading = true);
 
     try {
-      // Ask the backend to create a payment setup session
+      // Ask the backend to create a card setup session.
+      // A small charge ($1 / ₦100) tokenises the card; the amount is
+      // credited to the user's wallet so nothing is lost.
+      final isUSD = CurrencyUtils.activeCurrency == 'USD';
+      final setupAmount = isUSD ? 1.0 : 100.0;
+      
+      String backendRegionKey;
+      switch (_selectedGateway) {
+        case 'stripe':
+        case 'apple_pay':
+          backendRegionKey = 'US-CHI';
+          break;
+        case 'flutterwave':
+          backendRegionKey = 'NG-FLUTTERWAVE';
+          break;
+        case 'monnify':
+          backendRegionKey = 'NG-MONNIFY';
+          break;
+        case 'paystack':
+        default:
+          backendRegionKey = 'NG-PAYSTACK';
+          break;
+      }
+
+      // Request SDK-mode tokens from backend (clientSecret for Stripe,
+      // accessCode for Paystack, etc.)
       final result = await _paymentService.initiatePayment(
-        amount: 100, // Small charge for card validation (refundable)
+        amount: setupAmount,
         currency: CurrencyUtils.activeCurrency,
         purpose: 'card_setup',
-        rideId: 'SETUP-${DateTime.now().millisecondsSinceEpoch}',
         gateway: _selectedGateway,
+        region: backendRegionKey,
+        sdkMode: true,
       );
 
       setState(() => _isLoading = false);
 
-      if (mounted) {
-        if (result != null) {
-          final redirectUrl =
-              result['authorizationUrl'] ?? result['authorization_url'] ?? result['redirectUrl'];
-          if (redirectUrl != null && redirectUrl is String && redirectUrl.isNotEmpty) {
-            // Open in-app WebView for 3DS / card setup
-            final webViewResult = await Navigator.push<PaymentWebViewResult>(
-              context,
-              MaterialPageRoute(
-                builder: (_) => PaymentWebViewScreen(
-                  authorizationUrl: redirectUrl,
-                  reference: result['reference']?.toString(),
-                  title: 'Card Setup',
-                ),
-              ),
-            );
+      if (!mounted) return;
 
-            if (mounted) {
-              if (webViewResult?.success == true) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Card added successfully!')),
-                );
-                Navigator.pop(context, true);
-              } else {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Card setup was not completed')),
-                );
-              }
+      if (result == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to add card. Please try again.')),
+        );
+        return;
+      }
+
+      // ── Try native SDK first ────────────────────────────────────
+      final gateway = PaymentGatewayFactory.get(_selectedGateway);
+      final hasNativeToken = (result['clientSecret'] != null) ||
+          (result['accessCode'] != null) ||
+          (result['authorizationUrl'] != null) ||
+          (result['reference'] != null);
+
+      if (hasNativeToken && gateway.isSupported) {
+        final userEmail = result['email'] as String? ?? '';
+        final nativeResult = await gateway.processPayment(
+          context: context,
+          backendData: result,
+          amount: setupAmount,
+          currency: CurrencyUtils.activeCurrency,
+          email: userEmail,
+        );
+
+        if (!mounted) return;
+
+        if (nativeResult.success) {
+          // Verify with backend to save card details
+          final ref = nativeResult.reference ?? result['reference']?.toString();
+          if (ref != null) {
+            await _paymentService.verifyPayment(reference: ref);
+          }
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Card added successfully!')),
+          );
+          Navigator.pop(context, true);
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                nativeResult.errorMessage ?? 'Card setup was not completed',
+              ),
+            ),
+          );
+        }
+      } else {
+        // ── Fallback to WebView ─────────────────────────────────
+        final redirectUrl = result['authorizationUrl'] ??
+            result['authorization_url'] ??
+            result['redirectUrl'];
+
+        if (redirectUrl != null && redirectUrl is String && redirectUrl.isNotEmpty) {
+          final webViewResult = await Navigator.push<PaymentWebViewResult>(
+            context,
+            MaterialPageRoute(
+              builder: (_) => PaymentWebViewScreen(
+                authorizationUrl: redirectUrl,
+                reference: result['reference']?.toString(),
+                title: 'Card Setup',
+              ),
+            ),
+          );
+
+          if (mounted) {
+            if (webViewResult?.success == true) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Card added successfully!')),
+              );
+              Navigator.pop(context, true);
+            } else {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Card setup was not completed')),
+              );
             }
-          } else {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Card added successfully!')),
-            );
-            Navigator.pop(context, true);
           }
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Failed to add card. Please try again.'),
-            ),
+            const SnackBar(content: Text('Card added successfully!')),
           );
+          Navigator.pop(context, true);
         }
       }
     } on DioException catch (e) {

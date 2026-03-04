@@ -10,6 +10,7 @@ type WalletCategory =
     | 'ride_payment'
     | 'driver_payout'
     | 'wallet_topup'
+    | 'card_setup'
     | 'withdrawal'
     | 'commission_deduction'
     | 'refund'
@@ -187,6 +188,16 @@ export class WalletService {
                 throw new Error('Insufficient funds');
             }
 
+            // Read counterparty balance BEFORE any writes (Firestore requirement)
+            const counterpartyCurrency = options.counterpartyCurrency ?? wallet.currency;
+            const counterpartyBalanceRef = this.walletBalancesCollection.doc(counterpartyWalletId);
+            const counterpartySnapshot = await transaction.get(counterpartyBalanceRef);
+            const counterpartyBalance = counterpartySnapshot.exists
+                ? (counterpartySnapshot.data()?.available as number) ?? 0
+                : 0;
+
+            // ── All reads done — now perform writes ────────────────────
+
             // Use absolute value based on read to ensure balance check + update are consistent
             const newBalance = type === 'credit' ? currentBalance + amount : currentBalance - amount;
 
@@ -201,12 +212,6 @@ export class WalletService {
                 { merge: true }
             );
 
-            const counterpartyCurrency = options.counterpartyCurrency ?? wallet.currency;
-            const counterpartyBalanceRef = this.walletBalancesCollection.doc(counterpartyWalletId);
-            const counterpartySnapshot = await transaction.get(counterpartyBalanceRef);
-            const counterpartyBalance = counterpartySnapshot.exists
-                ? (counterpartySnapshot.data()?.available as number) ?? 0
-                : 0;
             const newCounterpartyBalance = type === 'credit'
                 ? counterpartyBalance - amount
                 : counterpartyBalance + amount;
@@ -230,6 +235,7 @@ export class WalletService {
                 type,
                 status: 'success',
                 category,
+                currency: wallet.currency,
                 reference,
                 description,
                 metadata: options.metadata ?? {},

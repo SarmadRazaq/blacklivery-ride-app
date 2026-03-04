@@ -12,78 +12,55 @@ class PersonalInfoScreen extends StatefulWidget {
 }
 
 class _PersonalInfoScreenState extends State<PersonalInfoScreen> {
+  late String _fullName;
   late String _email;
   late String _phoneNumber;
 
-  bool _isEditingEmail = false;
-  bool _isEditingPhone = false;
+  bool _isEditingName = false;
 
-  final TextEditingController _emailController = TextEditingController();
-  final TextEditingController _phoneController = TextEditingController();
-  final FocusNode _emailFocus = FocusNode();
-  final FocusNode _phoneFocus = FocusNode();
+  final TextEditingController _nameController = TextEditingController();
+  final FocusNode _nameFocus = FocusNode();
 
   @override
   void initState() {
     super.initState();
     final user = Provider.of<AuthProvider>(context, listen: false).user;
+    _fullName = user?.fullName ?? '';
     _email = user?.email ?? '';
     _phoneNumber = user?.phone ?? ''; // Fixed: user?.phone
 
-    _emailController.text = _email;
-    _phoneController.text = _phoneNumber;
+    _nameController.text = _fullName;
   }
 
   @override
   void dispose() {
-    _emailController.dispose();
-    _phoneController.dispose();
-    _emailFocus.dispose();
-    _phoneFocus.dispose();
+    _nameController.dispose();
+    _nameFocus.dispose();
     super.dispose();
   }
 
-  void _startEditingEmail() {
+  void _startEditingName() {
     setState(() {
-      _isEditingEmail = true;
-      _isEditingPhone = false;
+      _isEditingName = true;
     });
     Future.delayed(const Duration(milliseconds: 100), () {
-      _emailFocus.requestFocus();
+      _nameFocus.requestFocus();
     });
   }
 
-  void _startEditingPhone() {
-    setState(() {
-      _isEditingPhone = true;
-      _isEditingEmail = false;
-    });
-    Future.delayed(const Duration(milliseconds: 100), () {
-      _phoneFocus.requestFocus();
-    });
-  }
-
-  static final RegExp _emailRegex = RegExp(
-    r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$',
-  );
-
-  static final RegExp _phoneRegex = RegExp(
-    r'^\+?[1-9]\d{6,14}$',
-  );
-
-  Future<void> _saveEmail() async {
-    final email = _emailController.text.trim();
-    if (email.isEmpty || email == _email) {
+  Future<void> _saveName() async {
+    final name = _nameController.text.trim();
+    if (name.isEmpty || name == _fullName) {
       setState(() {
-        _isEditingEmail = false;
-        _emailController.text = _email;
+        _isEditingName = false;
+        _nameController.text = _fullName;
       });
       return;
     }
 
-    if (!_emailRegex.hasMatch(email)) {
+    if (name.length < 2) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter a valid email address')),
+        const SnackBar(content: Text('Name must be at least 2 characters')),
       );
       return;
     }
@@ -92,76 +69,32 @@ class _PersonalInfoScreenState extends State<PersonalInfoScreen> {
       await Provider.of<AuthProvider>(
         context,
         listen: false,
-      ).updateProfile(email: email);
+      ).updateProfile(fullName: name);
 
-        setState(() {
-          _email = email;
-          _isEditingEmail = false;
-        });
-
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Email updated. Please verify your new email address to continue using the app.'),
-              backgroundColor: Colors.orange,
-              duration: Duration(seconds: 4),
-            ),
-          );
-        }
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text('Failed to update email: $e')));
-        }
-      }
-    }
-
-  Future<void> _savePhone() async {
-    final phone = _phoneController.text.trim();
-    if (phone.isEmpty || phone == _phoneNumber) {
+      // Re-read all fields from provider in case merge filled in missing data
+      final updatedUser = Provider.of<AuthProvider>(context, listen: false).user;
       setState(() {
-        _isEditingPhone = false;
-        _phoneController.text = _phoneNumber;
-      });
-      return;
-    }
-
-    if (!_phoneRegex.hasMatch(phone.replaceAll(RegExp(r'[\s\-()]'), ''))) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter a valid phone number')),
-      );
-      return;
-    }
-
-    try {
-      await Provider.of<AuthProvider>(
-        context,
-        listen: false,
-      ).updateProfile(phoneNumber: phone);
-
-      setState(() {
-        _phoneNumber = phone;
-        _isEditingPhone = false;
+        _fullName = name;
+        _email = updatedUser?.email ?? _email;
+        _phoneNumber = updatedUser?.phone ?? _phoneNumber;
+        _isEditingName = false;
       });
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Phone updated. Please verify your new phone number to continue using the app.'),
-            backgroundColor: Colors.orange,
-            duration: Duration(seconds: 4),
-          ),
+          const SnackBar(content: Text('Name updated successfully')),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('Failed to update phone: $e')));
+        ).showSnackBar(SnackBar(content: Text('Failed to update name: $e')));
       }
     }
   }
+
+
 
   @override
   Widget build(BuildContext context) {
@@ -192,35 +125,66 @@ class _PersonalInfoScreenState extends State<PersonalInfoScreen> {
         padding: const EdgeInsets.all(20),
         child: Column(
           children: [
-            // Email field
+            // Name field
             _buildInfoField(
-              icon: Icons.email_outlined,
-              label: 'Email',
-              value: _email,
-              isEditing: _isEditingEmail,
-              controller: _emailController,
-              focusNode: _emailFocus,
-              onEdit: _startEditingEmail,
-              onSave: _saveEmail,
-              keyboardType: TextInputType.emailAddress,
+              icon: Icons.person_outlined,
+              label: 'Full Name',
+              value: _fullName.isEmpty ? 'Not set' : _fullName,
+              isEditing: _isEditingName,
+              controller: _nameController,
+              focusNode: _nameFocus,
+              onEdit: _startEditingName,
+              onSave: _saveName,
+              keyboardType: TextInputType.name,
             ),
 
             const SizedBox(height: 16),
 
-            // Phone field
-            _buildInfoField(
+            // Email field (read-only — changing auth credentials requires re-verification)
+            _buildReadOnlyField(
+              icon: Icons.email_outlined,
+              value: _email.isEmpty ? 'Not set' : _email,
+            ),
+
+            const SizedBox(height: 16),
+
+            // Phone field (read-only — changing auth credentials requires re-verification)
+            _buildReadOnlyField(
               icon: Icons.phone_outlined,
-              label: 'Phone',
-              value: _phoneNumber,
-              isEditing: _isEditingPhone,
-              controller: _phoneController,
-              focusNode: _phoneFocus,
-              onEdit: _startEditingPhone,
-              onSave: _savePhone,
-              keyboardType: TextInputType.phone,
+              value: _phoneNumber.isEmpty ? 'Not set' : _phoneNumber,
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildReadOnlyField({
+    required IconData icon,
+    required String value,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.inputBg,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.inputBorder),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: AppColors.txtInactive, size: 22),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Text(
+              value,
+              style: AppTextStyles.body.copyWith(
+                color: AppColors.txtInactive,
+                fontSize: 14,
+              ),
+            ),
+          ),
+          Icon(Icons.lock_outline, color: AppColors.txtInactive.withOpacity(0.4), size: 16),
+        ],
       ),
     );
   }

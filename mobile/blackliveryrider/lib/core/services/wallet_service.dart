@@ -12,6 +12,15 @@ class WalletService {
   /// Get wallet balance
   /// Endpoint: GET /api/v1/payments/wallet/balance?currency=NGN
   Future<double> getBalance({String? currency}) async {
+    final result = await getBalanceWithCurrency(currency: currency);
+    return result['amount'] as double;
+  }
+
+  /// Returns both the balance amount and the wallet's **actual stored currency**.
+  /// The backend falls back to the user's primary wallet when the requested
+  /// currency wallet doesn't exist, so the returned currency may differ from
+  /// the requested one.
+  Future<Map<String, dynamic>> getBalanceWithCurrency({String? currency}) async {
     try {
       final response = await _dio.get(
         '/api/v1/payments/wallet/balance',
@@ -19,15 +28,29 @@ class WalletService {
       );
       final data = response.data['data'] ?? response.data;
       if (data is Map) {
+        // Extract the wallet's real currency from the response
+        final walletCurrency = (data['currency'] as String?) ??
+            CurrencyUtils.activeCurrency;
+
         final balance = data['balance'];
-        if (balance is num) return balance.toDouble();
+        if (balance is num) {
+          return {'amount': balance.toDouble(), 'currency': walletCurrency};
+        }
+        // Backend may nest balance as { amount, currency }
+        if (balance is Map) {
+          final amount = balance['amount'];
+          final cur = (balance['currency'] as String?) ?? walletCurrency;
+          if (amount is num) {
+            return {'amount': amount.toDouble(), 'currency': cur};
+          }
+        }
       } else if (data is num) {
-        return data.toDouble();
+        return {'amount': data.toDouble(), 'currency': CurrencyUtils.activeCurrency};
       }
-      return 0.0;
+      return {'amount': 0.0, 'currency': CurrencyUtils.activeCurrency};
     } catch (e) {
       debugPrint('WalletService.getBalance error: $e');
-      return 0.0;
+      return {'amount': 0.0, 'currency': CurrencyUtils.activeCurrency};
     }
   }
 

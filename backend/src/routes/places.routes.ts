@@ -10,7 +10,8 @@ import {
     deleteSavedPlace,
     getRecentLocations,
     addRecentLocation,
-    searchLocations
+    searchLocations,
+    getPlaceDetails
 } from '../controllers/places.controller';
 
 const router = Router();
@@ -178,5 +179,25 @@ router.post('/recent', verifyToken, validate(addRecentLocationSchema), wrap(addR
  *         description: Search results
  */
 router.get('/search', verifyToken, validate(searchLocationsSchema), wrap(searchLocations));
+
+/**
+ * @swagger
+ * /places/details/{placeId}:
+ *   get:
+ *     summary: Get place details (coordinates) from Google Place ID
+ *     tags: [Places]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: placeId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Place details with coordinates
+ */
+router.get('/details/:placeId', verifyToken, wrap(getPlaceDetails));
 
 export default router;

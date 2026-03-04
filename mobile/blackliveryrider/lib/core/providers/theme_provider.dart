@@ -77,11 +77,11 @@ class ThemeProvider extends ChangeNotifier {
           hintStyle: TextStyle(color: AppColorTheme.dark.txtInactive),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: AppColorTheme.dark.inputBorder),
+            borderSide: BorderSide.none,
           ),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: AppColorTheme.dark.inputBorder),
+            borderSide: BorderSide.none,
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
@@ -99,7 +99,7 @@ class ThemeProvider extends ChangeNotifier {
         chipTheme: ChipThemeData(
           backgroundColor: AppColorTheme.dark.inputBg,
           labelStyle: TextStyle(color: AppColorTheme.dark.txtSec),
-          side: BorderSide(color: AppColorTheme.dark.inputBorder),
+          side: BorderSide.none,
         ),
         extensions: const [AppColorTheme.dark],
       );
@@ -151,11 +151,11 @@ class ThemeProvider extends ChangeNotifier {
           hintStyle: TextStyle(color: AppColorTheme.light.txtInactive),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: AppColorTheme.light.inputBorder),
+            borderSide: BorderSide.none,
           ),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: AppColorTheme.light.inputBorder),
+            borderSide: BorderSide.none,
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
@@ -173,7 +173,7 @@ class ThemeProvider extends ChangeNotifier {
         chipTheme: ChipThemeData(
           backgroundColor: AppColorTheme.light.inputBg,
           labelStyle: TextStyle(color: AppColorTheme.light.txtSec),
-          side: BorderSide(color: AppColorTheme.light.inputBorder),
+          side: BorderSide.none,
         ),
         extensions: const [AppColorTheme.light],
       );

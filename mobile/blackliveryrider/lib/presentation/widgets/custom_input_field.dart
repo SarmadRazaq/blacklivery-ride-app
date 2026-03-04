@@ -55,6 +55,7 @@ class CustomInputField extends StatefulWidget {
 
 class _CustomInputFieldState extends State<CustomInputField> {
   bool _obscureText = true;
+  bool _isFocused = false;
 
   @override
   Widget build(BuildContext context) {
@@ -64,14 +65,21 @@ class _CustomInputFieldState extends State<CustomInputField> {
     return _buildRegularField();
   }
 
+  BoxDecoration _fieldDecoration() {
+    return BoxDecoration(
+      color: AppColors.inputBg,
+      borderRadius: BorderRadius.circular(14),
+      border: Border.all(
+        color: _isFocused ? AppColors.inputFocusBorder : AppColors.inputBg,
+        width: 1,
+      ),
+    );
+  }
+
   Widget _buildPhoneField() {
     return Container(
       height: 56,
-      decoration: BoxDecoration(
-        color: AppColors.inputBg,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.inputBorder, width: 1),
-      ),
+      decoration: _fieldDecoration(),
       child: Row(
         children: [
           // Country Code Selector
@@ -100,19 +108,24 @@ class _CustomInputFieldState extends State<CustomInputField> {
           Container(
             width: 1,
             height: 24,
-            color: AppColors.inputBorder,
+            color: _isFocused
+                ? AppColors.inputFocusBorder.withOpacity(0.3)
+                : AppColors.inputBorder.withOpacity(0.5),
           ),
           // Phone Number Input
           Expanded(
-            child: TextField(
-              controller: widget.controller,
-              style: AppTextStyles.inputText,
-              keyboardType: TextInputType.phone,
-              decoration: InputDecoration(
-                hintText: widget.hintText,
-                hintStyle: AppTextStyles.inputHint,
-                border: InputBorder.none,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Focus(
+              onFocusChange: (focused) => setState(() => _isFocused = focused),
+              child: TextField(
+                controller: widget.controller,
+                style: AppTextStyles.inputText,
+                keyboardType: TextInputType.phone,
+                decoration: InputDecoration(
+                  hintText: widget.hintText,
+                  hintStyle: AppTextStyles.inputHint,
+                  border: InputBorder.none,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                ),
               ),
             ),
           ),
@@ -124,11 +137,7 @@ class _CustomInputFieldState extends State<CustomInputField> {
   Widget _buildRegularField() {
     return Container(
       height: 56,
-      decoration: BoxDecoration(
-        color: AppColors.inputBg,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.inputBorder, width: 1),
-      ),
+      decoration: _fieldDecoration(),
       child: Row(
         children: [
           // Prefix Icon
@@ -137,24 +146,27 @@ class _CustomInputFieldState extends State<CustomInputField> {
               padding: const EdgeInsets.only(left: 16),
               child: Icon(
                 widget.prefixIcon,
-                color: AppColors.txtInactive,
+                color: _isFocused ? AppColors.inputFocusBorder : AppColors.txtInactive,
                 size: 22,
               ),
             ),
           // Input Field
           Expanded(
-            child: TextField(
-              controller: widget.controller,
-              style: AppTextStyles.inputText,
-              obscureText: widget.type == InputFieldType.password && _obscureText,
-              keyboardType: widget.type == InputFieldType.email
-                  ? TextInputType.emailAddress
-                  : TextInputType.text,
-              decoration: InputDecoration(
-                hintText: widget.hintText,
-                hintStyle: AppTextStyles.inputHint,
-                border: InputBorder.none,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Focus(
+              onFocusChange: (focused) => setState(() => _isFocused = focused),
+              child: TextField(
+                controller: widget.controller,
+                style: AppTextStyles.inputText,
+                obscureText: widget.type == InputFieldType.password && _obscureText,
+                keyboardType: widget.type == InputFieldType.email
+                    ? TextInputType.emailAddress
+                    : TextInputType.text,
+                decoration: InputDecoration(
+                  hintText: widget.hintText,
+                  hintStyle: AppTextStyles.inputHint,
+                  border: InputBorder.none,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                ),
               ),
             ),
           ),
@@ -170,7 +182,7 @@ class _CustomInputFieldState extends State<CustomInputField> {
                 padding: const EdgeInsets.only(right: 16),
                 child: Icon(
                   _obscureText ? Icons.visibility_off_outlined : Icons.visibility_outlined,
-                  color: AppColors.txtInactive,
+                  color: _isFocused ? AppColors.inputFocusBorder : AppColors.txtInactive,
                   size: 22,
                 ),
               ),

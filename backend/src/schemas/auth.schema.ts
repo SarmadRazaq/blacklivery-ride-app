@@ -49,6 +49,17 @@ export const passwordResetSchema = z.object({
     })
 });
 
+export const phoneSignupSchema = z.object({
+    body: z.object({
+        email: z.string().email('Invalid email address'),
+        password: z.string().min(8, 'Password must be at least 8 characters'),
+        fullName: z.string().min(2, 'Full name is required'),
+        phoneNumber: z.string().min(7, 'Valid phone number required'),
+        role: z.enum(['rider', 'driver']).optional(),
+        region: z.string().trim().min(2).max(32).optional(),
+    })
+});
+
 export const googleSignInSchema = z.object({
     body: z.object({
         idToken: z.string().min(1, 'Google ID token is required'),

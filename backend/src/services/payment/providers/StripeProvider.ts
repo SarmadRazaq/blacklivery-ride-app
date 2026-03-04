@@ -29,6 +29,57 @@ export class StripeProvider implements IPaymentProvider {
         const baseUrl = process.env.FRONTEND_URL ?? 'https://blacklivery.com';
 
         try {
+            // ── Native SDK mode ────────────────────────────────────────
+            // When the mobile app sends `sdkMode: true` in metadata, we
+            // return a `client_secret` so the Flutter Stripe SDK can handle
+            // card input + 3DS natively.
+            if (metadata?.sdkMode) {
+                const { sdkMode, ...cleanMeta } = metadata;
+
+                // For card_setup, find or create a Stripe Customer so the
+                // payment method gets attached for later reuse.
+                let customerId: string | undefined;
+                if (cleanMeta.purpose === 'card_setup') {
+                    try {
+                        const customers = await this.stripe.customers.list({
+                            email,
+                            limit: 1,
+                        });
+                        if (customers.data.length > 0) {
+                            customerId = customers.data[0].id;
+                        } else {
+                            const customer = await this.stripe.customers.create({
+                                email,
+                                metadata: { userId: cleanMeta.userId || cleanMeta.riderId },
+                            });
+                            customerId = customer.id;
+                        }
+                    } catch (e) {
+                        logger.warn({ err: e }, 'Could not find/create Stripe customer — proceeding without');
+                    }
+                }
+
+                // Create a PaymentIntent (charges the card)
+                const pi = await this.stripe.paymentIntents.create({
+                    amount: centsAmount,
+                    currency: currency.toLowerCase(),
+                    metadata: { ...cleanMeta, reference },
+                    receipt_email: email,
+                    automatic_payment_methods: { enabled: true },
+                    // Attach to customer for card reuse (card_setup flows)
+                    ...(customerId ? {
+                        customer: customerId,
+                        setup_future_usage: 'off_session',
+                    } : {}),
+                });
+
+                return {
+                    reference,
+                    clientSecret: pi.client_secret || undefined,
+                };
+            }
+
+            // ── WebView / Checkout Session mode (legacy) ───────────────
             // Use Stripe Checkout Session so the mobile WebView gets a redirect URL
             // (Payment Intents return clientSecret which requires native SDK; Checkout gives a hosted URL)
             const session = await this.stripe.checkout.sessions.create({
@@ -63,11 +114,47 @@ export class StripeProvider implements IPaymentProvider {
         }
     }
 
+    private async extractCardDetailsFromPaymentMethod(pmOrId: string | Stripe.PaymentMethod | null | undefined): Promise<PaymentVerificationResult['cardDetails']> {
+        try {
+            if (!pmOrId) return undefined;
+            let pm: Stripe.PaymentMethod;
+            if (typeof pmOrId === 'string') {
+                pm = await this.stripe.paymentMethods.retrieve(pmOrId);
+            } else if (pmOrId.id) {
+                pm = pmOrId;
+            } else {
+                return undefined;
+            }
+            if (pm.card) {
+                return {
+                    last4: pm.card.last4,
+                    brand: pm.card.brand,
+                    expMonth: pm.card.exp_month,
+                    expYear: pm.card.exp_year,
+                };
+            }
+        } catch (e) {
+            logger.warn({ err: e }, 'Failed to extract Stripe card details');
+        }
+        return undefined;
+    }
+
+    private async extractCardDetails(pi: Stripe.PaymentIntent): Promise<PaymentVerificationResult['cardDetails']> {
+        const details = await this.extractCardDetailsFromPaymentMethod(pi.payment_method as string | Stripe.PaymentMethod | null);
+        if (details) {
+            // Attach Stripe IDs for off-session reuse
+            const pmId = typeof pi.payment_method === 'string' ? pi.payment_method : (pi.payment_method as Stripe.PaymentMethod)?.id;
+            if (pmId) details.stripePaymentMethodId = pmId;
+            if (pi.customer) {
+                details.stripeCustomerId = typeof pi.customer === 'string' ? pi.customer : (pi.customer as Stripe.Customer).id;
+            }
+        }
+        return details;
+    }
+
     async verifyTransaction(reference: string): Promise<PaymentVerificationResult> {
         try {
             // Search PaymentIntents by our reference stored in metadata.
-            // Checkout Sessions create a PaymentIntent with payment_intent_data.metadata,
-            // so both direct PI and Checkout flows are covered.
             const results = await this.stripe.paymentIntents.search({
                 query: `metadata['reference']:'${reference}'`,
                 limit: 1,
@@ -75,6 +162,7 @@ export class StripeProvider implements IPaymentProvider {
 
             if (results.data.length > 0) {
                 const pi = results.data[0];
+                const cardDetails = pi.status === 'succeeded' ? await this.extractCardDetails(pi) : undefined;
                 return {
                     success: pi.status === 'succeeded',
                     amount: pi.amount / 100,
@@ -83,11 +171,13 @@ export class StripeProvider implements IPaymentProvider {
                     status: pi.status,
                     gateway: 'stripe',
                     metadata: pi.metadata,
+                    cardDetails,
                 };
             }
 
             // Fallback: treat reference as a direct PaymentIntent ID (legacy)
             const pi = await this.stripe.paymentIntents.retrieve(reference);
+            const cardDetails = pi.status === 'succeeded' ? await this.extractCardDetails(pi) : undefined;
             return {
                 success: pi.status === 'succeeded',
                 amount: pi.amount / 100,
@@ -96,6 +186,7 @@ export class StripeProvider implements IPaymentProvider {
                 status: pi.status,
                 gateway: 'stripe',
                 metadata: pi.metadata,
+                cardDetails,
             };
         } catch (error) {
             return {
@@ -125,6 +216,7 @@ export class StripeProvider implements IPaymentProvider {
 
         if (event.type === 'payment_intent.succeeded') {
             const pi = event.data.object as Stripe.PaymentIntent;
+            const cardDetails = await this.extractCardDetails(pi);
             return {
                 success: true,
                 amount: pi.amount / 100,
@@ -132,7 +224,8 @@ export class StripeProvider implements IPaymentProvider {
                 reference: pi.id,
                 status: 'success',
                 gateway: 'stripe',
-                metadata: pi.metadata
+                metadata: pi.metadata,
+                cardDetails,
             };
         }
 

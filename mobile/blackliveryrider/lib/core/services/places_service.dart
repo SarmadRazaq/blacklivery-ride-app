@@ -76,9 +76,44 @@ class PlacesService {
         queryParameters: {'q': query},
       );
       final List<dynamic> locationsJson = response.data['data'] ?? [];
-      return locationsJson.map((json) => Location.fromJson(json)).toList();
+      return locationsJson.map((json) {
+        // Backend now returns name/address/id, but also handle legacy mainText/description
+        final map = json as Map<String, dynamic>;
+        return Location(
+          id: map['id']?.toString() ?? map['placeId']?.toString() ?? '',
+          name: map['name']?.toString() ??
+              map['mainText']?.toString() ??
+              map['description']?.toString() ??
+              '',
+          address: map['address']?.toString() ??
+              map['description']?.toString() ??
+              map['secondaryText']?.toString() ??
+              '',
+          latitude: (map['lat'] as num?)?.toDouble() ??
+              (map['latitude'] as num?)?.toDouble() ??
+              0.0,
+          longitude: (map['lng'] as num?)?.toDouble() ??
+              (map['longitude'] as num?)?.toDouble() ??
+              0.0,
+        );
+      }).toList();
     } catch (e) {
       return [];
+    }
+  }
+
+  /// Get place details (coordinates) from a Google Place ID
+  Future<Location?> getPlaceDetails(String placeId) async {
+    try {
+      final response = await _dio.get(
+        '/api/v1/places/details/$placeId',
+        options: Options(extra: {'suppressGlobalError': true}),
+      );
+      final data = response.data['data'];
+      if (data == null) return null;
+      return Location.fromJson(data);
+    } catch (e) {
+      return null;
     }
   }
 

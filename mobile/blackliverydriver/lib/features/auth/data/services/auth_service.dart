@@ -29,10 +29,11 @@ class AuthService {
     }
   }
 
-  // Verify phone OTP via backend (Twilio Verify)
-  Future<bool> verifyOtp(String phoneNumber, String code) async {
+  /// Verify phone OTP via backend (Twilio Verify).
+  /// Returns a map with 'verified' and optionally 'token' if an account exists.
+  Future<Map<String, dynamic>> verifyOtp(String phoneNumber, String code) async {
     try {
-      await _apiClient.dio.post(
+      final response = await _apiClient.dio.post(
         ApiConstants.verifyOtp,
         data: {
           'phoneNumber': phoneNumber,
@@ -41,7 +42,60 @@ class AuthService {
         options: Options(extra: {'suppressGlobalError': true}),
       );
 
-      return true;
+      final data = response.data is Map<String, dynamic>
+          ? response.data as Map<String, dynamic>
+          : <String, dynamic>{};
+
+      return {
+        'verified': true,
+        'token': data['token'],
+        'data': data['data'],
+      };
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  /// Complete registration using a phone number that was already verified via OTP.
+  Future<Map<String, dynamic>> registerWithVerifiedPhone({
+    required String email,
+    required String password,
+    required String fullName,
+    required String phoneNumber,
+    String? region,
+  }) async {
+    try {
+      final response = await _apiClient.dio.post(
+        '/api/v1/auth/register-with-phone',
+        data: {
+          'email': email.trim().toLowerCase(),
+          'password': password,
+          'fullName': fullName,
+          'phoneNumber': phoneNumber,
+          'role': 'driver',
+          if (region != null) 'region': region,
+        },
+        options: Options(extra: {'suppressGlobalError': true}),
+      );
+
+      // Auto-login with custom token if returned
+      final token = response.data is Map<String, dynamic>
+          ? (response.data as Map<String, dynamic>)['token'] as String?
+          : null;
+
+      if (token != null && token.isNotEmpty) {
+        await _firebaseAuth.signInWithCustomToken(token);
+      } else {
+        // Fallback: sign in with email/password
+        await _firebaseAuth.signInWithEmailAndPassword(
+          email: email.trim().toLowerCase(),
+          password: password,
+        );
+      }
+
+      return response.data is Map<String, dynamic>
+          ? response.data as Map<String, dynamic>
+          : <String, dynamic>{};
     } catch (e) {
       rethrow;
     }

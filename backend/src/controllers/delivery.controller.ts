@@ -60,42 +60,45 @@ const ensureDeliveryNotification = async (riderId: string, payload: Record<strin
 
 export const createDelivery = async (req: AuthRequest, res: Response): Promise<void> => {
     try {
-        const payload = deliveryRequestSchema.parse(req.body);
+        // Body already validated by createDeliverySchema middleware (pickupLocation/dropoffLocation/packageDetails)
+        const { pickupLocation, dropoffLocation, vehicleCategory, serviceType, region, city,
+                packageDetails, recipientName, recipientPhone, notes, scheduledAt, extraStops, isReturnTrip } = req.body;
 
         const routeData = await googleMapsService.getDistanceAndDuration(
-            { lat: payload.pickup.lat, lng: payload.pickup.lng },
-            { lat: payload.dropoff.lat, lng: payload.dropoff.lng }
+            { lat: pickupLocation.lat, lng: pickupLocation.lng },
+            { lat: dropoffLocation.lat, lng: dropoffLocation.lng }
         );
 
         let distanceKm = routeData.distanceMeters / 1000;
         let durationMinutes = routeData.durationSeconds / 60;
 
-        if (payload.deliveryDetails.requiresReturn) {
+        if (isReturnTrip) {
             distanceKm *= 1.8;
             durationMinutes *= 2;
         }
 
+        const resolvedRegion = region === 'chicago' || region === 'US-CHI' ? 'US-CHI' : 'NG';
+
         const mockRide = {
-            vehicleCategory: payload.vehicleCategory ?? 'motorbike',
-            region: payload.region === 'chicago' ? 'US-CHI' : 'NG',
+            vehicleCategory: vehicleCategory ?? 'motorbike',
+            region: resolvedRegion,
             bookingType: 'delivery',
-            city: payload.city,
-            pickupLocation: payload.pickup,
-            dropoffLocation: payload.dropoff,
+            city,
+            pickupLocation,
+            dropoffLocation,
             deliveryDetails: {
-                packageType: payload.deliveryDetails.packageType,
-                requiresReturn: payload.deliveryDetails.requiresReturn,
-                extraStops: payload.deliveryDetails.extraStops,
-                serviceType: payload.deliveryDetails.serviceType
+                packageType: packageDetails?.category ?? 'parcel',
+                requiresReturn: isReturnTrip ?? false,
+                extraStops: extraStops?.length ?? 0,
+                serviceType: serviceType ?? 'instant'
             },
             addOns: {
-                extraStops: payload.deliveryDetails.extraStops,
-                extraLuggage: payload.deliveryDetails.packageType === 'bulk',
-                premiumVehicle: payload.vehicleCategory ? payload.vehicleCategory !== 'motorbike' : false,
+                extraStops: extraStops?.length ?? 0,
+                extraLuggage: false,
+                premiumVehicle: vehicleCategory ? vehicleCategory !== 'motorbike' : false,
                 meetAndGreet: true,
-                afterHours: payload.addOns?.afterHours
             },
-            pricing: { surgeMultiplier: 1.0 } // Default surge
+            pricing: { surgeMultiplier: 1.0 }
         };
 
         const estimatedFare = await pricingService.calculateFare(
@@ -105,20 +108,26 @@ export const createDelivery = async (req: AuthRequest, res: Response): Promise<v
         );
 
         const requestData = {
-            pickupLocation: payload.pickup,
-            dropoffLocation: payload.dropoff,
-            vehicleCategory: payload.vehicleCategory ?? 'motorbike',
-            region: mockRide.region,
-            city: payload.city,
+            pickupLocation,
+            dropoffLocation,
+            vehicleCategory: vehicleCategory ?? 'motorbike',
+            region: resolvedRegion,
+            city,
             bookingType: 'delivery',
             deliveryDetails: {
-                ...payload.deliveryDetails,
-                proofRequired: payload.deliveryDetails.proofRequired ?? 'photo'
+                packageDetails,
+                recipientName,
+                recipientPhone,
+                notes,
+                serviceType: serviceType ?? 'instant',
+                requiresReturn: isReturnTrip ?? false,
+                proofRequired: 'photo'
             },
-            addOns: payload.addOns,
+            ...(extraStops && { extraStops }),
+            ...(scheduledAt && { scheduledAt }),
             pricing: {
                 estimatedFare: estimatedFare.totalFare,
-                currency: mockRide.region === 'NG' ? 'NGN' : 'USD',
+                currency: resolvedRegion === 'NG' ? 'NGN' : 'USD',
                 breakdown: estimatedFare
             }
         };
@@ -142,35 +151,38 @@ export const createDelivery = async (req: AuthRequest, res: Response): Promise<v
 
 export const getDeliveryQuote = async (req: AuthRequest, res: Response): Promise<void> => {
     try {
-        const payload = deliveryRequestSchema.parse(req.body);
+        // Body already validated by deliveryQuoteSchema middleware (pickupLocation/dropoffLocation)
+        const { pickupLocation, dropoffLocation, vehicleCategory, serviceType, isFragile, extraStops, isReturnTrip, region } = req.body;
 
         const routeData = await googleMapsService.getDistanceAndDuration(
-            { lat: payload.pickup.lat, lng: payload.pickup.lng },
-            { lat: payload.dropoff.lat, lng: payload.dropoff.lng }
+            { lat: pickupLocation.lat, lng: pickupLocation.lng },
+            { lat: dropoffLocation.lat, lng: dropoffLocation.lng }
         );
 
         let distanceKm = routeData.distanceMeters / 1000;
         let durationMinutes = routeData.durationSeconds / 60;
 
-        if (payload.deliveryDetails.requiresReturn) {
+        if (isReturnTrip) {
             distanceKm *= 1.8;
             durationMinutes *= 2;
         }
 
         const mockRide = {
-            vehicleCategory: payload.vehicleCategory ?? 'motorbike',
-            region: payload.region === 'chicago' ? 'US-CHI' : 'NG',
+            vehicleCategory: vehicleCategory ?? 'motorbike',
+            region: region === 'chicago' ? 'US-CHI' : (region === 'US-CHI' ? 'US-CHI' : 'NG'),
             bookingType: 'delivery',
-            city: payload.city,
-            pickupLocation: payload.pickup,
-            dropoffLocation: payload.dropoff,
+            pickupLocation,
+            dropoffLocation,
             deliveryDetails: {
-                serviceType: payload.deliveryDetails.serviceType,
-                requiresReturn: payload.deliveryDetails.requiresReturn,
-                extraStops: payload.deliveryDetails.extraStops,
-                packageType: payload.deliveryDetails.packageType
+                serviceType: serviceType ?? 'instant',
+                requiresReturn: isReturnTrip ?? false,
+                extraStops: extraStops ?? 0,
+                packageType: isFragile ? 'parcel' : 'parcel'
             },
-            addOns: payload.addOns,
+            addOns: {
+                extraStops: extraStops ?? 0,
+                fragileCare: isFragile ?? false,
+            },
             pricing: { surgeMultiplier: 1.0 }
         };
 

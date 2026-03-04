@@ -29,8 +29,16 @@ class AuthProvider extends ChangeNotifier {
         // User has an active Firebase session - load their profile
         debugPrint('Firebase user found: ${firebaseUser.email}');
         try {
-          _user = await _service.getProfile();
-          debugPrint('Profile loaded: ${_user?.fullName}');
+          final profile = await _service.getProfile();
+          // Block driver/admin accounts from using the rider app
+          if (profile.role != null && profile.role!.isNotEmpty && profile.role != 'rider') {
+            debugPrint('Wrong role: ${profile.role} — signing out');
+            await firebase_auth.FirebaseAuth.instance.signOut();
+            _user = null;
+          } else {
+            _user = profile;
+            debugPrint('Profile loaded: ${_user?.fullName}');
+          }
         } catch (e) {
           debugPrint('Failed to load profile: $e');
           // Profile doesn't exist in backend, but Firebase session is valid
@@ -127,12 +135,45 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> verifyPhone(String phone, String otp) async {
+  /// Verify phone OTP. Returns true if logged in, false if phone verified but no account exists.
+  Future<bool> verifyPhone(String phone, String otp) async {
     _isLoading = true;
     notifyListeners();
 
     try {
-      _user = await _service.verifyPhone(phone, otp);
+      final user = await _service.verifyPhone(phone, otp);
+      if (user != null) {
+        _user = user;
+        return true; // Existing account — logged in
+      }
+      return false; // Phone verified, no account — needs signup
+    } catch (e) {
+      rethrow;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  /// Complete phone-based signup after phone was verified but no account existed.
+  Future<void> registerWithVerifiedPhone({
+    required String email,
+    required String password,
+    required String fullName,
+    required String phoneNumber,
+    String? region,
+  }) async {
+    _isLoading = true;
+    notifyListeners();
+
+    try {
+      _user = await _service.registerWithVerifiedPhone(
+        email: email,
+        password: password,
+        fullName: fullName,
+        phoneNumber: phoneNumber,
+        region: region,
+      );
     } catch (e) {
       rethrow;
     } finally {

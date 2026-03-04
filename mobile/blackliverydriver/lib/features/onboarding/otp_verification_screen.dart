@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:pinput/pinput.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../core/network/api_error_message.dart';
 import '../../core/providers/riverpod_providers.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/custom_button.dart';
@@ -31,9 +33,8 @@ class OtpVerificationScreen extends ConsumerStatefulWidget {
 
 class _OtpVerificationScreenState extends ConsumerState<OtpVerificationScreen> {
   final TextEditingController _otpController = TextEditingController();
-  // final AuthService _authService = AuthService(); // Removed
 
-  final bool _isLoading = false;
+  bool _isLoading = false;
   int _resendTimer = 60;
   Timer? _timer;
 
@@ -65,7 +66,9 @@ class _OtpVerificationScreenState extends ConsumerState<OtpVerificationScreen> {
   }
 
   void _verifyOtp(String otp) async {
-    if (otp.length != 6) return;
+    if (otp.length != 6 || _isLoading) return;
+
+    setState(() => _isLoading = true);
 
     try {
       await ref.read(authRiverpodProvider).verifyOtp(widget.phoneNumber, otp);
@@ -79,10 +82,15 @@ class _OtpVerificationScreenState extends ConsumerState<OtpVerificationScreen> {
       }
     } catch (e) {
       if (mounted) {
+        final message = e is DioException
+            ? apiErrorMessage(e)
+            : 'Verification failed. Please try again.';
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Verification failed: ${e.toString()}')),
+          SnackBar(content: Text(message)),
         );
       }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 

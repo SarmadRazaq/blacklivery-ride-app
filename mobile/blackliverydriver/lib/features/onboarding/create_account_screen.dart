@@ -32,7 +32,7 @@ class _CreateAccountScreenState extends ConsumerState<CreateAccountScreen> {
   final _emailController = TextEditingController();
   final _phoneController = TextEditingController();
   final _passwordController = TextEditingController();
-  String _selectedRegion = 'US';
+  String _selectedRegion = 'NG';
   bool _obscurePassword = true;
 
   String get _countryCode => _selectedRegion == 'NG' ? '+234' : '+1';
@@ -237,6 +237,19 @@ class _CreateAccountScreenState extends ConsumerState<CreateAccountScreen> {
                   ),
                 ),
 
+                // ── Region Selector ──
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: Row(
+                    children: [
+                      _buildRegionChip('NG', '\ud83c\uddf3\ud83c\uddec', 'Nigeria'),
+                      const SizedBox(width: 12),
+                      _buildRegionChip('US', '\ud83c\uddfa\ud83c\uddf8', 'Chicago, US'),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+
                 // ── Input Fields ──
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -275,12 +288,15 @@ class _CreateAccountScreenState extends ConsumerState<CreateAccountScreen> {
                       const SizedBox(height: 14),
                       _buildInputField(
                         controller: _phoneController,
-                        hint: 'Phone Number',
+                        hint: _selectedRegion == 'NG' ? '801 234 5678' : '415 555 1234',
                         icon: Icons.phone_outlined,
                         keyboardType: TextInputType.phone,
+                        prefix: _countryCode,
                         formatters: [
                           FilteringTextInputFormatter.digitsOnly,
-                          LengthLimitingTextInputFormatter(11),
+                          LengthLimitingTextInputFormatter(
+                            _selectedRegion == 'NG' ? 11 : 10,
+                          ),
                         ],
                       ),
                       const SizedBox(height: 14),
@@ -384,6 +400,55 @@ class _CreateAccountScreenState extends ConsumerState<CreateAccountScreen> {
     );
   }
 
+  Widget _buildRegionChip(String code, String flag, String label) {
+    final isSelected = _selectedRegion == code;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () {
+          setState(() {
+            _selectedRegion = code;
+            _phoneController.clear();
+          });
+          final regionProvider = ref.read(regionRiverpodProvider);
+          regionProvider.setRegion(
+            code == 'NG' ? RegionCode.ng : RegionCode.usChi,
+          );
+        },
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
+          decoration: BoxDecoration(
+            color: isSelected
+                ? AppColors.primary.withValues(alpha: 0.15)
+                : const Color(0xFF1A1A1A),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: isSelected
+                  ? AppColors.primary.withValues(alpha: 0.6)
+                  : Colors.grey[800]!,
+              width: isSelected ? 1.5 : 1,
+            ),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(flag, style: const TextStyle(fontSize: 20)),
+              const SizedBox(width: 8),
+              Text(
+                label,
+                style: TextStyle(
+                  color: isSelected ? AppColors.primary : Colors.grey[500],
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                  fontSize: 13,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildInputField({
     required TextEditingController controller,
     required String hint,
@@ -394,6 +459,7 @@ class _CreateAccountScreenState extends ConsumerState<CreateAccountScreen> {
     Widget? suffixIcon,
     String? Function(String?)? validator,
     ValueChanged<String>? onChanged,
+    String? prefix,
   }) {
     return TextFormField(
       controller: controller,
@@ -406,7 +472,21 @@ class _CreateAccountScreenState extends ConsumerState<CreateAccountScreen> {
       decoration: InputDecoration(
         hintText: hint,
         hintStyle: TextStyle(color: Colors.grey[600], fontSize: 14),
-        prefixIcon: Icon(icon, color: Colors.grey[500], size: 20),
+        prefixIcon: prefix != null
+            ? Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const SizedBox(width: 14),
+                  Icon(icon, color: Colors.grey[500], size: 20),
+                  const SizedBox(width: 8),
+                  Text(
+                    prefix,
+                    style: const TextStyle(color: AppColors.white, fontSize: 15),
+                  ),
+                  const SizedBox(width: 4),
+                ],
+              )
+            : Icon(icon, color: Colors.grey[500], size: 20),
         suffixIcon: suffixIcon,
         filled: true,
         fillColor: const Color(0xFF1A1A1A),

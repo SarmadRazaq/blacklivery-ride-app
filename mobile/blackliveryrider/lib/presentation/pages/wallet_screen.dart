@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../core/models/wallet_transaction_model.dart';
 import '../../core/services/wallet_service.dart';
 import '../../core/utils/currency_utils.dart';
+import '../../core/providers/region_provider.dart';
 import 'add_funds_screen.dart';
 import 'manage_payment_methods_screen.dart';
 import 'loyalty_rewards_screen.dart';
@@ -25,21 +27,63 @@ class _WalletScreenState extends State<WalletScreen> {
   // 0 = all, 1 = debits only, 2 = credits only
   int _activeFilter = 0;
 
+  /// The currency that was active when we last fetched the balance.
+  String _balanceCurrency = CurrencyUtils.activeCurrency;
+
   @override
   void initState() {
     super.initState();
-    _loadWalletData();
+    // Ensure latest exchange rates are loaded before fetching wallet data.
+    CurrencyUtils.syncRates().then((_) => _loadWalletData());
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Re-load or convert when the region (and therefore currency) changes.
+    final regionCurrency =
+        Provider.of<RegionProvider>(context).currency;
+    if (regionCurrency != _balanceCurrency && !_isLoading) {
+      _convertBalanceForNewCurrency(regionCurrency);
+    }
+  }
+
+  /// Convert the cached balance to the new currency using exchange rates.
+  /// No backend re-fetch — the conversion is authoritative for display.
+  void _convertBalanceForNewCurrency(String newCurrency) {
+    setState(() {
+      _balance = CurrencyUtils.convert(_balance, _balanceCurrency, newCurrency);
+      _balanceCurrency = newCurrency;
+    });
   }
 
   Future<void> _loadWalletData() async {
     setState(() => _isLoading = true);
     try {
       final results = await Future.wait([
-        _walletService.getBalance(),
+        _walletService.getBalanceWithCurrency(),
         _walletService.getTransactions(),
       ]);
+
+      final balanceResult = results[0] as Map<String, dynamic>;
+      final serverAmount = balanceResult['amount'] as double;
+      final serverCurrency = balanceResult['currency'] as String;
+      final displayCurrency = CurrencyUtils.activeCurrency;
+
+      // If the server wallet currency differs from the active display currency
+      // (e.g., wallet is NGN but user switched to USD), convert client-side.
+      double displayBalance = serverAmount;
+      if (serverCurrency != displayCurrency) {
+        displayBalance = CurrencyUtils.convert(
+          serverAmount,
+          serverCurrency,
+          displayCurrency,
+        );
+      }
+
       setState(() {
-        _balance = results[0] as double;
+        _balance = displayBalance;
+        _balanceCurrency = displayCurrency;
         _transactions = results[1] as List<WalletTransaction>;
         _filteredTransactions = _transactions;
         _isLoading = false;
@@ -417,7 +461,19 @@ class _WalletScreenState extends State<WalletScreen> {
             ),
           ),
           Text(
-            '${isCredit ? '+' : ''}${CurrencyUtils.format(transaction.amount)}',
+            () {
+              // Convert transaction amount to the active display currency
+              final displayCurrency = _balanceCurrency;
+              double displayAmount = transaction.amount;
+              if (transaction.currency != displayCurrency) {
+                displayAmount = CurrencyUtils.convert(
+                  transaction.amount,
+                  transaction.currency,
+                  displayCurrency,
+                );
+              }
+              return '${isCredit ? '+' : ''}${CurrencyUtils.format(displayAmount, currency: displayCurrency)}';
+            }(),
             style: AppTextStyles.body.copyWith(
               color: isCredit ? AppColors.success : Colors.white,
               fontSize: 13,

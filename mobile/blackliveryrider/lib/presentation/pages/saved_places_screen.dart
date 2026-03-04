@@ -56,8 +56,24 @@ class _SavedPlacesScreenState extends State<SavedPlacesScreen> {
     );
 
     if (result != null) {
+      // Persist to Firestore
+      SavedPlace? persisted;
+      if (_homePlace != null && _homePlace!.id.isNotEmpty && _homePlace!.id != 'home') {
+        // Update existing
+        final updated = SavedPlace(
+          id: _homePlace!.id,
+          name: result.name,
+          address: result.address,
+          type: result.type,
+          latitude: result.latitude,
+          longitude: result.longitude,
+        );
+        persisted = await _placesService.updateSavedPlace(updated);
+      } else {
+        persisted = await _placesService.addSavedPlace(result);
+      }
       setState(() {
-        _homePlace = result;
+        _homePlace = persisted ?? result;
       });
     }
   }
@@ -71,8 +87,24 @@ class _SavedPlacesScreenState extends State<SavedPlacesScreen> {
     );
 
     if (result != null) {
+      // Persist to Firestore
+      SavedPlace? persisted;
+      if (_workPlace != null && _workPlace!.id.isNotEmpty && _workPlace!.id != 'work') {
+        // Update existing
+        final updated = SavedPlace(
+          id: _workPlace!.id,
+          name: result.name,
+          address: result.address,
+          type: result.type,
+          latitude: result.latitude,
+          longitude: result.longitude,
+        );
+        persisted = await _placesService.updateSavedPlace(updated);
+      } else {
+        persisted = await _placesService.addSavedPlace(result);
+      }
       setState(() {
-        _workPlace = result;
+        _workPlace = persisted ?? result;
       });
     }
   }
@@ -86,10 +118,73 @@ class _SavedPlacesScreenState extends State<SavedPlacesScreen> {
     );
 
     if (result != null) {
+      // Persist to Firestore
+      final persisted = await _placesService.addSavedPlace(result);
       setState(() {
-        _otherPlaces.add(result);
+        _otherPlaces.add(persisted ?? result);
       });
     }
+  }
+
+  Future<void> _confirmDelete(String title, Future<void> Function() onDelete) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppColors.bgSec,
+        title: Text(
+          'Delete $title?',
+          style: AppTextStyles.heading3.copyWith(fontSize: 16),
+        ),
+        content: Text(
+          'This saved place will be permanently removed.',
+          style: AppTextStyles.body.copyWith(color: AppColors.txtInactive),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text('Cancel',
+                style: AppTextStyles.body.copyWith(color: AppColors.txtInactive)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text('Delete',
+                style: AppTextStyles.body.copyWith(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      await onDelete();
+    }
+  }
+
+  Future<void> _deleteHome() async {
+    if (_homePlace == null) return;
+    await _confirmDelete('Home', () async {
+      final success = await _placesService.deleteSavedPlace(_homePlace!.id);
+      if (success) {
+        setState(() => _homePlace = null);
+      }
+    });
+  }
+
+  Future<void> _deleteWork() async {
+    if (_workPlace == null) return;
+    await _confirmDelete('Work', () async {
+      final success = await _placesService.deleteSavedPlace(_workPlace!.id);
+      if (success) {
+        setState(() => _workPlace = null);
+      }
+    });
+  }
+
+  Future<void> _deleteOtherPlace(SavedPlace place) async {
+    await _confirmDelete(place.name, () async {
+      final success = await _placesService.deleteSavedPlace(place.id);
+      if (success) {
+        setState(() => _otherPlaces.remove(place));
+      }
+    });
   }
 
   @override
@@ -144,6 +239,7 @@ class _SavedPlacesScreenState extends State<SavedPlacesScreen> {
               subtitle: _homePlace?.address,
               isSet: _homePlace != null,
               onTap: _addHome,
+              onLongPress: _homePlace != null ? _deleteHome : null,
             ),
 
             const SizedBox(height: 12),
@@ -155,6 +251,7 @@ class _SavedPlacesScreenState extends State<SavedPlacesScreen> {
               subtitle: _workPlace?.address,
               isSet: _workPlace != null,
               onTap: _addWork,
+              onLongPress: _workPlace != null ? _deleteWork : null,
             ),
 
             const SizedBox(height: 24),
@@ -228,9 +325,11 @@ class _SavedPlacesScreenState extends State<SavedPlacesScreen> {
     String? subtitle,
     required bool isSet,
     required VoidCallback onTap,
+    VoidCallback? onLongPress,
   }) {
     return GestureDetector(
       onTap: onTap,
+      onLongPress: onLongPress,
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
@@ -274,6 +373,25 @@ class _SavedPlacesScreenState extends State<SavedPlacesScreen> {
                 ],
               ),
             ),
+            if (isSet) ...[
+              GestureDetector(
+                onTap: () {
+                  if (title.toLowerCase().contains('home')) {
+                    _deleteHome();
+                  } else if (title.toLowerCase().contains('work')) {
+                    _deleteWork();
+                  }
+                },
+                child: Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: Icon(
+                    Icons.delete_outline,
+                    color: AppColors.txtInactive,
+                    size: 20,
+                  ),
+                ),
+              ),
+            ],
             Icon(
               Icons.chevron_right,
               color: AppColors.txtInactive,
@@ -340,10 +458,16 @@ class _SavedPlacesScreenState extends State<SavedPlacesScreen> {
                 ],
               ),
             ),
-            Icon(
-              Icons.chevron_right,
-              color: AppColors.txtInactive,
-              size: 20,
+            GestureDetector(
+              onTap: () => _deleteOtherPlace(place),
+              child: Padding(
+                padding: const EdgeInsets.all(4),
+                child: Icon(
+                  Icons.delete_outline,
+                  color: AppColors.txtInactive,
+                  size: 20,
+                ),
+              ),
             ),
           ],
         ),

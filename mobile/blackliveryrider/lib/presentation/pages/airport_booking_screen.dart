@@ -41,22 +41,22 @@ class _AirportBookingScreenState extends State<AirportBookingScreen> {
 
   static const List<_AirportCategory> _categories = [
     _AirportCategory(
-      id: 'sedan',
-      name: 'Sedan',
+      id: 'business_sedan',
+      name: 'Business Sedan',
       ordRate: 95,
       mdwRate: 85,
       capacity: 3,
     ),
     _AirportCategory(
-      id: 'suv',
-      name: 'SUV',
+      id: 'business_suv',
+      name: 'Business SUV',
       ordRate: 125,
       mdwRate: 105,
       capacity: 5,
     ),
     _AirportCategory(
-      id: 'first_class',
-      name: 'First Class',
+      id: 'premium',
+      name: 'Premium',
       ordRate: 175,
       mdwRate: 150,
       capacity: 3,

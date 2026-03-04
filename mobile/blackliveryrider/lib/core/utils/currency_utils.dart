@@ -1,5 +1,10 @@
+import '../services/exchange_rate_service.dart';
+
 /// Currency formatting utility for the BlackLivery app.
 /// Active currency is set at runtime by RegionProvider.
+///
+/// Exchange rates are fetched from the internet on app startup via
+/// [syncRates]. If the network call fails, hardcoded fallback rates are used.
 class CurrencyUtils {
   static const String defaultCurrency = 'NGN';
   static const String defaultSymbol = '₦';
@@ -8,6 +13,11 @@ class CurrencyUtils {
   static String _activeCurrency = defaultCurrency;
   static String get activeCurrency => _activeCurrency;
   static set activeCurrency(String c) => _activeCurrency = c;
+
+  /// Tracks the previous currency so we know when a region switch happened.
+  static String _previousCurrency = defaultCurrency;
+  static String get previousCurrency => _previousCurrency;
+  static set previousCurrency(String c) => _previousCurrency = c;
 
   static const Map<String, String> _symbols = {
     'NGN': '₦',
@@ -18,6 +28,58 @@ class CurrencyUtils {
     'KES': 'KSh',
     'ZAR': 'R',
   };
+
+  /// Hardcoded fallback rates used when the network is unavailable.
+  static const Map<String, double> _fallbackRates = {
+    'USD': 1.0,
+    'NGN': 1600.0,
+    'GBP': 0.79,
+    'EUR': 0.92,
+    'GHS': 15.5,
+    'KES': 129.0,
+    'ZAR': 18.1,
+  };
+
+  /// Live exchange rates relative to USD, populated by [syncRates].
+  /// Falls back to [_fallbackRates] when not yet loaded.
+  static Map<String, double> _liveRates = {};
+
+  /// Whether live rates have been loaded at least once.
+  static bool get hasLiveRates => _liveRates.isNotEmpty;
+
+  /// The effective rate map — live rates if available, otherwise fallbacks.
+  static Map<String, double> get _ratesPerUSD =>
+      _liveRates.isNotEmpty ? _liveRates : _fallbackRates;
+
+  /// Fetch live exchange rates from the internet and cache locally.
+  /// Call this once at app startup (fire-and-forget is fine).
+  /// Returns `true` if fresh rates were loaded.
+  static Future<bool> syncRates({bool forceRefresh = false}) async {
+    try {
+      final rates = await ExchangeRateService().getRates(
+        forceRefresh: forceRefresh,
+      );
+      if (rates != null && rates.isNotEmpty) {
+        _liveRates = rates;
+        return true;
+      }
+    } catch (_) {
+      // Silently fall back to hardcoded rates
+    }
+    return false;
+  }
+
+  /// Convert an amount from one currency to another using live rates
+  /// (with hardcoded fallback when offline).
+  static double convert(double amount, String fromCurrency, String toCurrency) {
+    if (fromCurrency == toCurrency) return amount;
+    final rates = _ratesPerUSD;
+    final fromRate = rates[fromCurrency.toUpperCase()] ?? 1.0;
+    final toRate = rates[toCurrency.toUpperCase()] ?? 1.0;
+    // amount → USD → target
+    final usd = amount / fromRate;
+    return usd * toRate;
+  }
 
   /// Get the symbol for a currency code.
   /// If no currency is given, uses the runtime [activeCurrency].

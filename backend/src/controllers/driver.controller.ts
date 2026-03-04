@@ -1260,11 +1260,22 @@ export const getDriverLoyaltyOverview = async (req: AuthRequest, res: Response):
 
     try {
         const { uid } = req.user;
-        const [account, history, rewards] = await Promise.all([
+
+        // Fetch each piece independently so a missing Firestore index
+        // on one collection doesn't crash the whole endpoint.
+        const [accountResult, historyResult, rewardsResult] = await Promise.allSettled([
             loyaltyService.getAccount(uid),
             loyaltyService.getHistory(uid, 20),
             Promise.resolve(loyaltyService.getAvailableRewards())
         ]);
+
+        const account = accountResult.status === 'fulfilled' ? accountResult.value : null;
+        const history = historyResult.status === 'fulfilled' ? historyResult.value : [];
+        const rewards = rewardsResult.status === 'fulfilled' ? rewardsResult.value : [];
+
+        if (historyResult.status === 'rejected') {
+            logger.warn({ err: historyResult.reason }, 'loyalty history query failed (missing index?)');
+        }
 
         res.status(200).json({
             success: true,

@@ -163,7 +163,12 @@ class _DriverMapScreenState extends ConsumerState<DriverMapScreen> {
       if (!mounted) return;
       final rideProvider = ref.read(rideRiverpodProvider);
       final prefsProvider = ref.read(driverPreferencesRiverpodProvider);
-      rideProvider.initWebSocket(token, prefsProvider: prefsProvider);
+      final regionProvider = ref.read(regionRiverpodProvider);
+      rideProvider.initWebSocket(
+        token, 
+        prefsProvider: prefsProvider, 
+        regionProvider: regionProvider,
+      );
       rideProvider.refreshScheduledRidesCount();
 
       // Emit driver preferences to backend so server knows what to send

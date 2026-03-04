@@ -42,6 +42,24 @@ class EnvConfig {
   /// Default region code (e.g. `nigeria`, `chicago`).
   static String get defaultRegion => dotenv.env['DEFAULT_REGION'] ?? 'nigeria';
 
+  // ─── Payment SDKs ──────────────────────────────────────────────────
+
+  /// Stripe publishable key for `flutter_stripe` SDK.
+  static String get stripePublishableKey =>
+      dotenv.env['STRIPE_PUBLISHABLE_KEY'] ?? '';
+
+  /// Paystack public key for `flutter_paystack_plus` SDK.
+  static String get paystackPublicKey =>
+      dotenv.env['PAYSTACK_PUBLIC_KEY'] ?? '';
+
+  /// Flutterwave public key for `flutterwave_standard` SDK.
+  static String get flutterwavePublicKey =>
+      dotenv.env['FLUTTERWAVE_PUBLIC_KEY'] ?? '';
+
+  /// Whether the app is running in production mode.
+  static bool get isProduction =>
+      const bool.fromEnvironment('dart.vm.product');
+
   // ─── Password Reset ────────────────────────────────────────────────
 
   /// Redirect URL appended to Firebase password-reset emails.

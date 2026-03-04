@@ -64,7 +64,7 @@ class ServiceToggle extends StatelessWidget {
                 color: isSelected ? Colors.white : Colors.white70,
                 size: 20,
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 8, height: 40),
               Text(
                 label,
                 style: TextStyle(

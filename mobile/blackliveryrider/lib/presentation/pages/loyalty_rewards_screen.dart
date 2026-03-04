@@ -24,28 +24,53 @@ class _LoyaltyRewardsScreenState extends State<LoyaltyRewardsScreen> {
   }
 
   Future<void> _fetchLoyaltyData() async {
+    if (!mounted) return;
     setState(() => _loading = true);
     try {
       final dio = ApiClient().dio;
+
+      // Backfill loyalty points for any completed rides that were missed
+      try {
+        await dio.post('/api/v1/loyalty/backfill');
+      } catch (e) {
+        debugPrint('Loyalty backfill skipped: $e');
+      }
+
       final accountRes = await dio.get('/api/v1/loyalty/account');
       final historyRes = await dio.get('/api/v1/loyalty/history');
 
-      final account = accountRes.data['data'] ?? accountRes.data;
-      final history = historyRes.data['data'] ?? historyRes.data ?? [];
+      // Backend returns objects directly (no 'data' wrapper)
+      final accountRaw = accountRes.data;
+      final account = (accountRaw is Map && accountRaw.containsKey('data') && accountRaw['data'] is Map)
+          ? accountRaw['data']
+          : accountRaw;
 
+      final historyRaw = historyRes.data;
+      final List history = (historyRaw is List)
+          ? historyRaw
+          : (historyRaw is Map && historyRaw['data'] is List)
+              ? historyRaw['data']
+              : [];
+
+      if (!mounted) return;
       setState(() {
-        _pointsBalance = (account['points'] as num?)?.toInt() ?? 0;
-        _tier = account['tier'] ?? 'bronze';
-        _pointsHistory = (history as List).map((item) => PointsHistoryItem(
-          title: item['description'] ?? 'Ride',
-          date: item['date'] ?? item['createdAt'] ?? '',
-          points: (item['points'] as num?)?.toInt() ?? 0,
-        )).toList();
+        _pointsBalance = (account is Map ? (account['points'] as num?)?.toInt() : null) ?? 0;
+        _tier = (account is Map ? account['tier'] : null) ?? 'bronze';
+        _pointsHistory = history.map((item) {
+          if (item is Map) {
+            return PointsHistoryItem(     
+              title: item['description'] ?? 'Ride',
+              date: item['date'] ?? item['createdAt'] ?? '',
+              points: (item['points'] as num?)?.toInt() ?? 0,
+            );
+          }
+          return PointsHistoryItem(title: 'Activity', date: '', points: 0);
+        }).toList();
       });
     } catch (e) {
       debugPrint('Failed to load loyalty data: $e');
     } finally {
-      setState(() => _loading = false);
+      if (mounted) setState(() => _loading = false);
     }
   }
 
@@ -375,7 +400,7 @@ class _LoyaltyRewardsScreenState extends State<LoyaltyRewardsScreen> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      builder: (context) => Padding(
+      builder: (dialogContext) => Padding(
         padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -435,7 +460,7 @@ class _LoyaltyRewardsScreenState extends State<LoyaltyRewardsScreen> {
               children: [
                 Expanded(
                   child: OutlinedButton(
-                    onPressed: () => Navigator.pop(context),
+                      onPressed: () => Navigator.pop(dialogContext),
                     style: OutlinedButton.styleFrom(
                       side: BorderSide(color: AppColors.inputBorder),
                       padding: const EdgeInsets.symmetric(vertical: 14),
@@ -455,19 +480,19 @@ class _LoyaltyRewardsScreenState extends State<LoyaltyRewardsScreen> {
                 Expanded(
                   child: ElevatedButton(
                     onPressed: () async {
-                      Navigator.pop(context);
+                      Navigator.pop(dialogContext);
                       try {
                         final dio = ApiClient().dio;
                         await dio.post('/api/v1/loyalty/redeem', data: {
                           'rewardType': 'ride_discount',
                           'points': _pointsBalance,
                         });
-                        ScaffoldMessenger.of(context).showSnackBar(
+                        if (!mounted) return; ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(content: Text('Points converted to wallet credit!')),
                         );
                         _fetchLoyaltyData(); // Refresh
                       } catch (e) {
-                        ScaffoldMessenger.of(context).showSnackBar(
+                        if (!mounted) return; ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(content: Text('Failed to convert points. Try again.')),
                         );
                       }

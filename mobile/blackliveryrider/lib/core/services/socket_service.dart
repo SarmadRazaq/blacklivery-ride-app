@@ -23,8 +23,9 @@ class SocketService extends ChangeNotifier {
   final AuthService _authService = AuthService();
   bool _isConnected = false;
   int _reconnectAttempts = 0;
-  static const int _maxReconnectAttempts = 5;
+  static const int _maxReconnectAttempts = 10;
   static const Duration _reconnectBaseDelay = Duration(seconds: 2);
+  static const Duration _reconnectMaxDelay = Duration(seconds: 30);
 
   // Driver location tracking
   Function(Map<String, dynamic>)? _onDriverLocationUpdate;
@@ -38,6 +39,16 @@ class SocketService extends ChangeNotifier {
   // Initialize and connect socket
   Future<void> initSocket() async {
     if (_socket != null && _socket!.connected) return;
+
+    // Clean up old disconnected socket to prevent leaked listeners
+    if (_socket != null) {
+      _socket!.clearListeners();
+      _socket!.dispose();
+      _socket = null;
+    }
+
+    // Reset reconnect counter when initSocket is called directly (new booking)
+    _reconnectAttempts = 0;
 
     final token = await _authService.refreshToken(); // Get valid token
     if (token == null) {
@@ -102,7 +113,8 @@ class SocketService extends ChangeNotifier {
     }
 
     _reconnectAttempts++;
-    final delay = _reconnectBaseDelay * (1 << (_reconnectAttempts - 1)); // 2s, 4s, 8s, 16s, 32s
+    final uncapped = _reconnectBaseDelay * (1 << (_reconnectAttempts - 1));
+    final delay = uncapped > _reconnectMaxDelay ? _reconnectMaxDelay : uncapped;
     debugPrint('SocketService: Reconnecting in ${delay.inSeconds}s (attempt $_reconnectAttempts/$_maxReconnectAttempts)');
 
     await Future.delayed(delay);
