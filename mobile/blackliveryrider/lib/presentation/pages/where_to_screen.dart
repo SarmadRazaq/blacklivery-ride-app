@@ -17,7 +17,11 @@ import 'saved_places_screen.dart';
 import 'map_picker_screen.dart';
 
 class WhereToScreen extends StatefulWidget {
-  const WhereToScreen({super.key});
+  /// When true the screen pops back after both locations are confirmed
+  /// instead of pushing [SelectRideScreen].  Used by the delivery flow.
+  final bool returnOnConfirm;
+
+  const WhereToScreen({super.key, this.returnOnConfirm = false});
 
   @override
   State<WhereToScreen> createState() => _WhereToScreenState();
@@ -54,6 +58,11 @@ class _WhereToScreenState extends State<WhereToScreen> {
     // Initialize after build for async operations
     WidgetsBinding.instance.addPostFrameCallback((_) async {
 
+      // Pre-fill airport location for airport transfer bookings
+      if (_bookingState.bookingType == 'airport_transfer' && _bookingState.airportCode != null) {
+        _prefillAirportLocation();
+      }
+
       // If location is not yet set, fetch it
       if (_bookingState.currentLocation.name == 'Loading...' ||
           _bookingState.currentLocation.name == 'Current Location') {
@@ -76,6 +85,10 @@ class _WhereToScreenState extends State<WhereToScreen> {
         });
         if (_bookingState.pickupLocation != null && _bookingState.dropoffLocation != null) {
           _checkAndNavigateToRideSelection();
+        }
+        // Auto-focus the dropoff field so the keyboard appears immediately
+        if (_dropoffController.text.isEmpty) {
+          _dropoffFocus.requestFocus();
         }
       }
     });
@@ -100,6 +113,54 @@ class _WhereToScreenState extends State<WhereToScreen> {
 
     _pickupController.addListener(_onPickupSearchChanged);
     _dropoffController.addListener(_onDropoffSearchChanged);
+  }
+
+  /// Pre-fill the airport as pickup or dropoff based on direction toggle.
+  void _prefillAirportLocation() {
+    // Airport coordinates
+    const airports = <String, Map<String, dynamic>>{
+      'ORD': {
+        'name': 'O\'Hare International Airport',
+        'address': '10000 W O\'Hare Ave, Chicago, IL 60666',
+        'lat': 41.9742,
+        'lng': -87.9073,
+      },
+      'MDW': {
+        'name': 'Midway International Airport',
+        'address': '5700 S Cicero Ave, Chicago, IL 60638',
+        'lat': 41.7868,
+        'lng': -87.7522,
+      },
+    };
+
+    final code = _bookingState.airportCode!;
+    final info = airports[code];
+    if (info == null) return;
+
+    final airportLocation = Location(
+      id: 'airport_$code',
+      name: info['name'] as String,
+      address: info['address'] as String,
+      latitude: info['lat'] as double,
+      longitude: info['lng'] as double,
+    );
+
+    _suppressSearch = true;
+    if (_bookingState.isAirportPickup) {
+      // "From Airport" → airport is pickup, user enters dropoff
+      _bookingState.setPickupLocation(airportLocation);
+      _pickupController.text = airportLocation.name;
+      _dropoffController.text = '';
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _dropoffFocus.requestFocus();
+      });
+    } else {
+      // "To Airport" → airport is dropoff, user enters pickup
+      _bookingState.setDropoffLocation(airportLocation);
+      _dropoffController.text = airportLocation.name;
+      // Pickup will be auto-filled by current location logic
+    }
+    _suppressSearch = false;
   }
 
   void _onPickupSearchChanged() async {
@@ -385,6 +446,12 @@ class _WhereToScreenState extends State<WhereToScreen> {
         if (regionProvider.code != rideRegionCode) {
           regionProvider.setRegion(rideRegionCode);
         }
+      }
+
+      // Delivery mode: just pop back so the calling screen can continue
+      if (widget.returnOnConfirm) {
+        Navigator.pop(context, true);
+        return;
       }
 
       Navigator.push(

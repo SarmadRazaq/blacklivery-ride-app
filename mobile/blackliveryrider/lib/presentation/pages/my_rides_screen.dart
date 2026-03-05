@@ -8,6 +8,7 @@ import '../../core/models/location_model.dart';
 import '../../core/data/booking_state.dart';
 import '../../core/services/ride_history_service.dart';
 import '../../core/services/ride_service.dart';
+import '../../core/services/delivery_service.dart';
 import '../widgets/vehicle_icon.dart';
 import 'ride_details_screen.dart';
 import 'modify_ride_screen.dart';
@@ -24,16 +25,42 @@ class _MyRidesScreenState extends State<MyRidesScreen> {
   int _selectedTabIndex = 0; // 0 = Rides, 1 = Delivery
 
   final RideHistoryService _rideHistoryService = RideHistoryService();
+  final DeliveryService _deliveryService = DeliveryService();
+  final ScrollController _scrollController = ScrollController();
   List<RideHistoryItem> _scheduledRides = [];
   List<RideHistoryItem> _rideHistory = [];
+  List<dynamic> _deliveryHistory = [];
   bool _isLoading = true;
   int _currentPage = 1;
+  int _deliveryPage = 1;
   bool _isLoadingMore = false;
 
   @override
   void initState() {
     super.initState();
+    _scrollController.addListener(_onScroll);
     _loadRides();
+  }
+
+  @override
+  void dispose() {
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (_isLoadingMore) return;
+    final maxScroll = _scrollController.position.maxScrollExtent;
+    final currentScroll = _scrollController.position.pixels;
+    // Trigger load when within 200px of bottom
+    if (currentScroll >= maxScroll - 200) {
+      if (_selectedTabIndex == 0) {
+        _loadMoreRides();
+      } else {
+        _loadMoreDeliveries();
+      }
+    }
   }
 
   Future<void> _loadRides() async {
@@ -42,12 +69,15 @@ class _MyRidesScreenState extends State<MyRidesScreen> {
       final results = await Future.wait([
         _rideHistoryService.getScheduledRides(),
         _rideHistoryService.getRideHistory(),
+        _deliveryService.getDeliveryHistory(),
       ]);
       setState(() {
-        _scheduledRides = results[0];
-        _rideHistory = results[1];
+        _scheduledRides = results[0] as List<RideHistoryItem>;
+        _rideHistory = results[1] as List<RideHistoryItem>;
+        _deliveryHistory = results[2];
         _isLoading = false;
         _currentPage = 1;
+        _deliveryPage = 1;
       });
     } catch (e) {
       setState(() => _isLoading = false);
@@ -63,6 +93,23 @@ class _MyRidesScreenState extends State<MyRidesScreen> {
       if (mounted) {
         setState(() {
           _rideHistory.addAll(moreRides);
+          _isLoadingMore = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _isLoadingMore = false);
+    }
+  }
+
+  Future<void> _loadMoreDeliveries() async {
+    if (_isLoadingMore) return;
+    setState(() => _isLoadingMore = true);
+    try {
+      _deliveryPage++;
+      final more = await _deliveryService.getDeliveryHistory(page: _deliveryPage);
+      if (mounted) {
+        setState(() {
+          _deliveryHistory.addAll(more);
           _isLoadingMore = false;
         });
       }
@@ -243,65 +290,11 @@ class _MyRidesScreenState extends State<MyRidesScreen> {
                       onRefresh: _loadRides,
                       color: AppColors.yellow90,
                       child: SingleChildScrollView(
+                        controller: _scrollController,
                         physics: const AlwaysScrollableScrollPhysics(),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                          // Scheduled rides section
-                          if (_scheduledRides.isNotEmpty) ...[
-                            Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 20,
-                              ),
-                              child: Text(
-                                'Scheduled rides',
-                                style: AppTextStyles.body.copyWith(
-                                  color: AppColors.txtInactive,
-                                  fontSize: 13,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-                            ..._scheduledRides.map(
-                              (ride) => _buildScheduledRideCard(ride),
-                            ),
-                            const SizedBox(height: 24),
-                          ],
-
-                          // Ride history section
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 20),
-                            child: Text(
-                              'Ride History',
-                              style: AppTextStyles.body.copyWith(
-                                color: AppColors.txtInactive,
-                                fontSize: 13,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          ..._rideHistory.map(
-                            (ride) => _buildRideHistoryCard(ride),
-                          ),
-
-                          // Load more
-                          Padding(
-                            padding: const EdgeInsets.all(20),
-                            child: Center(
-                              child: GestureDetector(
-                                onTap: _loadMoreRides,
-                                child: Text(
-                                  'Load more...',
-                                  style: AppTextStyles.body.copyWith(
-                                    color: AppColors.txtInactive,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                          ],
-                        ),
+                        child: _selectedTabIndex == 0
+                            ? _buildRidesContent()
+                            : _buildDeliveryContent(),
                       ),
                     ),
                   ),
@@ -309,6 +302,243 @@ class _MyRidesScreenState extends State<MyRidesScreen> {
               ),
             ),
     );
+  }
+
+  Widget _buildRidesContent() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Scheduled rides section
+        if (_scheduledRides.isNotEmpty) ...[
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Text(
+              'Scheduled rides',
+              style: AppTextStyles.body.copyWith(
+                color: AppColors.txtInactive,
+                fontSize: 13,
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          ..._scheduledRides.map(
+            (ride) => _buildScheduledRideCard(ride),
+          ),
+          const SizedBox(height: 24),
+        ],
+
+        // Ride history section
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: Text(
+            'Ride History',
+            style: AppTextStyles.body.copyWith(
+              color: AppColors.txtInactive,
+              fontSize: 13,
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        ..._rideHistory.map(
+          (ride) => _buildRideHistoryCard(ride),
+        ),
+
+        // Auto-loading indicator
+        if (_isLoadingMore)
+          const Padding(
+            padding: EdgeInsets.all(20),
+            child: Center(
+              child: SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(
+                  color: AppColors.yellow90,
+                  strokeWidth: 2,
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildDeliveryContent() {
+    if (_deliveryHistory.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 60),
+        child: Center(
+          child: Column(
+            children: [
+              Icon(Icons.inventory_2_outlined,
+                  color: AppColors.txtInactive, size: 48),
+              const SizedBox(height: 12),
+              Text(
+                'No deliveries yet',
+                style: AppTextStyles.body.copyWith(
+                  color: AppColors.txtInactive,
+                  fontSize: 14,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: Text(
+            'Delivery History',
+            style: AppTextStyles.body.copyWith(
+              color: AppColors.txtInactive,
+              fontSize: 13,
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        ..._deliveryHistory.map(
+          (delivery) => _buildDeliveryCard(delivery as Map<String, dynamic>),
+        ),
+
+        // Auto-loading indicator
+        if (_isLoadingMore)
+          const Padding(
+            padding: EdgeInsets.all(20),
+            child: Center(
+              child: SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(
+                  color: AppColors.yellow90,
+                  strokeWidth: 2,
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildDeliveryCard(Map<String, dynamic> delivery) {
+    final status = (delivery['status'] ?? delivery['deliveryStatus'] ?? 'pending') as String;
+    final dropoffAddr = delivery['dropoffAddress'] as String? ?? '';
+    final fare = (delivery['estimatedFare'] ?? delivery['fare'] ?? 0) as num;
+    final currency = delivery['currency'] as String? ?? 'NGN';
+    final createdAt = delivery['createdAt'] as String?;
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.inputBg,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.inputBorder),
+      ),
+      child: Row(
+        children: [
+          // Delivery icon
+          Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              color: AppColors.bgPri,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Icon(
+              Icons.inventory_2,
+              color: AppColors.yellow90,
+              size: 24,
+            ),
+          ),
+          const SizedBox(width: 12),
+
+          // Delivery info
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  dropoffAddr,
+                  style: AppTextStyles.body.copyWith(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: _deliveryStatusColor(status).withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        _deliveryStatusLabel(status),
+                        style: AppTextStyles.caption.copyWith(
+                          color: _deliveryStatusColor(status),
+                          fontSize: 10,
+                        ),
+                      ),
+                    ),
+                    if (createdAt != null) ...[
+                      const SizedBox(width: 8),
+                      Text(
+                        _formatDate(DateTime.tryParse(createdAt) ?? DateTime.now()),
+                        style: AppTextStyles.caption.copyWith(
+                          color: AppColors.txtInactive,
+                          fontSize: 10,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ],
+            ),
+          ),
+
+          // Price
+          Text(
+            CurrencyUtils.format(fare.toDouble(), currency: currency),
+            style: AppTextStyles.body.copyWith(
+              color: Colors.white,
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _deliveryStatusLabel(String status) {
+    switch (status) {
+      case 'pending':    return 'Pending';
+      case 'accepted':   return 'Driver Assigned';
+      case 'picked_up':  return 'Picked Up';
+      case 'in_transit': return 'In Transit';
+      case 'delivered':  return 'Delivered';
+      case 'cancelled':  return 'Cancelled';
+      case 'failed':     return 'Failed';
+      default:           return 'Processing';
+    }
+  }
+
+  Color _deliveryStatusColor(String status) {
+    switch (status) {
+      case 'delivered':  return AppColors.success;
+      case 'cancelled':
+      case 'failed':     return Colors.red;
+      case 'in_transit':
+      case 'picked_up':  return Colors.blue;
+      default:           return AppColors.yellow90;
+    }
   }
 
   Future<void> _bookAgain(RideHistoryItem ride) async {
@@ -645,6 +875,24 @@ class _MyRidesScreenState extends State<MyRidesScreen> {
                         ),
                       ],
                     ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.calendar_today,
+                        color: AppColors.txtInactive,
+                        size: 11,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        _formatDate(ride.date),
+                        style: AppTextStyles.caption.copyWith(
+                          color: AppColors.txtInactive,
+                          fontSize: 10,
+                        ),
+                      ),
+                    ],
+                  ),
                 ],
               ),
             ),

@@ -14,6 +14,7 @@ import '../widgets/ride_map_view.dart';
 import 'arriving_destination_screen.dart';
 import 'ride_chat_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:share_plus/share_plus.dart';
 
 class DrivingToDestinationScreen extends StatefulWidget {
   const DrivingToDestinationScreen({super.key});
@@ -29,6 +30,7 @@ class _DrivingToDestinationScreenState
   int _minutesRemaining = 0;
   LatLng? _driverLatLng;
   List<LatLng> _routePoints = [];
+  Timer? _etaRefreshTimer;
   final SocketService _socketService = SocketService();
   final LocationService _locationService = LocationService();
   final NavigationService _navigationService = NavigationService();
@@ -41,11 +43,17 @@ class _DrivingToDestinationScreenState
     _fetchRoutePolyline();
     _listenToDriverLocation();
     _startRiderLocationTracking();
+    _startEtaRefreshTimer();
   }
 
   @override
   void dispose() {
+    _etaRefreshTimer?.cancel();
     _stopRiderLocationTracking();
+    try {
+      Provider.of<BookingState>(context, listen: false)
+          .removeListener(_checkStatus);
+    } catch (_) {}
     _socketService.stopListeningToRideUpdates();
     super.dispose();
   }
@@ -75,6 +83,53 @@ class _DrivingToDestinationScreenState
     final bookingState = Provider.of<BookingState>(context, listen: false);
     final minutes = bookingState.selectedRideOption?.estimatedMinutes ?? 15;
     setState(() => _minutesRemaining = minutes);
+  }
+
+  /// Refresh ETA from Directions API every 30 seconds.
+  void _startEtaRefreshTimer() {
+    _etaRefreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      _refreshEta();
+    });
+  }
+
+  Future<void> _refreshEta() async {
+    try {
+      final bookingState = Provider.of<BookingState>(context, listen: false);
+      final dropoff = bookingState.dropoffLocation;
+      if (dropoff == null) return;
+
+      // Use driver's live position if available, otherwise pickup
+      LatLng origin;
+      if (_driverLatLng != null) {
+        origin = _driverLatLng!;
+      } else {
+        final pickup = bookingState.pickupLocation;
+        if (pickup == null) return;
+        origin = LatLng(pickup.latitude, pickup.longitude);
+      }
+
+      final destination = LatLng(dropoff.latitude, dropoff.longitude);
+      final routeData = await _navigationService.getRoute(origin, destination);
+      if (routeData['status'] == 'OK' && mounted) {
+        final routes = routeData['routes'] as List;
+        if (routes.isNotEmpty) {
+          final leg = routes[0]['legs'][0];
+          final durationSeconds = leg['duration']['value'] as int;
+          final etaMinutes = (durationSeconds / 60).ceil();
+          setState(() {
+            _minutesRemaining = etaMinutes < 1 ? 1 : etaMinutes;
+          });
+
+          // Also update route polyline with latest path
+          final encodedPolyline =
+              routes[0]['overview_polyline']['points'] as String;
+          final decoded = _navigationService.decodePolyline(encodedPolyline);
+          setState(() => _routePoints = decoded);
+        }
+      }
+    } catch (e) {
+      debugPrint('DrivingToDestination: Failed to refresh ETA: $e');
+    }
   }
 
   /// Fetch real route polyline from Google Directions API
@@ -167,9 +222,13 @@ class _DrivingToDestinationScreenState
   }
 
   void _shareRideInfo() {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('Share link copied!')));
+    final bookingState = Provider.of<BookingState>(context, listen: false);
+    final pickup = bookingState.pickupLocation?.name ?? 'Unknown';
+    final dropoff = bookingState.dropoffLocation?.name ?? 'Unknown';
+    final driver = bookingState.assignedDriver?.name ?? 'Unknown';
+    Share.share(
+      'I\'m on a BlackLivery ride from $pickup to $dropoff with driver $driver. Track my trip!',
+    );
   }
 
   void _callDriver() {
@@ -386,6 +445,15 @@ class _DrivingToDestinationScreenState
                 Text(
                   'Driving to destination',
                   style: AppTextStyles.heading3.copyWith(fontSize: 18),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '$_minutesRemaining min remaining',
+                  style: AppTextStyles.caption.copyWith(
+                    color: AppColors.yellow90,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
                 const SizedBox(height: 20),
 
@@ -688,6 +756,17 @@ class _DrivingToDestinationScreenState
                         value: _quietModeEnabled,
                         onChanged: (value) {
                           setState(() => _quietModeEnabled = value);
+                          // Notify driver via socket
+                          final rideId = Provider.of<BookingState>(
+                            context,
+                            listen: false,
+                          ).rideId;
+                          if (rideId != null) {
+                            _socketService.emitQuietMode(
+                              rideId: rideId,
+                              enabled: value,
+                            );
+                          }
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
                               content: Text(

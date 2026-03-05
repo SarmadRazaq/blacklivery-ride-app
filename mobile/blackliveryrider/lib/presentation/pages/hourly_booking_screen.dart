@@ -24,38 +24,66 @@ class _HourlyBookingScreenState extends State<HourlyBookingScreen> {
   int _selectedHours = 2;
   int _selectedCategoryIndex = 0;
 
-  // Hourly rates per vehicle category
-  static const List<_HourlyCategory> _categories = [
+  // ── Chicago hourly categories (business_sedan, business_suv, first_class) ──
+  // USD rates aligned with backend ChicagoPricingStrategy HOURLY_RATES
+  static const List<_HourlyCategory> _chicagoCategories = [
     _HourlyCategory(
       id: 'business_sedan',
       name: 'Business Sedan',
       description: 'Executive sedan with professional driver',
-      hourlyRateNGN: 5000,
-      hourlyRateUSD: 45,
+      hourlyRate: 80,
       capacity: 3,
     ),
     _HourlyCategory(
-      id: 'suv',
+      id: 'business_suv',
       name: 'SUV',
       description: 'Spacious SUV for comfort & group travel',
-      hourlyRateNGN: 7500,
-      hourlyRateUSD: 65,
+      hourlyRate: 110,
       capacity: 5,
     ),
     _HourlyCategory(
       id: 'first_class',
       name: 'First Class',
       description: 'Premium luxury vehicle',
-      hourlyRateNGN: 12000,
-      hourlyRateUSD: 95,
+      hourlyRate: 140,
       capacity: 3,
     ),
   ];
 
+  // ── Nigeria hourly categories (sedan, suv, xl) ────────────────────────────
+  // NGN rates aligned with backend NigeriaPricingStrategy HOURLY_RATES
+  static const List<_HourlyCategory> _nigeriaCategories = [
+    _HourlyCategory(
+      id: 'sedan',
+      name: 'Standard',
+      description: 'Dedicated sedan with professional driver',
+      hourlyRate: 5000,
+      capacity: 4,
+    ),
+    _HourlyCategory(
+      id: 'suv',
+      name: 'SUV',
+      description: 'Spacious SUV for comfort & group travel',
+      hourlyRate: 7500,
+      capacity: 6,
+    ),
+    _HourlyCategory(
+      id: 'xl',
+      name: 'XL',
+      description: 'Premium ride with extra space',
+      hourlyRate: 12000,
+      capacity: 6,
+    ),
+  ];
+
+  List<_HourlyCategory> _categories(RegionProvider region) {
+    return region.isChicago ? _chicagoCategories : _nigeriaCategories;
+  }
+
   double _estimatedTotal(RegionProvider region) {
-    final cat = _categories[_selectedCategoryIndex];
-    final rate = region.isChicago ? cat.hourlyRateUSD : cat.hourlyRateNGN;
-    return rate * _selectedHours.toDouble();
+    final cats = _categories(region);
+    final cat = cats[_selectedCategoryIndex];
+    return cat.hourlyRate * _selectedHours.toDouble();
   }
 
   @override
@@ -126,9 +154,9 @@ class _HourlyBookingScreenState extends State<HourlyBookingScreen> {
 
             Expanded(
               child: ListView.builder(
-                itemCount: _categories.length,
+                itemCount: _categories(region).length,
                 itemBuilder: (context, index) {
-                  final cat = _categories[index];
+                  final cat = _categories(region)[index];
                   final isSelected = _selectedCategoryIndex == index;
                   return _buildCategoryCard(cat, isSelected, index, region);
                 },
@@ -144,7 +172,7 @@ class _HourlyBookingScreenState extends State<HourlyBookingScreen> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
-                        '$_selectedHours hrs × ${_categories[_selectedCategoryIndex].name}',
+                        '$_selectedHours hrs × ${_categories(region)[_selectedCategoryIndex].name}',
                         style: AppTextStyles.body.copyWith(
                           color: AppColors.txtSec,
                           fontSize: 14,
@@ -169,7 +197,7 @@ class _HourlyBookingScreenState extends State<HourlyBookingScreen> {
                       bookingState.setBookingType('hourly');
                       bookingState.setHoursBooked(_selectedHours);
                       bookingState.selectRideOption(
-                        _categories[_selectedCategoryIndex].toRideOption(isChicago: region.isChicago),
+                        _categories(region)[_selectedCategoryIndex].toRideOption(),
                       );
                       Navigator.push(
                         context,
@@ -319,7 +347,7 @@ class _HourlyBookingScreenState extends State<HourlyBookingScreen> {
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
                 Text(
-                  '${CurrencyUtils.format((region.isChicago ? cat.hourlyRateUSD : cat.hourlyRateNGN).toDouble())}/hr',
+                  '${CurrencyUtils.format(cat.hourlyRate.toDouble())}/hr',
                   style: AppTextStyles.bodySmall.copyWith(
                     color: isSelected ? AppColors.yellow90 : Colors.white,
                     fontWeight: FontWeight.w600,
@@ -353,26 +381,24 @@ class _HourlyCategory {
   final String id;
   final String name;
   final String description;
-  final int hourlyRateNGN;
-  final int hourlyRateUSD;
+  final int hourlyRate;
   final int capacity;
 
   const _HourlyCategory({
     required this.id,
     required this.name,
     required this.description,
-    required this.hourlyRateNGN,
-    required this.hourlyRateUSD,
+    required this.hourlyRate,
     required this.capacity,
   });
 
-  RideOption toRideOption({bool isChicago = false}) {
+  RideOption toRideOption() {
     return RideOption(
       id: id,
       name: name,
       description: description,
       iconPath: '',
-      basePrice: (isChicago ? hourlyRateUSD : hourlyRateNGN).toDouble(),
+      basePrice: hourlyRate.toDouble(),
       pricePerKm: 0,
       estimatedMinutes: 0,
       capacity: capacity,

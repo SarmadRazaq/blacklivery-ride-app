@@ -114,18 +114,7 @@ class _TicketScreenState extends State<TicketScreen> {
       appBar: AppBar(
         backgroundColor: AppColors.bgPri,
         elevation: 0,
-        leading: GestureDetector(
-          onTap: () => Navigator.pop(context),
-          child: Container(
-            margin: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: AppColors.inputBg,
-              shape: BoxShape.circle,
-              border: Border.all(color: AppColors.inputBorder),
-            ),
-            child: const Icon(Icons.chevron_left, color: Colors.white),
-          ),
-        ),
+        automaticallyImplyLeading: false,
         title: Text(
           'Support Tickets',
           style: AppTextStyles.heading3.copyWith(fontSize: 18),
@@ -284,6 +273,11 @@ class _TicketScreenState extends State<TicketScreen> {
   }
 
   void _showTicketDetail(Map<String, dynamic> ticket) {
+    final replyController = TextEditingController();
+    final ticketId = ticket['id'] ?? ticket['ticketId'] ?? '';
+    final status = ticket['status'] ?? 'open';
+    final isClosed = status == 'closed' || status == 'resolved';
+
     showModalBottomSheet(
       context: context,
       backgroundColor: AppColors.bgSec,
@@ -291,93 +285,245 @@ class _TicketScreenState extends State<TicketScreen> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (context) {
-        return DraggableScrollableSheet(
-          initialChildSize: 0.7,
-          minChildSize: 0.4,
-          maxChildSize: 0.9,
-          expand: false,
-          builder: (context, scrollController) {
-            return SingleChildScrollView(
-              controller: scrollController,
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Center(
-                    child: Container(
-                      width: 40, height: 4,
-                      decoration: BoxDecoration(
-                        color: AppColors.inputBorder,
-                        borderRadius: BorderRadius.circular(2),
-                      ),
-                    ),
+      builder: (sheetCtx) {
+        return StatefulBuilder(
+          builder: (sheetCtx, setSheetState) {
+            return DraggableScrollableSheet(
+              initialChildSize: 0.7,
+              minChildSize: 0.4,
+              maxChildSize: 0.9,
+              expand: false,
+              builder: (sheetCtx, scrollController) {
+                return Padding(
+                  padding: EdgeInsets.only(
+                    bottom: MediaQuery.of(sheetCtx).viewInsets.bottom,
                   ),
-                  const SizedBox(height: 20),
-                  Text(
-                    ticket['subject'] ?? 'No Subject',
-                    style: AppTextStyles.heading3.copyWith(fontSize: 18),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    ticket['message'] ?? '',
-                    style: AppTextStyles.body.copyWith(
-                      color: AppColors.txtInactive, fontSize: 14, height: 1.5,
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  if (ticket['replies'] != null &&
-                      (ticket['replies'] as List).isNotEmpty) ...[
-                    Text(
-                      'Replies',
-                      style: AppTextStyles.body.copyWith(fontWeight: FontWeight.w600, fontSize: 15),
-                    ),
-                    const SizedBox(height: 12),
-                    ...(ticket['replies'] as List).map((reply) {
-                      return Container(
-                        margin: const EdgeInsets.only(bottom: 8),
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: AppColors.inputBg,
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Text(
-                                  reply['from'] ?? 'Support',
-                                  style: TextStyle(
-                                    color: AppColors.yellow90,
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 12,
+                  child: Column(
+                    children: [
+                      Expanded(
+                        child: SingleChildScrollView(
+                          controller: scrollController,
+                          padding: const EdgeInsets.all(20),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Center(
+                                child: Container(
+                                  width: 40, height: 4,
+                                  decoration: BoxDecoration(
+                                    color: AppColors.inputBorder,
+                                    borderRadius: BorderRadius.circular(2),
                                   ),
                                 ),
-                                const Spacer(),
+                              ),
+                              const SizedBox(height: 20),
+                              Text(
+                                ticket['subject'] ?? 'No Subject',
+                                style: AppTextStyles.heading3.copyWith(fontSize: 18),
+                              ),
+                              const SizedBox(height: 12),
+                              Text(
+                                ticket['message'] ?? '',
+                                style: AppTextStyles.body.copyWith(
+                                  color: AppColors.txtInactive, fontSize: 14, height: 1.5,
+                                ),
+                              ),
+                              const SizedBox(height: 20),
+                              if (ticket['replies'] != null &&
+                                  (ticket['replies'] as List).isNotEmpty) ...[
                                 Text(
-                                  _formatDate(reply['createdAt']),
-                                  style: TextStyle(color: AppColors.txtInactive, fontSize: 10),
+                                  'Replies',
+                                  style: AppTextStyles.body.copyWith(fontWeight: FontWeight.w600, fontSize: 15),
+                                ),
+                                const SizedBox(height: 12),
+                                ...(ticket['replies'] as List).map((reply) {
+                                  return Container(
+                                    margin: const EdgeInsets.only(bottom: 8),
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.inputBg,
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            Text(
+                                              reply['from'] ?? 'Support',
+                                              style: TextStyle(
+                                                color: AppColors.yellow90,
+                                                fontWeight: FontWeight.w600,
+                                                fontSize: 12,
+                                              ),
+                                            ),
+                                            const Spacer(),
+                                            Text(
+                                              _formatDate(reply['createdAt']),
+                                              style: TextStyle(color: AppColors.txtInactive, fontSize: 10),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 6),
+                                        Text(
+                                          reply['message'] ?? '',
+                                          style: const TextStyle(color: Colors.white, fontSize: 13, height: 1.4),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                }),
+                              ],
+                              // Close ticket button (only if not already closed)
+                              if (!isClosed && ticketId.toString().isNotEmpty) ...[
+                                const SizedBox(height: 16),
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: OutlinedButton.icon(
+                                    onPressed: () => _closeTicket(ticketId.toString(), sheetCtx),
+                                    icon: const Icon(Icons.check_circle_outline, size: 18),
+                                    label: const Text('Close Ticket'),
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor: Colors.green,
+                                      side: const BorderSide(color: Colors.green),
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                      padding: const EdgeInsets.symmetric(vertical: 12),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ),
+                      // Reply input (only if ticket is not closed)
+                      if (!isClosed && ticketId.toString().isNotEmpty)
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: AppColors.bgSec,
+                            border: Border(top: BorderSide(color: AppColors.inputBorder)),
+                          ),
+                          child: SafeArea(
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: TextField(
+                                    controller: replyController,
+                                    style: const TextStyle(color: Colors.white, fontSize: 14),
+                                    decoration: InputDecoration(
+                                      hintText: 'Write a reply...',
+                                      hintStyle: TextStyle(color: AppColors.txtInactive, fontSize: 14),
+                                      filled: true,
+                                      fillColor: AppColors.inputBg,
+                                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                      border: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(24),
+                                        borderSide: BorderSide.none,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                GestureDetector(
+                                  onTap: () async {
+                                    final text = replyController.text.trim();
+                                    if (text.isEmpty) return;
+                                    final success = await _supportService.replyToTicket(
+                                      ticketId: ticketId.toString(),
+                                      message: text,
+                                    );
+                                    if (success) {
+                                      replyController.clear();
+                                      setSheetState(() {
+                                        final replies = ticket['replies'] as List? ?? [];
+                                        replies.add({
+                                          'from': 'You',
+                                          'message': text,
+                                          'createdAt': DateTime.now().toIso8601String(),
+                                        });
+                                        ticket['replies'] = replies;
+                                      });
+                                    } else if (sheetCtx.mounted) {
+                                      ScaffoldMessenger.of(sheetCtx).showSnackBar(
+                                        const SnackBar(content: Text('Failed to send reply')),
+                                      );
+                                    }
+                                  },
+                                  child: Container(
+                                    padding: const EdgeInsets.all(10),
+                                    decoration: const BoxDecoration(
+                                      color: AppColors.yellow90,
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Icon(Icons.send, color: AppColors.bgPri, size: 18),
+                                  ),
                                 ),
                               ],
                             ),
-                            const SizedBox(height: 6),
-                            Text(
-                              reply['message'] ?? '',
-                              style: const TextStyle(color: Colors.white, fontSize: 13, height: 1.4),
-                            ),
-                          ],
+                          ),
                         ),
-                      );
-                    }),
-                  ],
-                ],
-              ),
+                    ],
+                  ),
+                );
+              },
             );
           },
         );
       },
+    ).whenComplete(() {
+      // Dispose after the sheet animation fully completes
+      // Using Future.delayed to avoid disposing during rebuild
+      Future.delayed(const Duration(milliseconds: 300), () {
+        replyController.dispose();
+      });
+    });
+  }
+
+  /// Close a ticket and refresh the list
+  Future<void> _closeTicket(String ticketId, BuildContext sheetContext) async {
+    final confirmed = await showDialog<bool>(
+      context: sheetContext,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.bgSec,
+        title: const Text('Close Ticket', style: TextStyle(color: Colors.white)),
+        content: const Text(
+          'Are you sure you want to close this ticket? This indicates your issue has been resolved.',
+          style: TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Cancel', style: TextStyle(color: AppColors.txtInactive)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Close', style: TextStyle(color: Colors.green)),
+          ),
+        ],
+      ),
     );
+
+    if (confirmed != true) return;
+
+    final success = await _supportService.closeTicket(ticketId);
+    if (success && mounted) {
+      Navigator.pop(sheetContext); // close the bottom sheet
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Ticket closed successfully'),
+          backgroundColor: Colors.green,
+        ),
+      );
+      _loadTickets(); // refresh
+    } else if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Failed to close ticket'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   Widget _buildNewTicketForm() {

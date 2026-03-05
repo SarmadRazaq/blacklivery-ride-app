@@ -92,6 +92,16 @@ class AuthService {
         debugPrint(
           '=== AuthService.login: Profile fetched: ${user.fullName} (role=${user.role}) ===',
         );
+
+        // Record login on backend for session tracking and login history
+        try {
+          final dio = ApiClient().dio;
+          await dio.post('/api/v1/auth/login', data: {'email': email});
+        } catch (loginRecordError) {
+          // Non-critical — don't block login if session recording fails
+          debugPrint('=== AuthService.login: Failed to record login session: $loginRecordError ===');
+        }
+
         return _validateRiderRole(user);
       } on RoleException {
         rethrow;

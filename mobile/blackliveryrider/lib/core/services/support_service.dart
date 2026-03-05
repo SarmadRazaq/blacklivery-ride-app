@@ -14,15 +14,13 @@ class SupportService {
     String? category,
   }) async {
     try {
-      final response = await _dio.post(
-        '/api/v1/support',
-        data: {
-          'subject': subject,
-          'message': message,
-          'rideId': rideId,
-          'category': category,
-        },
-      );
+      final data = <String, dynamic>{
+        'subject': subject,
+        'message': message,
+        if (rideId != null) 'rideId': rideId,
+        if (category != null) 'category': category,
+      };
+      final response = await _dio.post('/api/v1/support', data: data);
       // Backend returns ticket directly (no 'data' wrapper)
       final raw = response.data;
       if (raw is Map<String, dynamic>) {
@@ -82,6 +80,18 @@ class SupportService {
     } catch (e) {
       debugPrint('SupportService.getTicketDetails error: $e');
       return null;
+    }
+  }
+
+  /// Close a support ticket
+  /// Endpoint: POST /api/v1/support/:ticketId/close
+  Future<bool> closeTicket(String ticketId) async {
+    try {
+      await _dio.post('/api/v1/support/$ticketId/close');
+      return true;
+    } catch (e) {
+      debugPrint('SupportService.closeTicket error: $e');
+      return false;
     }
   }
 }

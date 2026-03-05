@@ -67,9 +67,25 @@ class _EmergencyContactsScreenState extends State<EmergencyContactsScreen> {
     );
 
     if (result != null) {
-      setState(() {
-        _selectedContacts = result;
-      });
+      // Determine which contacts are new (not in current list)
+      final currentIds = _selectedContacts.map((c) => c.id).toSet();
+      final newContacts = result.where((c) => !currentIds.contains(c.id)).toList();
+
+      // Save new contacts to backend
+      for (final contact in newContacts) {
+        final saved = await _contactsService.addEmergencyContact(contact);
+        if (saved == null && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Failed to save ${contact.name}'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+
+      // Reload from backend to get authoritative list
+      await _loadContacts();
     }
   }
 
@@ -206,67 +222,111 @@ class _EmergencyContactsScreenState extends State<EmergencyContactsScreen> {
   }
 
   Widget _buildSelectedContact(EmergencyContact contact) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.inputBg,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.inputBorder),
+    return Dismissible(
+      key: Key('emergency_contact_${contact.id}'),
+      direction: DismissDirection.endToStart,
+      confirmDismiss: (direction) async {
+        return await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            backgroundColor: AppColors.bgSec,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            title: Text('Remove Contact', style: AppTextStyles.heading3),
+            content: Text(
+              'Remove ${contact.name} from your emergency contacts?',
+              style: AppTextStyles.body.copyWith(color: AppColors.txtInactive),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: Text('Cancel', style: AppTextStyles.body),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: Text(
+                  'Remove',
+                  style: AppTextStyles.body.copyWith(color: Colors.red),
+                ),
+              ),
+            ],
+          ),
+        ) ?? false;
+      },
+      onDismissed: (_) => _removeContact(contact),
+      background: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        decoration: BoxDecoration(
+          color: Colors.red,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: 20),
+        child: const Icon(Icons.delete, color: Colors.white),
       ),
-      child: Row(
-        children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: AppColors.bgPri,
-              shape: BoxShape.circle,
-            ),
-            child: Center(
-              child: Text(
-                contact.name.isNotEmpty ? contact.name[0].toUpperCase() : 'J',
-                style: AppTextStyles.heading3.copyWith(
-                  color: AppColors.yellow90,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppColors.inputBg,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.inputBorder),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: AppColors.bgPri,
+                shape: BoxShape.circle,
+              ),
+              child: Center(
+                child: Text(
+                  contact.name.isNotEmpty ? contact.name[0].toUpperCase() : 'J',
+                  style: AppTextStyles.heading3.copyWith(
+                    color: AppColors.yellow90,
+                  ),
                 ),
               ),
             ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  contact.name,
-                  style: AppTextStyles.body.copyWith(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w500,
-                    fontSize: 14,
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    contact.name,
+                    style: AppTextStyles.body.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w500,
+                      fontSize: 14,
+                    ),
                   ),
-                ),
-                Text(
-                  contact.phone,
-                  style: AppTextStyles.caption.copyWith(
-                    color: AppColors.txtInactive,
-                    fontSize: 12,
+                  Text(
+                    contact.phone,
+                    style: AppTextStyles.caption.copyWith(
+                      color: AppColors.txtInactive,
+                      fontSize: 12,
+                    ),
                   ),
-                ),
-              ],
-            ),
-          ),
-          GestureDetector(
-            onTap: () => _removeContact(contact),
-            child: Container(
-              padding: const EdgeInsets.all(8),
-              child: Icon(
-                Icons.close,
-                color: Colors.red,
-                size: 20,
+                ],
               ),
             ),
-          ),
-        ],
+            GestureDetector(
+              onTap: () => _removeContact(contact),
+              child: Container(
+                padding: const EdgeInsets.all(8),
+                child: Icon(
+                  Icons.close,
+                  color: Colors.red,
+                  size: 20,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -5,6 +5,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:provider/provider.dart';
 import '../../core/data/booking_state.dart';
 import '../../core/models/driver_model.dart';
+import '../../core/models/location_model.dart';
 import '../../core/providers/auth_provider.dart';
 import '../../core/providers/region_provider.dart';
 import '../../core/theme/app_colors.dart';
@@ -35,6 +36,7 @@ class _HomeTabState extends State<HomeTab> {
   static const LatLng _defaultLocation = LatLng(6.5244, 3.3792);
   LatLng _currentLocation = _defaultLocation;
   Set<Marker> _markers = {};
+  BitmapDescriptor? _carIcon;
 
   // Custom Dark Map Style
   static const String _darkMapStyle = '''[
@@ -42,7 +44,7 @@ class _HomeTabState extends State<HomeTab> {
     "elementType": "geometry",
     "stylers": [
       {
-        "color": "#00000000"
+        "color": "#212121"
       }
     ]
   },
@@ -228,6 +230,7 @@ class _HomeTabState extends State<HomeTab> {
   void initState() {
     super.initState();
     _ensureLocationPermission();
+    _loadCarIcon();
 
     // Listen to changes in booking state to update markers
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -241,6 +244,19 @@ class _HomeTabState extends State<HomeTab> {
       bookingState.initialize();
       bookingState.useCurrentLocation(); // Pre-fetch location
     });
+  }
+
+  /// Load a custom car icon for driver markers on the map.
+  Future<void> _loadCarIcon() async {
+    try {
+      _carIcon = await BitmapDescriptor.asset(
+        const ImageConfiguration(size: Size(48, 48)),
+        'assets/images/sedan_icon.png',
+      );
+      if (mounted) setState(() {});
+    } catch (e) {
+      debugPrint('Could not load car icon: $e');
+    }
   }
 
   /// Keep requesting location permission via the native OS dialog until
@@ -301,15 +317,21 @@ class _HomeTabState extends State<HomeTab> {
           desiredAccuracy: LocationAccuracy.high,
         );
 
-        // If GPS is outside service area, default to region center
         final gpsLat = position.latitude;
         final gpsLng = position.longitude;
-        if (RegionGeofence.isSupported(gpsLat, gpsLng)) {
+        final regionProvider = context.read<RegionProvider>();
+
+        // Check if GPS is within the user's *profile* region
+        final gpsRegion = RegionGeofence.regionOf(gpsLat, gpsLng);
+        final profileRegion = regionProvider.apiRegionKey; // 'nigeria' or 'chicago'
+
+        if (gpsRegion == profileRegion) {
+          // GPS matches profile region → use actual GPS position
           setState(() {
             _currentLocation = LatLng(gpsLat, gpsLng);
           });
         } else {
-          final regionProvider = context.read<RegionProvider>();
+          // GPS is outside user's region (e.g. emulator) → default to region center
           setState(() {
             _currentLocation = regionProvider.isChicago
                 ? const LatLng(41.8781, -87.6298)
@@ -317,11 +339,8 @@ class _HomeTabState extends State<HomeTab> {
           });
         }
 
-        // Auto-detect region from GPS coordinates
+        // Sync region into RideService (do NOT auto-switch region from GPS)
         if (mounted) {
-          final regionProvider = context.read<RegionProvider>();
-          regionProvider.detectFromLocation(position.latitude, position.longitude);
-          // Sync into shared RideService
           context.read<BookingState>().rideService.setRegion(regionProvider.apiRegionKey);
         }
 
@@ -345,16 +364,17 @@ class _HomeTabState extends State<HomeTab> {
       ),
     );
 
-    // Driver markers
+    // Driver markers — use car icon if loaded, fallback to orange pin
     for (var driver in drivers) {
       newMarkers.add(
         Marker(
           markerId: MarkerId(driver.id),
           position: LatLng(driver.latitude, driver.longitude),
-          icon: BitmapDescriptor.defaultMarkerWithHue(
+          icon: _carIcon ?? BitmapDescriptor.defaultMarkerWithHue(
             BitmapDescriptor.hueOrange,
           ),
-          rotation: 0, // Could add heading if available
+          rotation: 0,
+          anchor: const Offset(0.5, 0.5),
           infoWindow: InfoWindow(
             title: driver.name,
             snippet: '${driver.carModel} • ${driver.rating}★',
@@ -370,17 +390,27 @@ class _HomeTabState extends State<HomeTab> {
 
   void _onSearchTap() {
     if (_selectedServiceIndex == 1) {
-      // Delivery mode
+      // Delivery mode — pick locations first, then open delivery wizard
       Navigator.push(
         context,
-        MaterialPageRoute(builder: (context) => const DeliveryBookingScreen()),
-      ).then((_) {
-        // Reset stale booking state when returning from booking flow
-        if (mounted) {
-          final bs = Provider.of<BookingState>(context, listen: false);
-          if (bs.bookingStatus != 'searching_driver' && bs.bookingStatus != 'driver_assigned' && bs.bookingStatus != 'in_progress') {
-            bs.resetBookingFlow();
-          }
+        MaterialPageRoute(
+          builder: (context) => const WhereToScreen(returnOnConfirm: true),
+        ),
+      ).then((confirmed) {
+        if (confirmed == true && mounted) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => const DeliveryBookingScreen(),
+            ),
+          ).then((_) {
+            if (mounted) {
+              final bs = Provider.of<BookingState>(context, listen: false);
+              if (bs.bookingStatus != 'searching_driver' && bs.bookingStatus != 'driver_assigned' && bs.bookingStatus != 'in_progress') {
+                bs.resetBookingFlow();
+              }
+            }
+          });
         }
       });
     } else {
@@ -499,188 +529,297 @@ class _HomeTabState extends State<HomeTab> {
             ),
           ),
 
-          // Bottom Content
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            child: Container(
-              padding: const EdgeInsets.fromLTRB(
-                20,
-                20,
-                20,
-                20,
-              ), // Added bottom padding since nav bar is gone
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Colors.transparent,
-                    AppColors.bgPri.withOpacity(0.8),
-                    AppColors.bgPri,
+          // Bottom Content — draggable panel
+          DraggableScrollableSheet(
+            initialChildSize: 0.32,
+            minChildSize: 0.18,
+            maxChildSize: 0.65,
+            snap: true,
+            snapSizes: const [0.32, 0.65],
+            builder: (context, scrollController) {
+              return Container(
+                decoration: BoxDecoration(
+                  color: AppColors.bgPri,
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(24),
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.3),
+                      blurRadius: 12,
+                      offset: const Offset(0, -4),
+                    ),
                   ],
                 ),
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // Service Toggle
-                  ServiceToggle(
-                    selectedIndex: _selectedServiceIndex,
-                    onChanged: (index) {
-                      setState(() {
-                        _selectedServiceIndex = index;
-                      });
-                    },
-                  ),
-
-                  const SizedBox(height: 12),
-
-                  // Booking type shortcuts
-                  Row(
-                    children: [
-                      _buildBookingTypeChip(
-                        icon: Icons.access_time,
-                        label: 'Hourly',
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const HourlyBookingScreen(),
-                          ),
+                child: ListView(
+                  controller: scrollController,
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+                  children: [
+                    // Drag Handle
+                    Center(
+                      child: Container(
+                        margin: const EdgeInsets.symmetric(vertical: 10),
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: AppColors.inputBorder,
+                          borderRadius: BorderRadius.circular(2),
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      _buildBookingTypeChip(
-                        icon: Icons.flight,
-                        label: 'Airport',
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const AirportBookingScreen(),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-
-                  const SizedBox(height: 16),
-
-                  // Search Bar
-                  GestureDetector(
-                    onTap: _onSearchTap,
-                    child: Container(
-                      height: 52,
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      decoration: BoxDecoration(
-                        color: AppColors.inputBg,
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: AppColors.inputBorder),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(
-                            Icons.search,
-                            color: AppColors.txtInactive,
-                            size: 22,
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Text(
-                              'Where to?',
-                              style: AppTextStyles.inputHint,
-                            ),
-                          ),
-                          // Time Badge
-                          GestureDetector(
-                            onTap: _showPickupTimeSheet,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 6,
-                              ),
-                              decoration: BoxDecoration(
-                                color: AppColors.bgPri,
-                                borderRadius: BorderRadius.circular(20),
-                                border: Border.all(
-                                  color: AppColors.inputBorder,
-                                ),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const Icon(
-                                    Icons.access_time,
-                                    color: Colors.white,
-                                    size: 14,
-                                  ),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    'Now',
-                                    style: AppTextStyles.caption.copyWith(
-                                      color: Colors.white,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 4),
-                                  const Icon(
-                                    Icons.keyboard_arrow_down,
-                                    color: Colors.white,
-                                    size: 16,
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ],
                       ),
                     ),
-                  ),
 
-                  const SizedBox(height: 16),
+                    // Service Toggle
+                    ServiceToggle(
+                      selectedIndex: _selectedServiceIndex,
+                      onChanged: (index) {
+                        setState(() {
+                          _selectedServiceIndex = index;
+                        });
+                      },
+                    ),
 
-                  // Recent Locations (max 2 visible on home screen)
-                  Consumer<BookingState>(
-                    builder: (context, bookingState, child) {
-                      // De-duplicate by name+address on the client side as well
-                      final seen = <String>{};
-                      final unique = bookingState.recentLocations.where((loc) {
-                        final key = '${loc.name}|${loc.address}';
-                        if (seen.contains(key)) return false;
-                        seen.add(key);
-                        return true;
-                      }).take(2).toList(); // Limit to 2 on home
+                    const SizedBox(height: 12),
 
-                      if (unique.isEmpty) {
-                        return const SizedBox.shrink();
-                      }
+                    // Booking type shortcuts
+                    Row(
+                      children: [
+                        _buildBookingTypeChip(
+                          icon: Icons.access_time,
+                          label: 'Hourly',
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const HourlyBookingScreen(),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        _buildBookingTypeChip(
+                          icon: Icons.flight,
+                          label: 'Airport',
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const AirportBookingScreen(),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        _buildBookingTypeChip(
+                          icon: Icons.local_shipping,
+                          label: 'Delivery',
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const WhereToScreen(returnOnConfirm: true),
+                            ),
+                          ).then((confirmed) {
+                            if (confirmed == true && mounted) {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => const DeliveryBookingScreen(),
+                                ),
+                              );
+                            }
+                          }),
+                        ),
+                      ],
+                    ),
 
-                      return Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: unique.map((location) {
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 8.0),
-                            child: RecentLocationCard(
-                              title: location.name,
-                              subtitle: location.address,
-                              distance: '',
-                              onTap: () {
-                                bookingState.setDropoffLocation(location);
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) => const WhereToScreen(),
+                    const SizedBox(height: 14),
+
+                    // Search Bar
+                    GestureDetector(
+                      onTap: _onSearchTap,
+                      child: Container(
+                        height: 52,
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        decoration: BoxDecoration(
+                          color: AppColors.inputBg,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: AppColors.inputBorder),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.search,
+                              color: AppColors.txtInactive,
+                              size: 22,
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                'Where to?',
+                                style: AppTextStyles.inputHint,
+                              ),
+                            ),
+                            // Time Badge
+                            GestureDetector(
+                              onTap: _showPickupTimeSheet,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 6,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: AppColors.bgPri,
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(
+                                    color: AppColors.inputBorder,
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(
+                                      Icons.access_time,
+                                      color: Colors.white,
+                                      size: 14,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      'Now',
+                                      style: AppTextStyles.caption.copyWith(
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 4),
+                                    const Icon(
+                                      Icons.keyboard_arrow_down,
+                                      color: Colors.white,
+                                      size: 16,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    const SizedBox(height: 14),
+
+                    // Saved Places shortcuts (Home/Work)
+                    Consumer<BookingState>(
+                      builder: (context, bookingState, child) {
+                        final places = bookingState.savedPlaces;
+                        if (places.isEmpty) return const SizedBox.shrink();
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            child: Row(
+                              children: places.take(3).map((place) {
+                                final icon = place.type == 'home'
+                                    ? Icons.home_outlined
+                                    : place.type == 'work'
+                                        ? Icons.work_outline
+                                        : Icons.place_outlined;
+                                return Padding(
+                                  padding: const EdgeInsets.only(right: 8),
+                                  child: GestureDetector(
+                                    onTap: () {
+                                      final location = Location(
+                                        id: place.id,
+                                        name: place.name,
+                                        address: place.address,
+                                        latitude: place.latitude,
+                                        longitude: place.longitude,
+                                      );
+                                      bookingState.setDropoffLocation(location);
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) => const WhereToScreen(),
+                                        ),
+                                      );
+                                    },
+                                    child: Container(
+                                      constraints: const BoxConstraints(maxWidth: 180),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 14,
+                                        vertical: 8,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: AppColors.inputBg,
+                                        borderRadius: BorderRadius.circular(20),
+                                        border: Border.all(color: AppColors.inputBorder),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(icon, color: AppColors.yellow90, size: 16),
+                                          const SizedBox(width: 6),
+                                          Flexible(
+                                            child: Text(
+                                              place.name,
+                                              style: const TextStyle(
+                                                color: Colors.white,
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                              overflow: TextOverflow.ellipsis,
+                                              maxLines: 1,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
                                   ),
                                 );
-                              },
+                              }).toList(),
                             ),
-                          );
-                        }).toList(),
-                      );
-                    },
-                  ),
-                ],
-              ),
-            ),
+                          ),
+                        );
+                      },
+                    ),
+
+                    // Recent Locations (max 3 visible on home screen)
+                    Consumer<BookingState>(
+                      builder: (context, bookingState, child) {
+                        // De-duplicate by name+address on the client side as well
+                        final seen = <String>{};
+                        final unique = bookingState.recentLocations.where((loc) {
+                          final key = '${loc.name}|${loc.address}';
+                          if (seen.contains(key)) return false;
+                          seen.add(key);
+                          return true;
+                        }).take(3).toList(); // Limit to 3 on home
+
+                        if (unique.isEmpty) {
+                          return const SizedBox.shrink();
+                        }
+
+                        return Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: unique.map((location) {
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 8.0),
+                              child: RecentLocationCard(
+                                title: location.name,
+                                subtitle: location.address,
+                                distance: '',
+                                onTap: () {
+                                  bookingState.setDropoffLocation(location);
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) => const WhereToScreen(),
+                                    ),
+                                  );
+                                },
+                              ),
+                            );
+                          }).toList(),
+                        );
+                      },
+                    ),
+                  ],
+                ),
+              );
+            },
           ),
         ],
       ),

@@ -90,7 +90,25 @@ class NigeriaPricingStrategy {
     'xl': {'perKm': 350, 'minFare': 10000, 'cancel': 2500, 'noShow': 4000},
   };
 
+  // ── Hourly rates (NGN) ────────────────────────────────────────────────────
+  static const Map<String, double> _hourlyRates = {
+    'sedan': 5000,
+    'suv': 7500,
+    'xl': 12000,
+  };
+
+  // ── Minimum hours for hourly booking ──────────────────────────────────────
+  static const double _minimumHours = 2.0;
+
   PriceBreakdown calculateFare(RideDetails ride) {
+    if (ride.bookingType == 'hourly') {
+      return _calculateHourlyFare(ride);
+    }
+    return _calculateStandardFare(ride);
+  }
+
+  // ── Standard metered ride ─────────────────────────────────────────────────
+  PriceBreakdown _calculateStandardFare(RideDetails ride) {
     final cityKey = _cityConfig.containsKey(ride.city.toLowerCase())
         ? ride.city.toLowerCase()
         : 'default';
@@ -128,6 +146,27 @@ class NigeriaPricingStrategy {
       totalFare: totalFare,
       currency: 'NGN',
       surgeMultiplier: surgeMultiplier,
+    );
+  }
+
+  // ── Hourly booking ────────────────────────────────────────────────────────
+  PriceBreakdown _calculateHourlyFare(RideDetails ride) {
+    final hours = ride.hoursBooked ?? 2;
+
+    if (hours < _minimumHours) {
+      throw ArgumentError('Minimum 2 Hours');
+    }
+
+    final category = ride.vehicleCategory.toLowerCase();
+    final double hourlyRate = _hourlyRates[category] ?? 5000;
+    final double totalFare = hours * hourlyRate;
+
+    return PriceBreakdown(
+      baseFare: totalFare,
+      distanceFare: 0,
+      timeFare: 0,
+      totalFare: totalFare,
+      currency: 'NGN',
     );
   }
 }
@@ -527,6 +566,79 @@ void main() {
         vehicleCategory: 'business_suv',
         bookingType: 'hourly',
         hoursBooked: 0,
+      );
+
+      expect(
+        () => strategy.calculateFare(ride),
+        throwsA(
+          isA<ArgumentError>().having(
+            (e) => e.message,
+            'message',
+            'Minimum 2 Hours',
+          ),
+        ),
+      );
+    });
+  });
+
+  // ───────────────────────────────────────────────────────────────────────────
+  //  Group 5 — Surge Logic
+  // ───────────────────────────────────────────────────────────────────────────
+
+  // ───────────────────────────────────────────────────────────────────────────
+  //  Group 4b — Nigeria Hourly Booking
+  // ───────────────────────────────────────────────────────────────────────────
+  group('Nigeria Hourly Booking', () {
+    late NigeriaPricingStrategy strategy;
+
+    setUp(() {
+      strategy = NigeriaPricingStrategy();
+    });
+
+    test('3 hours × sedan (₦5,000/hr) = ₦15,000', () {
+      const ride = RideDetails(
+        city: 'Lagos',
+        vehicleCategory: 'sedan',
+        bookingType: 'hourly',
+        hoursBooked: 3,
+      );
+
+      final result = strategy.calculateFare(ride);
+
+      expect(result.totalFare, equals(15000));
+      expect(result.distanceFare, equals(0));
+      expect(result.timeFare, equals(0));
+      expect(result.currency, equals('NGN'));
+    });
+
+    test('2 hours × suv (₦7,500/hr) = ₦15,000', () {
+      const ride = RideDetails(
+        vehicleCategory: 'suv',
+        bookingType: 'hourly',
+        hoursBooked: 2,
+      );
+
+      final result = strategy.calculateFare(ride);
+      expect(result.totalFare, equals(15000));
+    });
+
+    test('4 hours × xl (₦12,000/hr) = ₦48,000', () {
+      const ride = RideDetails(
+        vehicleCategory: 'xl',
+        bookingType: 'hourly',
+        hoursBooked: 4,
+      );
+
+      final result = strategy.calculateFare(ride);
+      expect(result.totalFare, equals(48000));
+    });
+
+    test('1 hour throws "Minimum 2 Hours" validation error', () {
+      const ride = RideDetails(
+        city: 'Lagos',
+        vehicleCategory: 'sedan',
+        bookingType: 'hourly',
+        hoursBooked: 1,
       );
 
       expect(

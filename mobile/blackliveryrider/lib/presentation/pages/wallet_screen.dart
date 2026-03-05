@@ -425,64 +425,224 @@ class _WalletScreenState extends State<WalletScreen> {
   Widget _buildTransactionItem(WalletTransaction transaction) {
     final isCredit = transaction.type == 'credit';
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: AppColors.inputBg,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AppColors.inputBorder),
+    return GestureDetector(
+      onTap: () => _showTransactionDetails(transaction),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: AppColors.inputBg,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: AppColors.inputBorder),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    transaction.description,
+                    style: AppTextStyles.body.copyWith(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    _formatDate(transaction.date),
+                    style: AppTextStyles.caption.copyWith(
+                      color: isCredit ? AppColors.success : AppColors.txtInactive,
+                      fontSize: 10,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Text(
+              () {
+                // Convert transaction amount to the active display currency
+                final displayCurrency = _balanceCurrency;
+                double displayAmount = transaction.amount;
+                if (transaction.currency != displayCurrency) {
+                  displayAmount = CurrencyUtils.convert(
+                    transaction.amount,
+                    transaction.currency,
+                    displayCurrency,
+                  );
+                }
+                return '${isCredit ? '+' : ''}${CurrencyUtils.format(displayAmount, currency: displayCurrency)}';
+              }(),
+              style: AppTextStyles.body.copyWith(
+                color: isCredit ? AppColors.success : Colors.white,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(width: 4),
+            Icon(
+              Icons.chevron_right,
+              color: AppColors.txtInactive,
+              size: 16,
+            ),
+          ],
+        ),
       ),
+    );
+  }
+
+  void _showTransactionDetails(WalletTransaction transaction) {
+    final isCredit = transaction.type == 'credit';
+
+    // Convert amount to display currency
+    final displayCurrency = _balanceCurrency;
+    double displayAmount = transaction.amount;
+    if (transaction.currency != displayCurrency) {
+      displayAmount = CurrencyUtils.convert(
+        transaction.amount,
+        transaction.currency,
+        displayCurrency,
+      );
+    }
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.bgPri,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Handle bar
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 20),
+                  decoration: BoxDecoration(
+                    color: AppColors.inputBorder,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+
+              Text(
+                'Transaction Details',
+                style: AppTextStyles.heading3.copyWith(fontSize: 18),
+              ),
+              const SizedBox(height: 20),
+
+              // Description
+              Text(
+                transaction.description,
+                style: AppTextStyles.body.copyWith(
+                  color: Colors.white,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // Detail rows
+              _buildDetailRow(
+                'Type',
+                isCredit ? 'Credit' : 'Debit',
+                valueColor: isCredit ? AppColors.success : Colors.redAccent,
+              ),
+              _buildDetailRow(
+                'Amount',
+                '${isCredit ? '+' : '-'}${CurrencyUtils.format(displayAmount, currency: displayCurrency)}',
+                valueColor: isCredit ? AppColors.success : Colors.white,
+              ),
+              _buildDetailRow(
+                'Date',
+                _formatFullDate(transaction.date),
+              ),
+              _buildDetailRow(
+                'Reference',
+                transaction.reference ?? transaction.id,
+              ),
+              if (transaction.currency != displayCurrency)
+                _buildDetailRow(
+                  'Original Currency',
+                  '${CurrencyUtils.format(transaction.amount, currency: transaction.currency)} (${transaction.currency})',
+                ),
+
+              const SizedBox(height: 20),
+
+              // Close button
+              GestureDetector(
+                onTap: () => Navigator.pop(context),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  decoration: BoxDecoration(
+                    color: AppColors.inputBg,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppColors.inputBorder),
+                  ),
+                  child: Center(
+                    child: Text(
+                      'Close',
+                      style: AppTextStyles.body.copyWith(
+                        color: Colors.white,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildDetailRow(String label, String value, {Color? valueColor}) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
       child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  transaction.description,
-                  style: AppTextStyles.body.copyWith(
-                    color: Colors.white,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  _formatDate(transaction.date),
-                  style: AppTextStyles.caption.copyWith(
-                    color: isCredit ? AppColors.success : AppColors.txtInactive,
-                    fontSize: 10,
-                  ),
-                ),
-              ],
+          Text(
+            label,
+            style: AppTextStyles.body.copyWith(
+              color: AppColors.txtInactive,
+              fontSize: 13,
             ),
           ),
-          Text(
-            () {
-              // Convert transaction amount to the active display currency
-              final displayCurrency = _balanceCurrency;
-              double displayAmount = transaction.amount;
-              if (transaction.currency != displayCurrency) {
-                displayAmount = CurrencyUtils.convert(
-                  transaction.amount,
-                  transaction.currency,
-                  displayCurrency,
-                );
-              }
-              return '${isCredit ? '+' : ''}${CurrencyUtils.format(displayAmount, currency: displayCurrency)}';
-            }(),
-            style: AppTextStyles.body.copyWith(
-              color: isCredit ? AppColors.success : Colors.white,
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
+          Flexible(
+            child: Text(
+              value,
+              style: AppTextStyles.body.copyWith(
+                color: valueColor ?? Colors.white,
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+              ),
+              textAlign: TextAlign.right,
             ),
           ),
         ],
       ),
     );
+  }
+
+  String _formatFullDate(DateTime date) {
+    final months = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December',
+    ];
+    return '${months[date.month - 1]} ${date.day}, ${date.year} at ${date.hour}:${date.minute.toString().padLeft(2, '0')}';
   }
 
   String _formatDate(DateTime date) {

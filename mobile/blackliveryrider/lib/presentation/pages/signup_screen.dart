@@ -12,6 +12,7 @@ import '../widgets/auth_tab_switcher.dart';
 import '../widgets/map_preview.dart';
 import 'otp_verification_screen.dart';
 import 'login_screen.dart';
+import 'two_factor_screen.dart';
 
 class SignUpScreen extends StatefulWidget {
   const SignUpScreen({super.key});
@@ -295,13 +296,23 @@ class _SignUpScreenState extends State<SignUpScreen> {
                     try {
                       await authProvider.googleSignIn();
                       if (mounted) {
-                        Navigator.pushAndRemoveUntil(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const HomeScreen(),
-                          ),
-                          (route) => false,
-                        );
+                        final user = authProvider.user;
+                        if (user?.twoFactorEnabled == true) {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const TwoFactorScreen(),
+                            ),
+                          );
+                        } else {
+                          Navigator.pushAndRemoveUntil(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const HomeScreen(),
+                            ),
+                            (route) => false,
+                          );
+                        }
                       }
                     } catch (e) {
                       if (mounted) {
@@ -323,13 +334,23 @@ class _SignUpScreenState extends State<SignUpScreen> {
                     try {
                       await authProvider.appleSignIn();
                       if (mounted) {
-                        Navigator.pushAndRemoveUntil(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const HomeScreen(),
-                          ),
-                          (route) => false,
-                        );
+                        final user = authProvider.user;
+                        if (user?.twoFactorEnabled == true) {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const TwoFactorScreen(),
+                            ),
+                          );
+                        } else {
+                          Navigator.pushAndRemoveUntil(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const HomeScreen(),
+                            ),
+                            (route) => false,
+                          );
+                        }
                       }
                     } catch (e) {
                       if (mounted) {

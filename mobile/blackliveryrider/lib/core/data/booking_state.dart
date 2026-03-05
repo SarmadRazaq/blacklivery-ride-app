@@ -43,6 +43,7 @@ class BookingState extends ChangeNotifier {
   String _bookingType = 'on_demand';
   int _hoursBooked = 2; // For hourly bookings (min 2)
   String? _airportCode; // For airport bookings: 'ORD' or 'MDW'
+  bool _isAirportPickup = true; // true = pickup FROM airport, false = dropoff TO airport
 
   // Getters
   Location? get pickupLocation => _pickupLocation;
@@ -61,6 +62,7 @@ class BookingState extends ChangeNotifier {
   String get bookingType => _bookingType;
   int get hoursBooked => _hoursBooked;
   String? get airportCode => _airportCode;
+  bool get isAirportPickup => _isAirportPickup;
 
   static const Set<String> _terminalRideStatuses = {
     'completed',
@@ -102,6 +104,11 @@ class BookingState extends ChangeNotifier {
 
   void setAirportCode(String? code) {
     _airportCode = code;
+    notifyListeners();
+  }
+
+  void setAirportDirection({required bool isPickup}) {
+    _isAirportPickup = isPickup;
     notifyListeners();
   }
 
@@ -439,6 +446,9 @@ class BookingState extends ChangeNotifier {
         hoursBooked: _bookingType == 'hourly' ? _hoursBooked : null,
         airportCode: _bookingType == 'airport_transfer' ? _airportCode : null,
         scheduledAt: _isPickupNow ? null : _scheduledTime,
+        isForSomeoneElse: _isForSomeoneElse,
+        recipientName: _recipientName,
+        recipientPhone: _recipientPhone,
       );
 
       if (result != null) {
@@ -477,11 +487,13 @@ class BookingState extends ChangeNotifier {
         // Handle error
         _isLoading = false;
         notifyListeners();
+        throw Exception('Failed to create booking.');
       }
     } catch (e) {
       debugPrint('Error creating booking: $e');
       _isLoading = false;
       notifyListeners();
+      rethrow;
     }
   }
 
@@ -653,6 +665,7 @@ class BookingState extends ChangeNotifier {
     _bookingType = 'on_demand';
     _hoursBooked = 2;
     _airportCode = null;
+    _isAirportPickup = true;
     _rideId = null;
     _socketService.stopListeningToRideUpdates(); // Clean up stale ride listeners
     notifyListeners();

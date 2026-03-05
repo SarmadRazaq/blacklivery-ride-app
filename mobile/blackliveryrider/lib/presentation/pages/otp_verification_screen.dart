@@ -10,6 +10,7 @@ import '../widgets/custom_numpad.dart';
 import '../widgets/otp_input_box.dart';
 import 'home_screen.dart';
 import 'phone_signup_screen.dart';
+import 'two_factor_screen.dart';
 
 class OtpVerificationScreen extends StatefulWidget {
   final String? phoneNumber;
@@ -153,6 +154,21 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
             MaterialPageRoute(
               builder: (context) => PhoneSignupScreen(
                 phoneNumber: widget.phoneNumber!,
+              ),
+            ),
+          );
+          return;
+        }
+
+        // Check if 2FA is enabled — redirect to 2FA screen instead of home
+        final user = authProvider.user;
+        if (user?.twoFactorEnabled == true) {
+          setState(() => _isLoading = false);
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (context) => TwoFactorScreen(
+                phoneNumber: widget.phoneNumber,
               ),
             ),
           );

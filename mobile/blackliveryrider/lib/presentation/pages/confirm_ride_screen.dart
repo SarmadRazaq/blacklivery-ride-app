@@ -12,6 +12,9 @@ import '../../core/services/payment_service.dart';
 import '../widgets/custom_button.dart';
 import '../widgets/ride_map_view.dart';
 import 'searching_driver_screen.dart';
+import 'package:dio/dio.dart';
+import '../../core/network/api_error_message.dart';
+import 'add_funds_screen.dart';
 
 class ConfirmRideScreen extends StatefulWidget {
   const ConfirmRideScreen({super.key});
@@ -220,7 +223,7 @@ class _ConfirmRideScreenState extends State<ConfirmRideScreen> {
               ],
             ),
           );
-        } else {
+        } else if (bookingState.bookingStatus == 'searching_driver') {
           // Immediate ride → searching for driver
           Navigator.pushReplacement(
             context,
@@ -232,9 +235,44 @@ class _ConfirmRideScreenState extends State<ConfirmRideScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Error: $e')));
+        String errMsg = 'An unexpected error occurred';
+        if (e is DioException) {
+          errMsg = apiErrorMessage(e);
+        } else {
+          errMsg = e.toString().replaceFirst('Exception: ', '');
+        }
+
+        final lowerError = errMsg.toLowerCase();
+        if (lowerError.contains('insufficient balance') || lowerError.contains('insufficient funds')) {
+          showDialog(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              backgroundColor: AppColors.inputBg,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              title: Text('Insufficient Balance', style: AppTextStyles.heading3),
+              content: Text(
+                'You do not have enough funds in your wallet. Please add funds to request this ride.',
+                style: AppTextStyles.body.copyWith(color: AppColors.txtSec),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: Text('Cancel', style: AppTextStyles.body.copyWith(color: Colors.white70)),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(backgroundColor: AppColors.yellow90),
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    Navigator.push(context, MaterialPageRoute(builder: (_) => const AddFundsScreen()));
+                  },
+                  child: Text('Add Funds', style: AppTextStyles.body.copyWith(color: AppColors.bgPri, fontWeight: FontWeight.bold)),
+                ),
+              ],
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(errMsg)));
+        }
       }
     } finally {
       if (mounted) {

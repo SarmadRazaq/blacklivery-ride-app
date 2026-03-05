@@ -81,7 +81,7 @@ class NotificationService {
       const InitializationSettings(android: androidSettings, iOS: iosSettings),
       onDidReceiveNotificationResponse: (details) {
         debugPrint('Local notification tapped: ${details.payload}');
-        _navigateToRide(details.payload);
+        _handleLocalNotificationTap(details.payload);
       },
     );
 
@@ -108,6 +108,9 @@ class NotificationService {
     final notification = message.notification;
     if (notification == null) return;
 
+    // Build payload with type info so tap handler can deep-link correctly
+    final payload = _buildDeepLinkPayload(message.data);
+
     // Show local notification for foreground messages
     _localNotifications.show(
       notification.hashCode,
@@ -128,20 +131,60 @@ class NotificationService {
           presentSound: true,
         ),
       ),
-      payload: message.data['rideId'],
+      payload: payload,
     );
+  }
+
+  /// Build a colon-separated payload string: "type:id"
+  String? _buildDeepLinkPayload(Map<String, dynamic> data) {
+    final type = data['type'] as String?;
+    final rideId = data['rideId'] as String?;
+    final ticketId = data['ticketId'] as String?;
+
+    if (type == 'payment' && rideId != null) return 'receipt:$rideId';
+    if (type == 'support' && ticketId != null) return 'support:$ticketId';
+    if (rideId != null) return 'ride:$rideId';
+    if (ticketId != null) return 'support:$ticketId';
+    return null;
   }
 
   void _handleNotificationTap(RemoteMessage message) {
     debugPrint('Notification tapped: ${message.data}');
-    final rideId = message.data['rideId'] as String?;
-    _navigateToRide(rideId);
+    final data = message.data;
+    final type = data['type'] as String?;
+    final rideId = data['rideId'] as String?;
+    final ticketId = data['ticketId'] as String?;
+
+    if (type == 'payment' && rideId != null) {
+      appRouter.go('/receipt/$rideId');
+    } else if (type == 'support' || ticketId != null) {
+      final query = ticketId != null ? '?ticketId=$ticketId' : '';
+      appRouter.go('/support$query');
+    } else if (rideId != null) {
+      appRouter.go('/ride/$rideId');
+    }
   }
 
-  void _navigateToRide(String? rideId) {
-    if (rideId == null || rideId.isEmpty) return;
-    // Navigate using GoRouter so the deep-link URL is reflected in the route stack.
-    appRouter.go('/ride/$rideId');
+  /// Handle taps on local notifications shown via flutter_local_notifications.
+  void _handleLocalNotificationTap(String? payload) {
+    if (payload == null || payload.isEmpty) return;
+    final parts = payload.split(':');
+    if (parts.length != 2) {
+      // Legacy: treat plain payload as rideId
+      appRouter.go('/ride/$payload');
+      return;
+    }
+    final type = parts[0];
+    final id = parts[1];
+    switch (type) {
+      case 'receipt':
+        appRouter.go('/receipt/$id');
+      case 'support':
+        appRouter.go('/support?ticketId=$id');
+      case 'ride':
+      default:
+        appRouter.go('/ride/$id');
+    }
   }
 
   Future<void> _registerToken() async {

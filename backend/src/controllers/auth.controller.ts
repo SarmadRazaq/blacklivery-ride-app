@@ -1767,3 +1767,41 @@ export const markRiderNotificationRead = async (req: AuthRequest, res: Response)
         res.status(500).json({ error: 'Unable to mark notification as read' });
     }
 };
+
+// ── Notification Preferences ─────────────────────────────────────────────────
+
+export const getNotificationPreferences = async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const { uid } = req.user;
+        const userDoc = await db.collection('users').doc(uid).get();
+        const prefs = userDoc.data()?.notificationPreferences ?? { push: true, email: true, sms: true };
+        res.status(200).json({ data: prefs });
+    } catch (error) {
+        logger.error({ err: error }, 'getNotificationPreferences failed');
+        res.status(500).json({ error: 'Unable to fetch notification preferences' });
+    }
+};
+
+export const updateNotificationPreferences = async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const { uid } = req.user;
+        const { push, email, sms } = req.body;
+
+        const prefs: Record<string, boolean> = {};
+        if (typeof push === 'boolean') prefs['notificationPreferences.push'] = push;
+        if (typeof email === 'boolean') prefs['notificationPreferences.email'] = email;
+        if (typeof sms === 'boolean') prefs['notificationPreferences.sms'] = sms;
+
+        if (Object.keys(prefs).length === 0) {
+            res.status(400).json({ error: 'At least one preference (push, email, sms) is required' });
+            return;
+        }
+
+        await db.collection('users').doc(uid).update(prefs);
+        const updated = await db.collection('users').doc(uid).get();
+        res.status(200).json({ data: updated.data()?.notificationPreferences });
+    } catch (error) {
+        logger.error({ err: error }, 'updateNotificationPreferences failed');
+        res.status(500).json({ error: 'Unable to update notification preferences' });
+    }
+};

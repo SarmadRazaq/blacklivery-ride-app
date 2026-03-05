@@ -12,6 +12,8 @@ import '../../core/providers/region_provider.dart';
 import '../widgets/custom_button.dart';
 
 import 'ride_completed_screen.dart';
+import 'ride_chat_screen.dart';
+import 'emergency_alert_screen.dart';
 import '../../core/services/payment_service.dart';
 import '../../core/services/wallet_service.dart';
 import '../../core/utils/currency_utils.dart';
@@ -155,7 +157,7 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
       Polyline(
         polylineId: const PolylineId('route'),
         points: [pickupLatLng, dropoffLatLng],
-        color: AppColors.yellow90,
+        color: AppColors.routeBlue,
         width: 4,
         patterns: [PatternItem.dash(20), PatternItem.gap(10)],
       ),
@@ -183,7 +185,7 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
               Polyline(
                 polylineId: const PolylineId('route'),
                 points: decodedPoints,
-                color: AppColors.yellow90,
+                color: AppColors.routeBlue,
                 width: 4,
               ),
             };
@@ -235,21 +237,36 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
     final emergencyNumber = region.isNigeria ? '112' : '911';
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.bgSec,
         title: Text('Emergency', style: AppTextStyles.heading3),
         content: Text(
-          'Do you want to call emergency services?',
+          'Choose an action:',
           style: AppTextStyles.body.copyWith(color: AppColors.txtInactive),
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(ctx),
             child: Text('Cancel', style: AppTextStyles.body),
           ),
           TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const EmergencyAlertScreen(),
+                ),
+              );
+            },
+            child: Text(
+              'Send SOS Alert',
+              style: AppTextStyles.body.copyWith(color: Colors.orange),
+            ),
+          ),
+          TextButton(
             onPressed: () async {
-              Navigator.pop(context);
+              Navigator.pop(ctx);
               final uri = Uri(scheme: 'tel', path: emergencyNumber);
               if (await canLaunchUrl(uri)) {
                 await launchUrl(uri);
@@ -641,6 +658,40 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
                             ],
                           ),
                         ),
+                        GestureDetector(
+                          onTap: () {
+                            final bookingState = Provider.of<BookingState>(context, listen: false);
+                            final rideId = bookingState.rideId;
+                            final driverName = driver?.name ?? 'Driver';
+                            if (rideId != null) {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) =>
+                                      RideChatScreen(rideId: rideId, driverName: driverName),
+                                ),
+                              );
+                            } else {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('Chat not available')),
+                              );
+                            }
+                          },
+                          child: Container(
+                            width: 40,
+                            height: 40,
+                            decoration: BoxDecoration(
+                              color: AppColors.bgPri,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: const Icon(
+                              Icons.chat_bubble_outline,
+                              color: Colors.white,
+                              size: 18,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
                         GestureDetector(
                           onTap: () async {
                             final phone = driver?.phone;

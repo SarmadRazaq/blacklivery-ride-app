@@ -35,7 +35,20 @@ class _TwoFactorScreenState extends State<TwoFactorScreen> {
   @override
   void initState() {
     super.initState();
+    _sendInitialOtp();
     _startResendTimer();
+  }
+
+  /// Auto-send the 2FA OTP when the screen first loads
+  Future<void> _sendInitialOtp() async {
+    try {
+      await _authService.send2faOtp();
+    } catch (e) {
+      debugPrint('Failed to send initial 2FA OTP: $e');
+      if (mounted) {
+        setState(() => _error = 'Failed to send code. Tap "Resend" to try again.');
+      }
+    }
   }
 
   @override

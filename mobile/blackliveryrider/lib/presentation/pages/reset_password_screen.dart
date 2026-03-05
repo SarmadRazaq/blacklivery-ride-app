@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
+import '../../core/services/auth_service.dart';
+import '../../core/providers/region_provider.dart';
 import '../widgets/custom_button.dart';
 import '../widgets/custom_input_field.dart';
 import '../widgets/auth_tab_switcher.dart';
@@ -15,9 +18,38 @@ class ResetPasswordScreen extends StatefulWidget {
 
 class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
   int _selectedTab = 0; // 0 = Phone Number, 1 = Email Address
+  bool _isLoading = false;
+  final AuthService _authService = AuthService();
 
   final TextEditingController _phoneController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
+
+  String get _countryCode {
+    try {
+      final region = Provider.of<RegionProvider>(context, listen: false);
+      return region.isChicago ? '+1' : '+234';
+    } catch (_) {
+      return '+234';
+    }
+  }
+
+  String get _countryFlag {
+    try {
+      final region = Provider.of<RegionProvider>(context, listen: false);
+      return region.isChicago ? '🇺🇸' : '🇳🇬';
+    } catch (_) {
+      return '🇳🇬';
+    }
+  }
+
+  String get _phoneHint {
+    try {
+      final region = Provider.of<RegionProvider>(context, listen: false);
+      return region.isChicago ? '415 555 1234' : '801 234 5678';
+    } catch (_) {
+      return '801 234 5678';
+    }
+  }
 
   @override
   void dispose() {
@@ -26,9 +58,11 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
     super.dispose();
   }
 
-  void _onSendCode() {
+  Future<void> _onSendCode() async {
+    if (_isLoading) return;
+
     if (_selectedTab == 0) {
-      // Phone - send verification code
+      // Phone - send verification code via backend
       final phoneText = _phoneController.text.trim();
       if (phoneText.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -39,22 +73,69 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
         );
         return;
       }
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => ResetPasswordVerificationScreen(
-            phoneNumber: phoneText,
-          ),
-        ),
-      );
+
+      setState(() => _isLoading = true);
+      try {
+        final fullPhone = '$_countryCode$phoneText';
+        await _authService.startPhoneVerification(fullPhone);
+        if (mounted) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => ResetPasswordVerificationScreen(
+                phoneNumber: fullPhone,
+              ),
+            ),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Failed to send code: ${e.toString()}'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      } finally {
+        if (mounted) setState(() => _isLoading = false);
+      }
     } else {
-      // Email - send link
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Password reset link sent to your email'),
-          backgroundColor: AppColors.success,
-        ),
-      );
+      // Email - send Firebase password reset link
+      final emailText = _emailController.text.trim();
+      if (emailText.isEmpty || !emailText.contains('@')) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please enter a valid email address'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      setState(() => _isLoading = true);
+      try {
+        await _authService.requestPasswordReset(emailText);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Password reset link sent to your email. Check your inbox.'),
+              backgroundColor: AppColors.success,
+            ),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Failed to send reset link: ${e.toString()}'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      } finally {
+        if (mounted) setState(() => _isLoading = false);
+      }
     }
   }
 
@@ -69,6 +150,29 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               const SizedBox(height: 20),
+
+              // Back button
+              Align(
+                alignment: Alignment.centerLeft,
+                child: GestureDetector(
+                  onTap: () => Navigator.pop(context),
+                  child: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: Colors.transparent,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(
+                      Icons.chevron_left,
+                      color: Colors.white,
+                      size: 28,
+                    ),
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 12),
 
               // Title
               Text(
@@ -93,18 +197,18 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
 
               // Form Fields
               if (_selectedTab == 0) ...[
-                // Phone Number Tab
+                // Phone Number Tab — uses region-aware country code
                 CustomInputField.phone(
                   controller: _phoneController,
-                  hintText: 'Enter your phone number',
-                  countryCode: '+1',
-                  countryFlag: '🇺🇸',
+                  hintText: _phoneHint,
+                  countryCode: _countryCode,
+                  countryFlag: _countryFlag,
                 ),
                 const SizedBox(height: 12),
                 Align(
                   alignment: Alignment.centerLeft,
                   child: Text(
-                    'Verification link',
+                    'We will send a verification code to this number',
                     style: AppTextStyles.caption,
                   ),
                 ),
@@ -119,10 +223,20 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
               const SizedBox(height: 24),
 
               // Send Button
-              CustomButton.main(
-                text: _selectedTab == 0 ? 'Send Code' : 'Send Link',
-                onTap: _onSendCode,
-              ),
+              _isLoading
+                  ? const SizedBox(
+                      height: 48,
+                      child: Center(
+                        child: CircularProgressIndicator(
+                          color: AppColors.yellow90,
+                          strokeWidth: 2.5,
+                        ),
+                      ),
+                    )
+                  : CustomButton.main(
+                      text: _selectedTab == 0 ? 'Send Code' : 'Send Link',
+                      onTap: _onSendCode,
+                    ),
 
               const SizedBox(height: 24),
 

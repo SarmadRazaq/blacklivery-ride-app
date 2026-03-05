@@ -114,10 +114,14 @@ class MockRideService extends Mock implements RideService {
     required String rideType,
     String? pickupAddress,
     String? dropoffAddress,
-    String? paymentMethod,
+    String paymentMethod = 'wallet',
     String bookingType = 'on_demand',
     int? hoursBooked,
     String? airportCode,
+    DateTime? scheduledAt,
+    bool isForSomeoneElse = false,
+    String? recipientName,
+    String? recipientPhone,
   }) async {
     return {
       'id': 'mock_ride_123',

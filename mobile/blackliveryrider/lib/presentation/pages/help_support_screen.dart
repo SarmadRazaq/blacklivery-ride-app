@@ -5,11 +5,35 @@ import '../../core/theme/app_text_styles.dart';
 import '../../core/utils/currency_utils.dart';
 import 'support_chat_screen.dart';
 
-class HelpSupportScreen extends StatelessWidget {
+class HelpSupportScreen extends StatefulWidget {
   /// Optional ticket ID from a deep link (e.g. blacklivery://support?ticketId=xyz).
   final String? initialTicketId;
 
   const HelpSupportScreen({super.key, this.initialTicketId});
+
+  @override
+  State<HelpSupportScreen> createState() => _HelpSupportScreenState();
+}
+
+class _HelpSupportScreenState extends State<HelpSupportScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // TC165: If a ticketId was provided via deep link, auto-navigate to
+    // SupportChatScreen with that ticket pre-loaded.
+    if (widget.initialTicketId != null && widget.initialTicketId!.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => SupportChatScreen(
+              ticketId: widget.initialTicketId,
+            ),
+          ),
+        );
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {

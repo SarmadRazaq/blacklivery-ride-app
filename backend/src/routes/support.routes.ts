@@ -3,7 +3,7 @@ import { verifyToken } from '../middlewares/auth.middleware';
 import { checkRole } from '../middlewares/roles.middleware';
 import { validate } from '../middlewares/validate.middleware';
 import { createSupportTicketSchema, replyToTicketSchema } from '../schemas/support.schema';
-import { createSupportTicket, getMyTickets, getTicketById, replyToTicket, adminReplyToTicket, getAllTickets, closeTicket } from '../controllers/support.controller';
+import { createSupportTicket, getMyTickets, getTicketById, replyToTicket, adminReplyToTicket, getAllTickets, closeTicket, closeOwnTicket } from '../controllers/support.controller';
 
 const router = Router();
 
@@ -109,6 +109,32 @@ router.get('/:id', wrap(getTicketById));
  *         description: Reply added
  */
 router.post('/:id/reply', validate(replyToTicketSchema), wrap(replyToTicket));
+
+/**
+ * @swagger
+ * /support/{id}/close:
+ *   post:
+ *     summary: Close own support ticket
+ *     tags: [Support]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         schema:
+ *           type: string
+ *         required: true
+ *     responses:
+ *       200:
+ *         description: Ticket closed
+ *       403:
+ *         description: Unauthorized
+ *       404:
+ *         description: Ticket not found
+ *       409:
+ *         description: Ticket already closed
+ */
+router.post('/:id/close', wrap(closeOwnTicket));
 
 /**
  * @swagger

@@ -618,11 +618,26 @@ class _AddFundsScreenState extends State<AddFundsScreen> {
         : _selectedAmount;
 
     const minAmount = 5;
+    // Region-aware max: $10,000 USD / ₦5,000,000 NGN
+    final region = Provider.of<RegionProvider>(context, listen: false);
+    final maxAmount = region.isChicago ? 10000 : 5000000;
+
     if (amount < minAmount) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
             'Minimum top-up is ${CurrencyUtils.format(minAmount.toDouble())}',
+          ),
+        ),
+      );
+      return;
+    }
+
+    if (amount > maxAmount) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Maximum top-up is ${CurrencyUtils.format(maxAmount.toDouble())}',
           ),
         ),
       );

@@ -68,6 +68,21 @@ class _DeliveryBookingScreenState extends State<DeliveryBookingScreen> {
     super.dispose();
   }
 
+  /// Map package type to the appropriate vehicle category for pricing.
+  String _vehicleCategoryForPackage(String packageId) {
+    switch (packageId) {
+      case 'document':
+      case 'small':
+        return 'motorbike';
+      case 'medium':
+        return 'sedan';
+      case 'large':
+        return 'suv';
+      default:
+        return 'motorbike';
+    }
+  }
+
   Future<void> _getQuote() async {
     final bookingState = Provider.of<BookingState>(context, listen: false);
     final pickup = bookingState.pickupLocation;
@@ -76,6 +91,7 @@ class _DeliveryBookingScreenState extends State<DeliveryBookingScreen> {
 
     setState(() => _isLoading = true);
 
+    final pkg = _packageTypes[_selectedPackageIndex];
     final quote = await _deliveryService.getDeliveryQuote(
       pickupLat: pickup.latitude,
       pickupLng: pickup.longitude,
@@ -83,6 +99,7 @@ class _DeliveryBookingScreenState extends State<DeliveryBookingScreen> {
       dropoffLng: dropoff.longitude,
       pickupAddress: pickup.address,
       dropoffAddress: dropoff.address,
+      vehicleCategory: _vehicleCategoryForPackage(pkg.id),
     );
 
     setState(() {
@@ -100,6 +117,7 @@ class _DeliveryBookingScreenState extends State<DeliveryBookingScreen> {
     setState(() => _isLoading = true);
 
     try {
+      final pkg = _packageTypes[_selectedPackageIndex];
       final result = await _deliveryService.createDelivery(
         pickupLat: pickup.latitude,
         pickupLng: pickup.longitude,
@@ -110,7 +128,8 @@ class _DeliveryBookingScreenState extends State<DeliveryBookingScreen> {
         pickupAddress: pickup.address,
         dropoffAddress: dropoff.address,
         packageDescription: _packageDescController.text.trim(),
-        weight: _packageTypes[_selectedPackageIndex].maxWeight.toDouble(),
+        weight: pkg.maxWeight.toDouble(),
+        vehicleCategory: _vehicleCategoryForPackage(pkg.id),
       );
 
       if (result != null && mounted) {
@@ -366,6 +385,15 @@ class _DeliveryBookingScreenState extends State<DeliveryBookingScreen> {
               );
               return;
             }
+            // Validate phone format: at least 10 digits, optional leading +
+            final phone = _recipientPhoneController.text.trim();
+            final phoneRegex = RegExp(r'^\+?\d{10,15}$');
+            if (!phoneRegex.hasMatch(phone.replaceAll(RegExp(r'[\s\-()]'), ''))) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Please enter a valid phone number (10-15 digits)')),
+              );
+              return;
+            }
             await _getQuote();
             if (mounted) setState(() => _currentStep = 2);
           },
@@ -459,23 +487,45 @@ class _DeliveryBookingScreenState extends State<DeliveryBookingScreen> {
                 color: AppColors.yellow90.withOpacity(0.3),
               ),
             ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            child: Column(
               children: [
-                Text(
-                  'Estimated Price',
-                  style: AppTextStyles.body.copyWith(
-                    color: AppColors.yellow90,
-                    fontSize: 14,
-                  ),
+                // Distance and duration row
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: [
+                    _buildQuoteDetail(
+                      Icons.straighten,
+                      '${(_quote!['distanceKm'] as num?)?.toStringAsFixed(1) ?? '—'} km',
+                    ),
+                    _buildQuoteDetail(
+                      Icons.schedule,
+                      '${(_quote!['durationMinutes'] as num?)?.round() ?? '—'} min',
+                    ),
+                  ],
                 ),
-                Text(
-                  CurrencyUtils.format(
-                    (_quote!['price'] as num?)?.toDouble() ?? 0.0,
-                  ),
-                  style: AppTextStyles.heading3.copyWith(
-                    color: AppColors.yellow90,
-                  ),
+                const SizedBox(height: 12),
+                const Divider(color: AppColors.divider, height: 1),
+                const SizedBox(height: 12),
+                // Price row
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Estimated Price',
+                      style: AppTextStyles.body.copyWith(
+                        color: AppColors.yellow90,
+                        fontSize: 14,
+                      ),
+                    ),
+                    Text(
+                      CurrencyUtils.format(
+                        (_quote!['estimatedFare'] as num?)?.toDouble() ?? 0.0,
+                      ),
+                      style: AppTextStyles.heading3.copyWith(
+                        color: AppColors.yellow90,
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -489,6 +539,23 @@ class _DeliveryBookingScreenState extends State<DeliveryBookingScreen> {
           onTap: _isLoading ? null : _createDelivery,
         ),
         const SizedBox(height: AppSpacing.screenBottom),
+      ],
+    );
+  }
+
+  Widget _buildQuoteDetail(IconData icon, String text) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, color: AppColors.yellow90, size: 16),
+        const SizedBox(width: 6),
+        Text(
+          text,
+          style: AppTextStyles.bodySmall.copyWith(
+            color: AppColors.yellow90,
+            fontSize: 13,
+          ),
+        ),
       ],
     );
   }

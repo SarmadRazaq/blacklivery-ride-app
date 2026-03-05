@@ -16,6 +16,71 @@ class _LoyaltyRewardsScreenState extends State<LoyaltyRewardsScreen> {
   int _pointsBalance = 0;
   String _tier = 'bronze';
   bool _loading = true;
+  bool _isRedeeming = false;
+
+  // Reward types the backend supports with their point costs
+  static const List<_RewardOption> _rewardOptions = [
+    _RewardOption(
+      type: 'ride_discount',
+      label: 'Ride Discount',
+      description: '10% discount on your next ride',
+      icon: Icons.local_offer,
+      pointsCost: 100,
+    ),
+    _RewardOption(
+      type: 'priority_pickup',
+      label: 'Priority Pickup',
+      description: 'Priority driver matching for your next ride',
+      icon: Icons.flash_on,
+      pointsCost: 50,
+    ),
+    _RewardOption(
+      type: 'vehicle_upgrade',
+      label: 'Vehicle Upgrade',
+      description: 'Free upgrade to next vehicle category',
+      icon: Icons.directions_car,
+      pointsCost: 200,
+    ),
+    _RewardOption(
+      type: 'free_ride',
+      label: 'Free Ride',
+      description: 'A completely free ride (up to standard fare)',
+      icon: Icons.card_giftcard,
+      pointsCost: 500,
+    ),
+  ];
+
+  // Tier definitions with colors, icons and benefits
+  static const Map<String, _TierInfo> _tierInfo = {
+    'bronze': _TierInfo(
+      color: Color(0xFFCD7F32),
+      icon: Icons.shield,
+      benefits: ['1 pt per ${r"$"}1 spent', 'Basic rewards access'],
+      nextTier: 'silver',
+      nextThreshold: 500,
+    ),
+    'silver': _TierInfo(
+      color: Color(0xFFC0C0C0),
+      icon: Icons.shield,
+      benefits: ['1 pt per ${r"$"}1 spent', 'Priority support', '5% bonus points'],
+      nextTier: 'gold',
+      nextThreshold: 2000,
+    ),
+    'gold': _TierInfo(
+      color: Color(0xFFFFD700),
+      icon: Icons.shield,
+      benefits: ['1 pt per ${r"$"}1 spent', 'Priority support', '10% bonus points', 'Free vehicle upgrades'],
+      nextTier: 'platinum',
+      nextThreshold: 5000,
+    ),
+    'platinum': _TierInfo(
+      color: Color(0xFFE5E4E2),
+      icon: Icons.workspace_premium,
+      benefits: ['1 pt per ${r"$"}1 spent', 'VIP support', '20% bonus points', 'Free vehicle upgrades', 'Priority pickup'],
+      nextTier: null,
+      nextThreshold: null,
+    ),
+  };
 
   @override
   void initState() {
@@ -113,65 +178,23 @@ class _LoyaltyRewardsScreenState extends State<LoyaltyRewardsScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // Points balance card
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(24),
-                    decoration: BoxDecoration(
-                      color: AppColors.inputBg,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: AppColors.inputBorder),
-                    ),
-                    child: Column(
-                      children: [
-                        // Points icon
-                        Container(
-                          width: 64,
-                          height: 64,
-                          decoration: BoxDecoration(
-                            color: AppColors.yellow90.withOpacity(0.15),
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(
-                            Icons.stars_rounded,
-                            color: AppColors.yellow90,
-                            size: 32,
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          '${_pointsBalance.toStringAsFixed(0)}pts',
-                          style: AppTextStyles.heading1.copyWith(
-                            fontSize: 36,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Your points balance',
-                          style: AppTextStyles.body.copyWith(
-                            color: AppColors.txtInactive,
-                            fontSize: 14,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: AppColors.yellow90.withOpacity(0.15),
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Text(
-                            _tier.toUpperCase(),
-                            style: AppTextStyles.body.copyWith(
-                              color: AppColors.yellow90,
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
+                  _buildBalanceCard(),
+
+                  const SizedBox(height: 16),
+
+                  // Tier benefits
+                  _buildTierBenefitsSection(),
+
+                  const SizedBox(height: 24),
+
+                  // Redeem rewards section
+                  Text(
+                    'Redeem Points',
+                    style: AppTextStyles.heading3.copyWith(fontSize: 16),
                   ),
+                  const SizedBox(height: 12),
+
+                  ..._rewardOptions.map((reward) => _buildRewardOption(reward)),
 
                   const SizedBox(height: 24),
 
@@ -182,43 +205,247 @@ class _LoyaltyRewardsScreenState extends State<LoyaltyRewardsScreen> {
 
                   // Points earning history
                   Text(
-                    'Points Earning History',
+                    'Points History',
                     style: AppTextStyles.heading3.copyWith(fontSize: 16),
                   ),
                   const SizedBox(height: 16),
 
-                  ..._pointsHistory.map((item) => _buildHistoryItem(item)),
+                  if (_pointsHistory.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.all(20),
+                      child: Center(
+                        child: Text(
+                          'No activity yet',
+                          style: AppTextStyles.body.copyWith(
+                            color: AppColors.txtInactive,
+                          ),
+                        ),
+                      ),
+                    )
+                  else
+                    ..._pointsHistory.map((item) => _buildHistoryItem(item)),
                 ],
               ),
             ),
           ),
+        ],
+      ),
+    );
+  }
 
-          // Convert points button
-          Padding(
-            padding: const EdgeInsets.all(20),
-            child: SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: _showConvertPointsDialog,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.yellow90,
-                  foregroundColor: AppColors.bgPri,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(30),
-                  ),
-                ),
-                child: Text(
-                  'Convert points',
+  Widget _buildBalanceCard() {
+    final tier = _tierInfo[_tier.toLowerCase()] ?? _tierInfo['bronze']!;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: AppColors.inputBg,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.inputBorder),
+      ),
+      child: Column(
+        children: [
+          // Tier badge icon
+          Container(
+            width: 64,
+            height: 64,
+            decoration: BoxDecoration(
+              color: tier.color.withOpacity(0.15),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              tier.icon,
+              color: tier.color,
+              size: 32,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            '${_pointsBalance.toStringAsFixed(0)}pts',
+            style: AppTextStyles.heading1.copyWith(
+              fontSize: 36,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Your points balance',
+            style: AppTextStyles.body.copyWith(
+              color: AppColors.txtInactive,
+              fontSize: 14,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            decoration: BoxDecoration(
+              color: tier.color.withOpacity(0.15),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: tier.color.withOpacity(0.4)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(tier.icon, color: tier.color, size: 14),
+                const SizedBox(width: 4),
+                Text(
+                  _tier.toUpperCase(),
                   style: AppTextStyles.body.copyWith(
-                    color: AppColors.bgPri,
-                    fontWeight: FontWeight.w600,
+                    color: tier.color,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
                   ),
                 ),
-              ),
+              ],
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildTierBenefitsSection() {
+    final tier = _tierInfo[_tier.toLowerCase()] ?? _tierInfo['bronze']!;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.bgSec,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: tier.color.withOpacity(0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(tier.icon, color: tier.color, size: 18),
+              const SizedBox(width: 8),
+              Text(
+                '${_tier[0].toUpperCase()}${_tier.substring(1)} Benefits',
+                style: AppTextStyles.body.copyWith(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14,
+                  color: tier.color,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          ...tier.benefits.map((benefit) => Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Row(
+              children: [
+                Icon(Icons.check_circle, color: tier.color, size: 14),
+                const SizedBox(width: 8),
+                Text(
+                  benefit,
+                  style: AppTextStyles.caption.copyWith(
+                    color: Colors.white70,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          )),
+          if (tier.nextTier != null) ...[
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: AppColors.inputBg,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                'Earn ${tier.nextThreshold} lifetime points to reach ${tier.nextTier!.toUpperCase()}',
+                style: AppTextStyles.caption.copyWith(
+                  color: AppColors.txtInactive,
+                  fontSize: 11,
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRewardOption(_RewardOption reward) {
+    final canAfford = _pointsBalance >= reward.pointsCost;
+
+    return GestureDetector(
+      onTap: canAfford ? () => _confirmRedeem(reward) : () => _showInsufficientPointsMessage(reward),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: AppColors.inputBg,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: canAfford ? AppColors.inputBorder : AppColors.inputBorder.withOpacity(0.4),
+          ),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: canAfford
+                    ? AppColors.yellow90.withOpacity(0.12)
+                    : AppColors.inputBg,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(
+                reward.icon,
+                color: canAfford ? AppColors.yellow90 : AppColors.txtInactive,
+                size: 22,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    reward.label,
+                    style: AppTextStyles.body.copyWith(
+                      color: canAfford ? Colors.white : Colors.white54,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    reward.description,
+                    style: AppTextStyles.caption.copyWith(
+                      color: AppColors.txtInactive,
+                      fontSize: 11,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration: BoxDecoration(
+                color: canAfford
+                    ? AppColors.yellow90.withOpacity(0.15)
+                    : Colors.red.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(
+                '${reward.pointsCost} pts',
+                style: AppTextStyles.body.copyWith(
+                  color: canAfford ? AppColors.yellow90 : Colors.redAccent,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -323,6 +550,8 @@ class _LoyaltyRewardsScreenState extends State<LoyaltyRewardsScreen> {
   }
 
   Widget _buildHistoryItem(PointsHistoryItem item) {
+    final isEarning = item.points >= 0;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
@@ -333,7 +562,7 @@ class _LoyaltyRewardsScreenState extends State<LoyaltyRewardsScreen> {
       ),
       child: Row(
         children: [
-          // Ride icon
+          // Icon based on type
           Container(
             width: 44,
             height: 44,
@@ -342,8 +571,8 @@ class _LoyaltyRewardsScreenState extends State<LoyaltyRewardsScreen> {
               borderRadius: BorderRadius.circular(10),
             ),
             child: Icon(
-              Icons.directions_car,
-              color: AppColors.yellow90,
+              isEarning ? Icons.directions_car : Icons.redeem,
+              color: isEarning ? AppColors.yellow90 : Colors.orangeAccent,
               size: 22,
             ),
           ),
@@ -376,13 +605,15 @@ class _LoyaltyRewardsScreenState extends State<LoyaltyRewardsScreen> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
             decoration: BoxDecoration(
-              color: AppColors.success.withOpacity(0.15),
+              color: isEarning
+                  ? AppColors.success.withOpacity(0.15)
+                  : Colors.red.withOpacity(0.12),
               borderRadius: BorderRadius.circular(20),
             ),
             child: Text(
-              '+${item.points}',
+              isEarning ? '+${item.points}' : '${item.points}',
               style: AppTextStyles.body.copyWith(
-                color: AppColors.success,
+                color: isEarning ? AppColors.success : Colors.redAccent,
                 fontWeight: FontWeight.w600,
                 fontSize: 13,
               ),
@@ -393,7 +624,23 @@ class _LoyaltyRewardsScreenState extends State<LoyaltyRewardsScreen> {
     );
   }
 
-  void _showConvertPointsDialog() {
+  // ─── Redemption handlers ─────────────────────────────────────────────────
+
+  void _showInsufficientPointsMessage(_RewardOption reward) {
+    final needed = reward.pointsCost - _pointsBalance;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Not enough points. You need ${reward.pointsCost} pts but have $_pointsBalance. '
+          'Earn $needed more to unlock "${reward.label}".',
+        ),
+        backgroundColor: Colors.red.shade700,
+        duration: const Duration(seconds: 3),
+      ),
+    );
+  }
+
+  void _confirmRedeem(_RewardOption reward) {
     showModalBottomSheet(
       context: context,
       backgroundColor: AppColors.bgSec,
@@ -415,10 +662,10 @@ class _LoyaltyRewardsScreenState extends State<LoyaltyRewardsScreen> {
             ),
             const SizedBox(height: 24),
             Text(
-              'Convert Points',
+              'Redeem Reward',
               style: AppTextStyles.heading3,
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 20),
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
@@ -428,9 +675,14 @@ class _LoyaltyRewardsScreenState extends State<LoyaltyRewardsScreen> {
               ),
               child: Row(
                 children: [
-                  Icon(
-                    Icons.stars_rounded,
-                    color: AppColors.yellow90,
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: AppColors.yellow90.withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(reward.icon, color: AppColors.yellow90, size: 22),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
@@ -438,15 +690,17 @@ class _LoyaltyRewardsScreenState extends State<LoyaltyRewardsScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          '$_pointsBalance points available',
+                          reward.label,
                           style: AppTextStyles.body.copyWith(
-                            fontWeight: FontWeight.w500,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
+                        const SizedBox(height: 2),
                         Text(
-                          'Convert to ${CurrencyUtils.format(_pointsBalance / 100)} wallet credit',
+                          reward.description,
                           style: AppTextStyles.caption.copyWith(
                             color: AppColors.txtInactive,
+                            fontSize: 12,
                           ),
                         ),
                       ],
@@ -455,14 +709,42 @@ class _LoyaltyRewardsScreenState extends State<LoyaltyRewardsScreen> {
                 ],
               ),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.yellow90.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Points to deduct',
+                    style: AppTextStyles.body.copyWith(
+                      color: AppColors.txtInactive,
+                      fontSize: 13,
+                    ),
+                  ),
+                  Text(
+                    '-${reward.pointsCost} pts',
+                    style: AppTextStyles.body.copyWith(
+                      color: AppColors.yellow90,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 14,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
             Row(
               children: [
                 Expanded(
                   child: OutlinedButton(
-                      onPressed: () => Navigator.pop(dialogContext),
+                    onPressed: () => Navigator.pop(dialogContext),
                     style: OutlinedButton.styleFrom(
-                      side: BorderSide(color: AppColors.inputBorder),
+                      side: const BorderSide(color: AppColors.inputBorder),
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(30),
@@ -470,33 +752,19 @@ class _LoyaltyRewardsScreenState extends State<LoyaltyRewardsScreen> {
                     ),
                     child: Text(
                       'Cancel',
-                      style: AppTextStyles.body.copyWith(
-                        color: Colors.white,
-                      ),
+                      style: AppTextStyles.body.copyWith(color: Colors.white),
                     ),
                   ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: ElevatedButton(
-                    onPressed: () async {
-                      Navigator.pop(dialogContext);
-                      try {
-                        final dio = ApiClient().dio;
-                        await dio.post('/api/v1/loyalty/redeem', data: {
-                          'rewardType': 'ride_discount',
-                          'points': _pointsBalance,
-                        });
-                        if (!mounted) return; ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Points converted to wallet credit!')),
-                        );
-                        _fetchLoyaltyData(); // Refresh
-                      } catch (e) {
-                        if (!mounted) return; ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Failed to convert points. Try again.')),
-                        );
-                      }
-                    },
+                    onPressed: _isRedeeming
+                        ? null
+                        : () {
+                            Navigator.pop(dialogContext);
+                            _executeRedeem(reward);
+                          },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.yellow90,
                       foregroundColor: AppColors.bgPri,
@@ -506,7 +774,7 @@ class _LoyaltyRewardsScreenState extends State<LoyaltyRewardsScreen> {
                       ),
                     ),
                     child: Text(
-                      'Convert all',
+                      'Redeem',
                       style: AppTextStyles.body.copyWith(
                         color: AppColors.bgPri,
                         fontWeight: FontWeight.w600,
@@ -522,6 +790,58 @@ class _LoyaltyRewardsScreenState extends State<LoyaltyRewardsScreen> {
       ),
     );
   }
+
+  Future<void> _executeRedeem(_RewardOption reward) async {
+    setState(() => _isRedeeming = true);
+    try {
+      final dio = ApiClient().dio;
+      await dio.post('/api/v1/loyalty/redeem', data: {
+        'rewardType': reward.type,
+        'points': reward.pointsCost,
+      });
+      if (!mounted) return;
+
+      String successMsg;
+      switch (reward.type) {
+        case 'ride_discount':
+          successMsg = '10% discount applied to your next ride!';
+          break;
+        case 'free_ride':
+          successMsg = 'Free ride credit added to your account!';
+          break;
+        case 'priority_pickup':
+          successMsg = 'Priority pickup is now active for your next ride!';
+          break;
+        case 'vehicle_upgrade':
+          successMsg = 'Vehicle upgrade voucher created!';
+          break;
+        default:
+          successMsg = 'Reward redeemed successfully!';
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(successMsg)),
+      );
+      _fetchLoyaltyData(); // Refresh
+    } catch (e) {
+      if (!mounted) return;
+      final errorMsg = e.toString();
+      if (errorMsg.contains('Insufficient points') || errorMsg.contains('insufficient')) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Insufficient points. You need ${reward.pointsCost} pts to redeem "${reward.label}".'),
+            backgroundColor: Colors.red.shade700,
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to redeem reward. Please try again.')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isRedeeming = false);
+    }
+  }
 }
 
 class PointsHistoryItem {
@@ -533,5 +853,37 @@ class PointsHistoryItem {
     required this.title,
     required this.date,
     required this.points,
+  });
+}
+
+class _TierInfo {
+  final Color color;
+  final IconData icon;
+  final List<String> benefits;
+  final String? nextTier;
+  final int? nextThreshold;
+
+  const _TierInfo({
+    required this.color,
+    required this.icon,
+    required this.benefits,
+    required this.nextTier,
+    required this.nextThreshold,
+  });
+}
+
+class _RewardOption {
+  final String type;
+  final String label;
+  final String description;
+  final IconData icon;
+  final int pointsCost;
+
+  const _RewardOption({
+    required this.type,
+    required this.label,
+    required this.description,
+    required this.icon,
+    required this.pointsCost,
   });
 }

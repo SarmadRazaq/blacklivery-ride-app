@@ -698,6 +698,22 @@ class _RideDetailsScreenState extends State<RideDetailsScreen> {
               if (ride.driver != null)
                 _receiptRow('Driver', ride.driver!.name),
               const Divider(color: AppColors.inputBorder, height: 24),
+
+              // Fare breakdown (from backend pricing.breakdown)
+              if (ride.baseFare != null)
+                _receiptRow('Base fare', CurrencyUtils.format(ride.baseFare!, currency: ride.currency)),
+              if (ride.distanceFare != null)
+                _receiptRow('Distance', CurrencyUtils.format(ride.distanceFare!, currency: ride.currency)),
+              if (ride.timeFare != null)
+                _receiptRow('Time', CurrencyUtils.format(ride.timeFare!, currency: ride.currency)),
+              if (ride.surgeFare != null && ride.surgeFare! > 0)
+                _receiptRow(
+                  'Surge${ride.surgeMultiplier != null ? ' (${ride.surgeMultiplier!.toStringAsFixed(1)}x)' : ''}',
+                  CurrencyUtils.format(ride.surgeFare!, currency: ride.currency),
+                ),
+              if (ride.baseFare != null || ride.distanceFare != null || ride.timeFare != null)
+                const Divider(color: AppColors.inputBorder, height: 24),
+
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -755,7 +771,7 @@ class _RideDetailsScreenState extends State<RideDetailsScreen> {
   void _openSupportChat(BuildContext context, String topic) {
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => const SupportChatScreen()),
+      MaterialPageRoute(builder: (_) => SupportChatScreen(initialTopic: topic)),
     );
   }
 

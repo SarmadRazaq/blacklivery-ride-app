@@ -91,7 +91,7 @@ class _SelectRideScreenState extends State<SelectRideScreen> {
             LatLng(pickup.latitude, pickup.longitude),
             LatLng(dropoff.latitude, dropoff.longitude),
           ],
-          color: AppColors.yellow90,
+          color: AppColors.routeBlue,
           width: 4,
           patterns: [PatternItem.dash(20), PatternItem.gap(10)],
         ),
@@ -150,7 +150,7 @@ class _SelectRideScreenState extends State<SelectRideScreen> {
               Polyline(
                 polylineId: const PolylineId('route'),
                 points: routePoints,
-                color: AppColors.yellow90,
+                color: AppColors.routeBlue,
                 width: 4,
               ),
             };

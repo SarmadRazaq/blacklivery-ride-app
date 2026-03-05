@@ -5,6 +5,7 @@ import 'package:share_plus/share_plus.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../core/utils/currency_utils.dart';
+import '../../core/models/location_model.dart';
 import '../../core/models/ride_history_model.dart';
 import '../../core/services/ride_service.dart';
 import '../widgets/vehicle_icon.dart';
@@ -222,7 +223,7 @@ class _ModifyRideScreenState extends State<ModifyRideScreen> {
                         ),
                         GestureDetector(
                           onTap: () async {
-                            final result = await Navigator.push<String>(
+                            final result = await Navigator.push<Location>(
                               context,
                               MaterialPageRoute(
                                 builder: (_) => const MapPickerScreen(
@@ -231,7 +232,7 @@ class _ModifyRideScreenState extends State<ModifyRideScreen> {
                               ),
                             );
                             if (result != null && mounted) {
-                              setState(() => _destination = result);
+                              setState(() => _destination = result.address);
                             }
                           },
                           child: Icon(
@@ -310,7 +311,7 @@ class _ModifyRideScreenState extends State<ModifyRideScreen> {
                         ),
                         GestureDetector(
                           onTap: () async {
-                            final result = await Navigator.push<String>(
+                            final result = await Navigator.push<Location>(
                               context,
                               MaterialPageRoute(
                                 builder: (_) => const MapPickerScreen(
@@ -319,7 +320,7 @@ class _ModifyRideScreenState extends State<ModifyRideScreen> {
                               ),
                             );
                             if (result != null && mounted) {
-                              setState(() => _pickup = result);
+                              setState(() => _pickup = result.address);
                             }
                           },
                           child: Icon(

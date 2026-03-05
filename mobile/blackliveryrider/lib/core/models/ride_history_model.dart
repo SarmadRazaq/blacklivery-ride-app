@@ -43,6 +43,11 @@ class RideHistoryItem {
   final double? pickupLng;
   final double? dropoffLat;
   final double? dropoffLng;
+  final double? baseFare;
+  final double? distanceFare;
+  final double? timeFare;
+  final double? surgeFare;
+  final double? surgeMultiplier;
 
   RideHistoryItem({
     required this.id,
@@ -60,6 +65,11 @@ class RideHistoryItem {
     this.pickupLng,
     this.dropoffLat,
     this.dropoffLng,
+    this.baseFare,
+    this.distanceFare,
+    this.timeFare,
+    this.surgeFare,
+    this.surgeMultiplier,
   });
 
   factory RideHistoryItem.fromJson(Map<String, dynamic> json) {
@@ -88,6 +98,9 @@ class RideHistoryItem {
         (json['price'] as num?)?.toDouble() ??
         0.0;
 
+    // Parse fare breakdown from pricing.breakdown (PriceBreakdown from backend)
+    final breakdown = pricing?['breakdown'] as Map<String, dynamic>?;
+
     return RideHistoryItem(
       id: json['id'] ?? '',
       pickupAddress: json['pickupAddress'] ?? pickup?['address'] ?? '',
@@ -104,6 +117,11 @@ class RideHistoryItem {
       pickupLng: (json['pickupLng'] as num?)?.toDouble() ?? (pickup?['lng'] as num?)?.toDouble(),
       dropoffLat: (json['dropoffLat'] as num?)?.toDouble() ?? (dropoff?['lat'] as num?)?.toDouble(),
       dropoffLng: (json['dropoffLng'] as num?)?.toDouble() ?? (dropoff?['lng'] as num?)?.toDouble(),
+      baseFare: (breakdown?['baseFare'] as num?)?.toDouble(),
+      distanceFare: (breakdown?['distanceFare'] as num?)?.toDouble(),
+      timeFare: (breakdown?['timeFare'] as num?)?.toDouble(),
+      surgeFare: (breakdown?['surgeFare'] as num?)?.toDouble(),
+      surgeMultiplier: (pricing?['surgeMultiplier'] as num?)?.toDouble() ?? (breakdown?['surgeMultiplier'] as num?)?.toDouble(),
     );
   }
 
@@ -131,6 +149,11 @@ class RideHistoryItem {
       'pickupLng': pickupLng,
       'dropoffLat': dropoffLat,
       'dropoffLng': dropoffLng,
+      'baseFare': baseFare,
+      'distanceFare': distanceFare,
+      'timeFare': timeFare,
+      'surgeFare': surgeFare,
+      'surgeMultiplier': surgeMultiplier,
     };
   }
 }

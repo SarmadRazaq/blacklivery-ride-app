@@ -24,6 +24,7 @@ class DriverArrivingScreen extends StatefulWidget {
 
 class _DriverArrivingScreenState extends State<DriverArrivingScreen> {
   LatLng? _driverLatLng;
+  int? _etaMinutes;
   bool _hasNavigatedToTrip = false;
   final SocketService _socketService = SocketService();
   final LocationService _locationService = LocationService();
@@ -58,8 +59,12 @@ class _DriverArrivingScreenState extends State<DriverArrivingScreen> {
         if (mounted) {
           final lat = (data['latitude'] as num?)?.toDouble();
           final lng = (data['longitude'] as num?)?.toDouble();
+          final eta = (data['eta'] as num?)?.toInt();
           if (lat != null && lng != null) {
-            setState(() => _driverLatLng = LatLng(lat, lng));
+            setState(() {
+              _driverLatLng = LatLng(lat, lng);
+              if (eta != null) _etaMinutes = eta;
+            });
           }
         }
       });
@@ -355,7 +360,9 @@ class _DriverArrivingScreenState extends State<DriverArrivingScreen> {
                           Text(
                             isArrived
                                 ? 'Please proceed to your pickup spot'
-                                : 'Arriving soon...', // In real app, calculate ETA
+                                : _etaMinutes != null
+                                    ? '$_etaMinutes min away'
+                                    : 'Arriving soon...',
                             style: AppTextStyles.caption.copyWith(
                               color: isArrived
                                   ? AppColors.yellow90

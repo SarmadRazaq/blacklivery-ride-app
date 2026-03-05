@@ -90,7 +90,7 @@ class _RideMapViewState extends State<RideMapView> {
         Polyline(
           polylineId: const PolylineId('route'),
           points: [widget.pickup!, widget.dropoff!],
-          color: AppColors.yellow90,
+          color: AppColors.routeBlue,
           width: 4,
         ),
       };
@@ -101,7 +101,7 @@ class _RideMapViewState extends State<RideMapView> {
         Polyline(
           polylineId: const PolylineId('route'),
           points: points,
-          color: AppColors.yellow90,
+          color: AppColors.routeBlue,
           width: 4,
         ),
       };

@@ -2,13 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_stripe/flutter_stripe.dart';
 import '../config/env_config.dart';
 import 'payment_gateway.dart';
+import 'stripe_card_form_screen.dart';
 
 /// Stripe native SDK gateway using `flutter_stripe`.
 ///
-/// Requires the backend to return a `clientSecret` from a Stripe PaymentIntent
-/// (set `sdkMode: true` in the initiate request).  The Stripe Payment Sheet
-/// handles card input, 3DS verification, Apple Pay / Google Pay natively —
-/// no WebView required.
+/// Uses an in-app [CardFormField] screen instead of [presentPaymentSheet] to
+/// avoid a known Android bug where the Payment Sheet BottomSheet's card-number
+/// field is untappable on certain devices / emulators.
 class StripeNativeGateway extends PaymentGateway {
   bool _initialized = false;
 
@@ -28,6 +28,7 @@ class StripeNativeGateway extends PaymentGateway {
     }
     Stripe.publishableKey = key;
     Stripe.merchantIdentifier = 'merchant.com.blacklivery';
+    Stripe.urlScheme = 'blacklivery';
     await Stripe.instance.applySettings();
     _initialized = true;
   }
@@ -53,36 +54,31 @@ class StripeNativeGateway extends PaymentGateway {
     final reference = backendData['reference'] as String?;
 
     try {
-      // Present the Stripe Payment Sheet (handles card input + 3DS)
-      await Stripe.instance.initPaymentSheet(
-        paymentSheetParameters: SetupPaymentSheetParameters(
-          paymentIntentClientSecret: clientSecret,
-          merchantDisplayName: 'BlackLivery',
-          style: ThemeMode.dark,
-          appearance: const PaymentSheetAppearance(
-            colors: PaymentSheetAppearanceColors(
-              background: Color(0xFF1A1A2E),
-              primary: Color(0xFFFFD700),
-              componentBackground: Color(0xFF16213E),
-              componentText: Color(0xFFFFFFFF),
-              primaryText: Color(0xFFFFFFFF),
-              secondaryText: Color(0xFFB0B0B0),
-              placeholderText: Color(0xFF6C6C6C),
-              icon: Color(0xFFFFD700),
-            ),
-            shapes: PaymentSheetShape(
-              borderRadius: 12,
-            ),
+      // Navigate to an in-app card form (CardFormField) instead of the
+      // Payment Sheet BottomSheet — avoids the Android touch-target bug.
+      final result = await Navigator.push<bool>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => StripeCardFormScreen(
+            clientSecret: clientSecret,
+            email: email,
+            amount: amount,
+            currency: currency,
           ),
-          billingDetails: BillingDetails(email: email),
         ),
       );
 
-      await Stripe.instance.presentPaymentSheet();
+      if (result == true) {
+        return NativePaymentResult(
+          success: true,
+          reference: reference,
+        );
+      }
 
       return NativePaymentResult(
-        success: true,
+        success: false,
         reference: reference,
+        errorMessage: 'Payment was not completed',
       );
     } on StripeException catch (e) {
       final code = e.error.code;
@@ -96,7 +92,8 @@ class StripeNativeGateway extends PaymentGateway {
       return NativePaymentResult(
         success: false,
         reference: reference,
-        errorMessage: e.error.localizedMessage ?? e.error.message ?? 'Stripe error',
+        errorMessage:
+            e.error.localizedMessage ?? e.error.message ?? 'Stripe error',
       );
     } catch (e) {
       return NativePaymentResult(

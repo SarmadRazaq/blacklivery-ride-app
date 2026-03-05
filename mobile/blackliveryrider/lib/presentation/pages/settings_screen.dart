@@ -1,11 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../core/providers/auth_provider.dart';
 import '../../core/providers/theme_provider.dart';
+import '../../core/network/api_client.dart';
+import '../../core/services/auth_service.dart';
+import '../../core/services/biometric_service.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_color_theme.dart';
 import '../../core/theme/app_text_styles.dart';
 import 'emergency_contacts_screen.dart';
+import 'login_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -15,10 +20,13 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
+  final BiometricService _biometricService = BiometricService();
+  final AuthService _authService = AuthService();
   bool _pushNotifications = true;
   bool _emailNotifications = true;
   bool _smsNotifications = false;
-  bool _unlockWithFaceId = true;
+  bool _unlockWithFaceId = false;
+  bool _biometricAvailable = false;
   String _selectedLanguage = 'English';
 
   @override
@@ -29,13 +37,40 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
+
+    // Load biometric state from BiometricService (single source of truth)
+    final biometricAvailable = await _biometricService.canAuthenticate();
+    final biometricEnabled = await _biometricService.isBiometricEnabled();
+
     setState(() {
       _pushNotifications = prefs.getBool('pushNotifications') ?? true;
       _emailNotifications = prefs.getBool('emailNotifications') ?? true;
       _smsNotifications = prefs.getBool('smsNotifications') ?? false;
-      _unlockWithFaceId = prefs.getBool('unlockWithFaceId') ?? true;
+      _biometricAvailable = biometricAvailable;
+      _unlockWithFaceId = biometricEnabled;
       _selectedLanguage = prefs.getString('language') ?? 'English';
     });
+
+    // Then try to sync from backend
+    try {
+      final api = ApiClient();
+      final response = await api.dio.get('/api/v1/auth/notification-preferences');
+      final data = response.data['data'] as Map<String, dynamic>?;
+      if (data != null && mounted) {
+        setState(() {
+          _pushNotifications = data['push'] as bool? ?? _pushNotifications;
+          _emailNotifications = data['email'] as bool? ?? _emailNotifications;
+          _smsNotifications = data['sms'] as bool? ?? _smsNotifications;
+        });
+        // Cache backend values locally
+        await prefs.setBool('pushNotifications', _pushNotifications);
+        await prefs.setBool('emailNotifications', _emailNotifications);
+        await prefs.setBool('smsNotifications', _smsNotifications);
+      }
+    } catch (e) {
+      debugPrint('Failed to load notification preferences from backend: $e');
+      // Fall back to local SharedPreferences values (already loaded)
+    }
   }
 
   Future<void> _saveSetting(String key, dynamic value) async {
@@ -44,6 +79,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
       await prefs.setBool(key, value);
     } else if (value is String) {
       await prefs.setString(key, value);
+    }
+
+    // Sync notification preferences to backend
+    if (key == 'pushNotifications' || key == 'emailNotifications' || key == 'smsNotifications') {
+      _syncNotificationPreferences();
+    }
+  }
+
+  Future<void> _syncNotificationPreferences() async {
+    try {
+      final api = ApiClient();
+      await api.dio.patch('/api/v1/auth/notification-preferences', data: {
+        'push': _pushNotifications,
+        'email': _emailNotifications,
+        'sms': _smsNotifications,
+      });
+    } catch (e) {
+      debugPrint('Failed to sync notification preferences to backend: $e');
     }
   }
 
@@ -79,15 +132,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Security section - Face ID and Emergency Contacts
-            _buildToggleItem(
-              icon: Icons.face,
-              title: 'Unlock with Face ID',
-              value: _unlockWithFaceId,
-              onChanged: (value) {
-                setState(() => _unlockWithFaceId = value);
-                _saveSetting('unlockWithFaceId', value);
-              },
-            ),
+            if (_biometricAvailable)
+              _buildToggleItem(
+                icon: Icons.face,
+                title: 'Unlock with Face ID',
+                value: _unlockWithFaceId,
+                onChanged: _toggleBiometric,
+              ),
 
             const SizedBox(height: 12),
 
@@ -192,13 +243,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             _buildMenuItem(
               icon: Icons.download_outlined,
               title: 'Download My Data',
-              onTap: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Data download request submitted'),
-                  ),
-                );
-              },
+              onTap: _requestDataExport,
             ),
 
             const SizedBox(height: 12),
@@ -212,6 +257,249 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ).showSnackBar(const SnackBar(content: Text('Cache cleared')));
               },
             ),
+
+            const SizedBox(height: 24),
+
+            // Danger zone
+            Text(
+              'Account',
+              style: AppTextStyles.captionOf(context).copyWith(fontSize: 12),
+            ),
+            const SizedBox(height: 12),
+
+            _buildDangerMenuItem(
+              icon: Icons.delete_forever_outlined,
+              title: 'Delete Account',
+              onTap: _showDeleteAccountDialog,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Toggle biometric unlock using BiometricService (single source of truth).
+  Future<void> _toggleBiometric(bool value) async {
+    try {
+      if (value) {
+        // Prompt biometric auth before enabling
+        final success = await _biometricService.authenticate(
+          reason: 'Verify your identity to enable biometric unlock',
+        );
+        if (!success) return;
+      }
+      await _biometricService.setBiometricEnabled(value);
+      if (mounted) {
+        setState(() => _unlockWithFaceId = value);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to toggle biometrics: $e')),
+        );
+      }
+    }
+  }
+
+  /// Request data export from the backend.
+  Future<void> _requestDataExport() async {
+    try {
+      final api = ApiClient();
+      await api.dio.post('/api/v1/auth/data-export');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Data export requested. You\'ll receive an email when ready.',
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to request data export: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  /// Show delete account confirmation dialog with password entry.
+  void _showDeleteAccountDialog() {
+    final ct = AppColorTheme.of(context);
+    final passwordController = TextEditingController();
+    final parentContext = context;
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        bool isDeleting = false;
+        return StatefulBuilder(
+          builder: (dialogContext, setDialogState) {
+            return AlertDialog(
+              backgroundColor: ct.bgSec,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              title: Text(
+                'Delete Account?',
+                style: AppTextStyles.heading3Of(context).copyWith(
+                  color: Colors.red,
+                ),
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'This action cannot be undone. All your data will be permanently deleted.',
+                    style: AppTextStyles.bodyOf(context).copyWith(
+                      color: ct.txtInactive,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Enter your password to confirm:',
+                    style: AppTextStyles.captionOf(context).copyWith(
+                      color: ct.txtInactive,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: passwordController,
+                    obscureText: true,
+                    style: AppTextStyles.bodyOf(context),
+                    decoration: InputDecoration(
+                      hintText: 'Password',
+                      hintStyle: AppTextStyles.bodyOf(context).copyWith(
+                        color: ct.txtInactive,
+                      ),
+                      filled: true,
+                      fillColor: ct.inputBg,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: isDeleting
+                      ? null
+                      : () => Navigator.pop(dialogContext),
+                  child: Text('Cancel',
+                      style: AppTextStyles.bodyOf(context)),
+                ),
+                TextButton(
+                  onPressed: isDeleting
+                      ? null
+                      : () async {
+                          if (passwordController.text.isEmpty) {
+                            ScaffoldMessenger.of(parentContext).showSnackBar(
+                              const SnackBar(
+                                content: Text('Please enter your password'),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                            return;
+                          }
+
+                          setDialogState(() => isDeleting = true);
+
+                          try {
+                            await _authService.deleteAccount(
+                              passwordController.text,
+                            );
+                            if (mounted) {
+                              Navigator.pop(dialogContext);
+                              try {
+                                await Provider.of<AuthProvider>(
+                                  parentContext,
+                                  listen: false,
+                                ).logout();
+                              } catch (_) {}
+                              if (mounted) {
+                                Navigator.pushAndRemoveUntil(
+                                  parentContext,
+                                  MaterialPageRoute(
+                                    builder: (_) => const LoginScreen(),
+                                  ),
+                                  (route) => false,
+                                );
+                              }
+                            }
+                          } catch (e) {
+                            setDialogState(() => isDeleting = false);
+                            if (mounted) {
+                              ScaffoldMessenger.of(parentContext).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    'Failed to delete account: $e',
+                                  ),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                            }
+                          }
+                        },
+                  child: isDeleting
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.red,
+                          ),
+                        )
+                      : Text(
+                          'Delete',
+                          style: AppTextStyles.bodyOf(context).copyWith(
+                            color: Colors.red,
+                          ),
+                        ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildDangerMenuItem({
+    required IconData icon,
+    required String title,
+    required VoidCallback onTap,
+  }) {
+    final ct = AppColorTheme.of(context);
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: ct.inputBg,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.red.withOpacity(0.3)),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: Colors.red, size: 22),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Text(
+                title,
+                style: AppTextStyles.bodyOf(context).copyWith(
+                  fontSize: 14,
+                  color: Colors.red,
+                ),
+              ),
+            ),
+            Icon(Icons.chevron_right, color: Colors.red.withOpacity(0.5), size: 20),
           ],
         ),
       ),

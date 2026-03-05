@@ -187,6 +187,34 @@ class _SavedPlacesScreenState extends State<SavedPlacesScreen> {
     });
   }
 
+  void _editOtherPlace(SavedPlace place) async {
+    final result = await Navigator.push<SavedPlace>(
+      context,
+      MaterialPageRoute(
+        builder: (context) => AddPlaceScreen(existingPlace: place),
+      ),
+    );
+
+    if (result != null) {
+      // Keep the original id so the backend can update
+      final updated = SavedPlace(
+        id: place.id,
+        name: result.name,
+        address: result.address,
+        type: 'other',
+        latitude: result.latitude,
+        longitude: result.longitude,
+      );
+      final persisted = await _placesService.updateSavedPlace(updated);
+      setState(() {
+        final idx = _otherPlaces.indexWhere((p) => p.id == place.id);
+        if (idx >= 0) {
+          _otherPlaces[idx] = persisted ?? updated;
+        }
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -404,11 +432,13 @@ class _SavedPlacesScreenState extends State<SavedPlacesScreen> {
   }
 
   Widget _buildOtherPlaceItem(SavedPlace place) {
-    return GestureDetector(
+    final child = GestureDetector(
       onTap: () {
         if (widget.onPlaceSelected != null) {
           widget.onPlaceSelected!(place);
           Navigator.pop(context);
+        } else {
+          _editOtherPlace(place);
         }
       },
       child: Container(
@@ -459,6 +489,18 @@ class _SavedPlacesScreenState extends State<SavedPlacesScreen> {
               ),
             ),
             GestureDetector(
+              onTap: () => _editOtherPlace(place),
+              child: Padding(
+                padding: const EdgeInsets.all(4),
+                child: Icon(
+                  Icons.edit_outlined,
+                  color: AppColors.txtInactive,
+                  size: 18,
+                ),
+              ),
+            ),
+            const SizedBox(width: 4),
+            GestureDetector(
               onTap: () => _deleteOtherPlace(place),
               child: Padding(
                 padding: const EdgeInsets.all(4),
@@ -472,6 +514,57 @@ class _SavedPlacesScreenState extends State<SavedPlacesScreen> {
           ],
         ),
       ),
+    );
+
+    return Dismissible(
+      key: ValueKey(place.id),
+      direction: DismissDirection.endToStart,
+      background: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: 20),
+        decoration: BoxDecoration(
+          color: Colors.red.withOpacity(0.2),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: const Icon(Icons.delete, color: Colors.red),
+      ),
+      confirmDismiss: (_) async {
+        final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            backgroundColor: AppColors.bgSec,
+            title: Text(
+              'Delete ${place.name}?',
+              style: AppTextStyles.heading3.copyWith(fontSize: 16),
+            ),
+            content: Text(
+              'This saved place will be permanently removed.',
+              style: AppTextStyles.body.copyWith(color: AppColors.txtInactive),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: Text('Cancel',
+                    style: AppTextStyles.body.copyWith(color: AppColors.txtInactive)),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: Text('Delete',
+                    style: AppTextStyles.body.copyWith(color: Colors.red)),
+              ),
+            ],
+          ),
+        );
+        return confirmed == true;
+      },
+      onDismissed: (_) async {
+        final success = await _placesService.deleteSavedPlace(place.id);
+        if (success) {
+          setState(() => _otherPlaces.remove(place));
+        }
+      },
+      child: child,
     );
   }
 }

@@ -271,6 +271,9 @@ class RideService {
     int? hoursBooked,
     String? airportCode,
     DateTime? scheduledAt,
+    bool isForSomeoneElse = false,
+    String? recipientName,
+    String? recipientPhone,
   }) async {
     try {
       final payload = <String, dynamic>{
@@ -298,6 +301,15 @@ class RideService {
       if (scheduledAt != null) {
         payload['scheduledAt'] = scheduledAt.toUtc().toIso8601String();
       }
+      if (isForSomeoneElse) {
+        payload['isForSomeoneElse'] = true;
+        if (recipientName != null && recipientName.isNotEmpty) {
+          payload['recipientName'] = recipientName;
+        }
+        if (recipientPhone != null && recipientPhone.isNotEmpty) {
+          payload['recipientPhone'] = recipientPhone;
+        }
+      }
 
       final response = await _dio.post(
         '/api/v1/rides',
@@ -320,7 +332,7 @@ class RideService {
       };
     } catch (e) {
       debugPrint('RideService.createRideRequest error: $e');
-      throw Exception('Failed to create ride request');
+      rethrow;
     }
   }
 

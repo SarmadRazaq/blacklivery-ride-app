@@ -37,6 +37,9 @@ class AppColors {
   static const Color warning = Color(0xFFFFA726);
   static const Color info = Color(0xFF42A5F5);
 
+  // Route / map colors
+  static const Color routeBlue = Color(0xFF4285F4);
+
   // Gradient colors
   static const Color gradientStart = Color(0xFFD2BF9F);
   static const Color gradientEnd = Color(0xFFB8A080);

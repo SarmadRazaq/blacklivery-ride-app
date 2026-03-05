@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../core/services/auth_service.dart';
 import '../../core/services/biometric_service.dart';
+import '../../core/providers/auth_provider.dart';
 import 'change_password_screen.dart';
 import 'active_sessions_screen.dart';
 import 'login_history_screen.dart';
+import 'login_screen.dart';
 
 class LoginSecurityScreen extends StatefulWidget {
   const LoginSecurityScreen({super.key});
@@ -365,6 +368,9 @@ class _LoginSecurityScreenState extends State<LoginSecurityScreen> {
   void _showDeleteAccountDialog() {
     final passwordController = TextEditingController();
     bool isDeleting = false;
+    // Capture the State's BuildContext before it is shadowed by
+    // StatefulBuilder's builder parameter.
+    final parentContext = context;
 
     showDialog(
       context: context,
@@ -446,10 +452,25 @@ class _LoginSecurityScreenState extends State<LoginSecurityScreen> {
                         );
                         if (mounted) {
                           Navigator.pop(dialogContext);
-                          // Navigate to login screen and clear stack
-                          Navigator.of(
-                            context,
-                          ).pushNamedAndRemoveUntil('/login', (route) => false);
+                          // Clear auth state: disconnect socket, remove FCM
+                          // token, and set user to null (matches logout flow).
+                          // Errors are safe to ignore since Firebase user is
+                          // already deleted.
+                          try {
+                            await Provider.of<AuthProvider>(
+                              parentContext,
+                              listen: false,
+                            ).logout();
+                          } catch (_) {}
+                          if (mounted) {
+                            Navigator.pushAndRemoveUntil(
+                              parentContext,
+                              MaterialPageRoute(
+                                builder: (_) => const LoginScreen(),
+                              ),
+                              (route) => false,
+                            );
+                          }
                         }
                       } catch (e) {
                         setDialogState(() => isDeleting = false);

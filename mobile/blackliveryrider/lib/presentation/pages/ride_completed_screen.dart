@@ -234,10 +234,22 @@ class _RideCompletedScreenState extends State<RideCompletedScreen> {
                               width: 2,
                             ),
                           ),
-                          child: const Icon(
-                            Icons.person,
-                            color: Colors.white,
-                            size: 28,
+                          child: ClipOval(
+                            child: driver?.photoUrl != null
+                                ? Image.network(
+                                    driver!.photoUrl,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, _, _) => const Icon(
+                                      Icons.person,
+                                      color: Colors.white,
+                                      size: 28,
+                                    ),
+                                  )
+                                : const Icon(
+                                    Icons.person,
+                                    color: Colors.white,
+                                    size: 28,
+                                  ),
                           ),
                         ),
                         const SizedBox(width: 16),

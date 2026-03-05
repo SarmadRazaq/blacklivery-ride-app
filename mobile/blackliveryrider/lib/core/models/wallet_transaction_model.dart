@@ -5,6 +5,7 @@ class WalletTransaction {
   final double amount;
   final String type; // 'credit' or 'debit'
   final String currency;
+  final String? reference;
 
   WalletTransaction({
     required this.id,
@@ -13,6 +14,7 @@ class WalletTransaction {
     required this.amount,
     required this.type,
     this.currency = 'USD',
+    this.reference,
   });
 
   factory WalletTransaction.fromJson(Map<String, dynamic> json) {
@@ -37,6 +39,7 @@ class WalletTransaction {
       amount: (json['amount'] as num?)?.toDouble() ?? 0.0,
       type: json['type'] ?? 'debit',
       currency: json['currency'] ?? 'USD',
+      reference: json['reference'] ?? json['ref'] ?? json['transactionRef'],
     );
   }
 
@@ -48,6 +51,7 @@ class WalletTransaction {
       'amount': amount,
       'type': type,
       'currency': currency,
+      if (reference != null) 'reference': reference,
     };
   }
 }

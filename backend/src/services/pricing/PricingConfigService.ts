@@ -3,6 +3,7 @@ import { db } from '../../config/firebase';
 export interface NigeriaPricingConfig {
     pricing: Record<string, { baseFare: number; perMinute: number; waitTimeFee: number }>;
     categories: Record<string, { perKm: number; minFare: number }>;
+    hourly?: Record<string, number>;
     addOns?: {
         premiumVehicle?: number;
         chauffeurSedan?: number;

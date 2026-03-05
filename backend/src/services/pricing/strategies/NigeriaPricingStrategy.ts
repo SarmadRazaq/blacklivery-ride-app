@@ -20,14 +20,50 @@ export class NigeriaPricingStrategy implements IPricingStrategy {
             'sedan': { base: 1000, perKm: 150, perMin: 20, minFare: 2500, cancel: 500, noShow: 750 },
             'suv': { base: 1500, perKm: 200, perMin: 30, minFare: 4000, cancel: 500, noShow: 750 },
             'van': { base: 3000, perKm: 250, perMin: 35, minFare: 7000, cancel: 1000, noShow: 1500 }
-        }
+        },
+        HOURLY_RATES: {
+            'sedan': 5000,
+            'suv': 7500,
+            'xl': 12000
+        } as Record<string, number>,
+        MINIMUM_HOURS: 2
     };
 
     async calculateFare(ride: IRide, distanceKm: number, durationMinutes: number): Promise<PriceBreakdown> {
+        if (ride.bookingType === 'hourly') {
+            return this.calculateHourlyFare(ride);
+        }
         if (ride.bookingType === 'delivery') {
             return this.calculateDeliveryFare(ride, distanceKm, durationMinutes);
         }
         return this.calculateRideFare(ride, distanceKm, durationMinutes);
+    }
+
+    private async calculateHourlyFare(ride: IRide): Promise<PriceBreakdown> {
+        const config = await pricingConfigService.getNigeriaConfig();
+        const hours = ride.hoursBooked ?? 2;
+
+        if (hours < this.DEFAULTS.MINIMUM_HOURS) {
+            throw new Error('Minimum 2 Hours');
+        }
+
+        const category = ride.vehicleCategory?.toLowerCase() || 'sedan';
+        const hourlyConfig = config?.hourly || this.DEFAULTS.HOURLY_RATES;
+        const hourlyRate = (hourlyConfig as any)[category] || this.DEFAULTS.HOURLY_RATES[category] || 5000;
+        const totalFare = hours * hourlyRate;
+
+        return {
+            baseFare: totalFare,
+            distanceFare: 0,
+            timeFare: 0,
+            surgeFare: 0,
+            waitTimeFare: 0,
+            addOnsFare: 0,
+            otherFees: 0,
+            totalFare,
+            currency: 'NGN',
+            surgeMultiplier: 1.0
+        };
     }
 
     private async calculateRideFare(ride: IRide, distanceKm: number, durationMinutes: number): Promise<PriceBreakdown> {

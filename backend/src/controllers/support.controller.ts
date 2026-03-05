@@ -222,3 +222,42 @@ export const closeTicket = async (req: AuthRequest, res: Response): Promise<void
     }
 };
 
+/**
+ * User: Close own support ticket
+ */
+export const closeOwnTicket = async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const { id } = req.params;
+        const ticketRef = db.collection('support_tickets').doc(id);
+        const doc = await ticketRef.get();
+
+        if (!doc.exists) {
+            res.status(404).json({ message: 'Ticket not found' });
+            return;
+        }
+
+        const data = doc.data()!;
+        if (data.userId !== req.user.uid) {
+            res.status(403).json({ message: 'Unauthorized' });
+            return;
+        }
+
+        if (data.status === 'closed') {
+            res.status(409).json({ message: 'Ticket is already closed' });
+            return;
+        }
+
+        await ticketRef.update({
+            status: 'closed',
+            closedBy: req.user.uid,
+            closedAt: new Date(),
+            updatedAt: new Date()
+        });
+
+        res.status(200).json({ message: 'Ticket closed' });
+    } catch (error) {
+        logger.error({ err: error }, 'Failed to close own ticket');
+        res.status(500).json({ message: 'Internal server error' });
+    }
+};
+

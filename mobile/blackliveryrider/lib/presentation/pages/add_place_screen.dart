@@ -9,7 +9,9 @@ import 'name_place_screen.dart';
 import 'map_picker_screen.dart';
 
 class AddPlaceScreen extends StatefulWidget {
-  const AddPlaceScreen({super.key});
+  final SavedPlace? existingPlace;
+
+  const AddPlaceScreen({super.key, this.existingPlace});
 
   @override
   State<AddPlaceScreen> createState() => _AddPlaceScreenState();
@@ -28,6 +30,10 @@ class _AddPlaceScreenState extends State<AddPlaceScreen> {
   void initState() {
     super.initState();
     _searchController.addListener(_onSearchChanged);
+    // Pre-fill search with existing address when editing
+    if (widget.existingPlace != null) {
+      _searchController.text = widget.existingPlace!.address;
+    }
   }
 
   void _onSearchChanged() {
@@ -66,7 +72,7 @@ class _AddPlaceScreenState extends State<AddPlaceScreen> {
       MaterialPageRoute(
         builder: (context) => NamePlaceScreen(
           address: result.address,
-          suggestedName: result.name,
+          suggestedName: widget.existingPlace?.name ?? result.name,
           latitude: result.latitude,
           longitude: result.longitude,
         ),
@@ -181,7 +187,7 @@ class _AddPlaceScreenState extends State<AddPlaceScreen> {
           ),
         ),
         title: Text(
-          'Add place',
+          widget.existingPlace != null ? 'Edit place' : 'Add place',
           style: AppTextStyles.heading3.copyWith(fontSize: 18),
         ),
         centerTitle: true,

@@ -6,6 +6,7 @@ import '../../core/utils/currency_utils.dart';
 import 'package:provider/provider.dart';
 import '../../core/data/booking_state.dart';
 import '../../core/services/socket_service.dart';
+import 'package:share_plus/share_plus.dart';
 import '../widgets/vehicle_icon.dart';
 import '../widgets/ride_map_view.dart';
 import 'ride_completed_screen.dart';
@@ -66,9 +67,13 @@ class _ArrivingDestinationScreenState extends State<ArrivingDestinationScreen> {
   }
 
   void _shareRideInfo() {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('Share link copied!')));
+    final bookingState = Provider.of<BookingState>(context, listen: false);
+    final pickup = bookingState.pickupLocation?.name ?? 'Unknown';
+    final dropoff = bookingState.dropoffLocation?.name ?? 'Unknown';
+    final driver = bookingState.assignedDriver?.name ?? 'Unknown';
+    Share.share(
+      'I\'m on a BlackLivery ride from $pickup to $dropoff with driver $driver. Track my trip!',
+    );
   }
 
   void _openSafety() {
@@ -526,6 +531,17 @@ class _ArrivingDestinationScreenState extends State<ArrivingDestinationScreen> {
                         value: _quietModeEnabled,
                         onChanged: (value) {
                           setState(() => _quietModeEnabled = value);
+                          // Notify driver via socket
+                          final rideId = Provider.of<BookingState>(
+                            context,
+                            listen: false,
+                          ).rideId;
+                          if (rideId != null) {
+                            _socketService.emitQuietMode(
+                              rideId: rideId,
+                              enabled: value,
+                            );
+                          }
                         },
                         activeThumbColor: AppColors.success,
                         activeTrackColor: AppColors.success.withOpacity(0.3),

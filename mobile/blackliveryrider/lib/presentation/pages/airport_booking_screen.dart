@@ -51,14 +51,14 @@ class _AirportBookingScreenState extends State<AirportBookingScreen> {
       id: 'business_suv',
       name: 'Business SUV',
       ordRate: 125,
-      mdwRate: 105,
+      mdwRate: 110,
       capacity: 5,
     ),
     _AirportCategory(
-      id: 'premium',
-      name: 'Premium',
-      ordRate: 175,
-      mdwRate: 150,
+      id: 'first_class',
+      name: 'First Class',
+      ordRate: 150,
+      mdwRate: 135,
       capacity: 3,
     ),
   ];
@@ -382,6 +382,7 @@ class _AirportBookingScreenState extends State<AirportBookingScreen> {
                   );
                   bookingState.setBookingType('airport_transfer');
                   bookingState.setAirportCode(_airportCode);
+                  bookingState.setAirportDirection(isPickup: _isPickup);
                   bookingState.selectRideOption(
                     _categories[_selectedCategoryIndex].toRideOption(
                       _selectedAirportIndex == 0,

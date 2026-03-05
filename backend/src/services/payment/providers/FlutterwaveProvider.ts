@@ -59,6 +59,13 @@ export class FlutterwaveProvider implements IPaymentProvider {
             );
 
             const data = response.data.data;
+            const card = data.card;
+            const cardDetails = card ? {
+                last4: card.last_4digits || card.last4 || '',
+                brand: card.type || card.brand || 'card',
+                expMonth: parseInt(card.expiry?.split('/')[0], 10) || undefined,
+                expYear: parseInt(card.expiry?.split('/')[1], 10) || undefined,
+            } : undefined;
             return {
                 success: data.status === 'successful',
                 amount: data.amount,
@@ -66,7 +73,8 @@ export class FlutterwaveProvider implements IPaymentProvider {
                 reference: data.tx_ref,
                 status: data.status,
                 gateway: 'flutterwave',
-                metadata: data.meta
+                metadata: data.meta,
+                cardDetails,
             };
         } catch (error) {
             return {

@@ -90,6 +90,7 @@ class User {
       rating: rating,
       totalTrips: totalTrips,
       driverDetails: driverDetails,
+      twoFactorEnabled: json['twoFactorEnabled'] == true,
     );
   }
 

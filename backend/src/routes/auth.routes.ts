@@ -40,7 +40,9 @@ import {
     toggle2fa,
     getRiderNotifications,
     markAllRiderNotificationsRead,
-    markRiderNotificationRead
+    markRiderNotificationRead,
+    getNotificationPreferences,
+    updateNotificationPreferences
 } from '../controllers/auth.controller';
 
 const router = Router();
@@ -765,5 +767,46 @@ router.patch('/notifications/read-all', verifyToken, wrap(markAllRiderNotificati
  *         description: Notification marked as read
  */
 router.patch('/notifications/:id/read', verifyToken, wrap(markRiderNotificationRead));
+
+/**
+ * @swagger
+ * /auth/notification-preferences:
+ *   get:
+ *     summary: Get notification preferences (push, email, sms)
+ *     tags: [Auth]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Notification preferences
+ */
+router.get('/notification-preferences', verifyToken, wrap(getNotificationPreferences));
+
+/**
+ * @swagger
+ * /auth/notification-preferences:
+ *   patch:
+ *     summary: Update notification preferences
+ *     tags: [Auth]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               push:
+ *                 type: boolean
+ *               email:
+ *                 type: boolean
+ *               sms:
+ *                 type: boolean
+ *     responses:
+ *       200:
+ *         description: Updated notification preferences
+ */
+router.patch('/notification-preferences', verifyToken, wrap(updateNotificationPreferences));
 
 export default router;

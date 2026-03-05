@@ -54,11 +54,6 @@ class _AddPaymentMethodScreenState extends State<AddPaymentMethodScreen> {
           label: 'Credit Card (Stripe)',
           icon: Icons.credit_card,
         ),
-        _GatewayOption(
-          id: 'apple_pay',
-          label: 'Apple Pay',
-          icon: Icons.phone_iphone,
-        ),
       ];
     }
     // Nigeria (default)
@@ -231,6 +226,37 @@ class _AddPaymentMethodScreenState extends State<AddPaymentMethodScreen> {
                             fontSize: 13,
                           ),
                           textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 10),
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: AppColors.yellow90.withOpacity(0.08),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: AppColors.yellow90.withOpacity(0.25),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(
+                                Icons.info_outline,
+                                color: AppColors.yellow90,
+                                size: 16,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'A small setup charge of ${CurrencyUtils.activeCurrency == 'USD' ? '\$1' : '₦100'} '
+                                  'will be made and credited to your wallet.',
+                                  style: AppTextStyles.caption.copyWith(
+                                    color: AppColors.yellow90,
+                                    fontSize: 11,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                         const SizedBox(height: 16),
                         Row(

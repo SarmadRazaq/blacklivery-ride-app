@@ -57,6 +57,14 @@ export class MonnifyProvider implements IPaymentProvider {
             });
 
             const response = data?.responseBody;
+            // Extract card details from Monnify's cardDetails object when present
+            const card = response?.cardDetails;
+            const cardDetails = card ? {
+                last4: card.last4 || card.maskedPan?.slice(-4) || '',
+                brand: card.cardType || card.scheme || 'card',
+                expMonth: parseInt(card.expiryMonth, 10) || undefined,
+                expYear: parseInt(card.expiryYear, 10) || undefined,
+            } : undefined;
             return {
                 success: response?.paymentStatus?.toLowerCase() === 'paid',
                 amount: Number(response?.amountPaid ?? 0),
@@ -64,7 +72,8 @@ export class MonnifyProvider implements IPaymentProvider {
                 reference,
                 status: response?.paymentStatus?.toLowerCase() === 'paid' ? 'success' : 'failed',
                 gateway: 'monnify',
-                metadata: response?.metaData
+                metadata: response?.metaData,
+                cardDetails,
             };
         } catch (error) {
             return {

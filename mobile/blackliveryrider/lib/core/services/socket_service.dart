@@ -244,6 +244,16 @@ class SocketService extends ChangeNotifier {
     });
   }
 
+  /// Notify the driver that quiet mode has been toggled.
+  void emitQuietMode({required String rideId, required bool enabled}) {
+    if (_socket == null || !_isConnected) return;
+    _socket!.emit('ride:quiet_mode', {
+      'rideId': rideId,
+      'quietMode': enabled,
+    });
+    debugPrint('SocketService: Emitted quiet_mode=$enabled for ride $rideId');
+  }
+
   /// Listen for incoming chat messages via socket
   void listenToChatMessages(Function(Map<String, dynamic>) onMessage) {
     if (_socket == null) return;

@@ -20,7 +20,8 @@ class ChatMessage {
 
 class SupportChatScreen extends StatefulWidget {
   final String? ticketId;
-  const SupportChatScreen({super.key, this.ticketId});
+  final String? initialTopic;
+  const SupportChatScreen({super.key, this.ticketId, this.initialTopic});
 
   @override
   State<SupportChatScreen> createState() => _SupportChatScreenState();
@@ -46,6 +47,19 @@ class _SupportChatScreenState extends State<SupportChatScreen> {
   void initState() {
     super.initState();
     _activeTicketId = widget.ticketId;
+    // Auto-select category based on initial topic
+    if (widget.initialTopic != null) {
+      final topic = widget.initialTopic!.toLowerCase();
+      if (topic.contains('safety')) {
+        _selectedCategory = 'safety';
+      } else if (topic.contains('lost item') || topic.contains('feedback')) {
+        _selectedCategory = 'ride_issue';
+      } else {
+        _selectedCategory = 'ride_issue';
+      }
+      // Pre-fill the message input with the topic
+      _messageController.text = widget.initialTopic!;
+    }
     _loadMessages();
   }
 
