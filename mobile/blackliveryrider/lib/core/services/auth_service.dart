@@ -126,7 +126,12 @@ class AuthService {
   Future<User> signInWithGoogle() async {
     try {
       // 1. Trigger native Google Sign-In
-      final googleSignIn = GoogleSignIn(scopes: ['email', 'profile']);
+      // serverClientId is the Web Client ID from google-services.json (client_type: 3)
+      // Required for google_sign_in 6.x to obtain the idToken on Android
+      final googleSignIn = GoogleSignIn(
+        scopes: ['email', 'profile'],
+        serverClientId: '384768177166-79hl5lh708csr19lmfjsodvts70qanrs.apps.googleusercontent.com',
+      );
       final googleUser = await googleSignIn.signIn();
       if (googleUser == null) {
         throw 'Google sign-in was cancelled';

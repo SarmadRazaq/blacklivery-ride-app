@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 /// Safely convert a Firestore timestamp (Map with _seconds) or ISO string to DateTime.
 DateTime? _parseTimestamp(dynamic value) {
   if (value == null) return null;
@@ -85,8 +87,8 @@ class User {
     }
 
     // Debug: log what we're parsing
-    print('[User.fromJson] driverOnboarding raw: ${json['driverOnboarding']}');
-    print('[User.fromJson] driverProfile raw: ${json['driverProfile']}');
+    debugPrint('[User.fromJson] driverOnboarding raw: ${json['driverOnboarding']}');
+    debugPrint('[User.fromJson] driverProfile raw: ${json['driverProfile']}');
 
     return User(
       id: json['uid'] ?? json['id'] ?? '',

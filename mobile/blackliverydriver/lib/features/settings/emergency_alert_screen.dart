@@ -1,34 +1,34 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/custom_button.dart';
+import '../../core/providers/riverpod_providers.dart';
 
-class EmergencyAlertScreen extends StatefulWidget {
+class EmergencyAlertScreen extends ConsumerStatefulWidget {
   const EmergencyAlertScreen({super.key});
 
   @override
-  State<EmergencyAlertScreen> createState() => _EmergencyAlertScreenState();
+  ConsumerState<EmergencyAlertScreen> createState() => _EmergencyAlertScreenState();
 }
 
-class _EmergencyAlertScreenState extends State<EmergencyAlertScreen> {
-  final List<Map<String, String>> _contacts = [
-    {'name': 'John Doe', 'phone': '+23412345678'},
-    {'name': 'John Doe', 'phone': '+23412345678'},
-    {'name': 'John Doe', 'phone': '+23412345678'},
-  ];
-  final Set<String> _selectedContacts = {};
+class _EmergencyAlertScreenState extends ConsumerState<EmergencyAlertScreen> {
+  final Set<int> _selectedIndices = {};
 
-  void _toggleContact(String name) {
+  void _toggleContact(int index) {
     setState(() {
-      if (_selectedContacts.contains(name)) {
-        _selectedContacts.remove(name);
+      if (_selectedIndices.contains(index)) {
+        _selectedIndices.remove(index);
       } else {
-        _selectedContacts.add(name);
+        _selectedIndices.add(index);
       }
     });
   }
 
   @override
   Widget build(BuildContext context) {
+    final user = ref.watch(authRiverpodProvider).user;
+    final contacts = user?.emergencyContacts ?? [];
+
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -50,73 +50,88 @@ class _EmergencyAlertScreenState extends State<EmergencyAlertScreen> {
               style: TextStyle(color: Colors.grey, fontSize: 12),
             ),
             const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: const Color(0xFF1E1E1E),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Column(
-                children: _contacts.map((contact) {
-                  final isSelected = _selectedContacts.contains(
-                    contact['name'],
-                  ); // Simple check by name
-                  return GestureDetector(
-                    onTap: () => _toggleContact(contact['name']!),
-                    child: Padding(
-                      padding: const EdgeInsets.only(bottom: 16),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  contact['name']!,
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w600,
+            if (contacts.isEmpty)
+              Container(
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1E1E1E),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: const Center(
+                  child: Text(
+                    'No emergency contacts saved.\nAdd contacts in Settings → Emergency Contacts.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.grey, fontSize: 13),
+                  ),
+                ),
+              )
+            else
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1E1E1E),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Column(
+                  children: List.generate(contacts.length, (index) {
+                    final contact = contacts[index];
+                    final isSelected = _selectedIndices.contains(index);
+                    return GestureDetector(
+                      onTap: () => _toggleContact(index),
+                      child: Padding(
+                        padding: const EdgeInsets.only(bottom: 16),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    contact.name,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w600,
+                                    ),
                                   ),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  contact['phone']!,
-                                  style: const TextStyle(
-                                    color: Colors.grey,
-                                    fontSize: 12,
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    contact.phoneNumber,
+                                    style: const TextStyle(
+                                      color: Colors.grey,
+                                      fontSize: 12,
+                                    ),
                                   ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          Container(
-                            width: 20,
-                            height: 20,
-                            decoration: BoxDecoration(
-                              border: Border.all(
-                                color: isSelected
-                                    ? AppColors.primary
-                                    : Colors.grey,
-                                width: 2,
+                                ],
                               ),
-                              borderRadius: BorderRadius.circular(4),
                             ),
-                            child: isSelected
-                                ? const Icon(
-                                    Icons.check,
-                                    size: 16,
-                                    color: AppColors.primary,
-                                  )
-                                : null,
-                          ),
-                        ],
+                            Container(
+                              width: 20,
+                              height: 20,
+                              decoration: BoxDecoration(
+                                border: Border.all(
+                                  color: isSelected
+                                      ? AppColors.primary
+                                      : Colors.grey,
+                                  width: 2,
+                                ),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: isSelected
+                                  ? const Icon(
+                                      Icons.check,
+                                      size: 16,
+                                      color: AppColors.primary,
+                                    )
+                                  : null,
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                  );
-                }).toList(),
+                    );
+                  }),
+                ),
               ),
-            ),
             const SizedBox(height: 32),
             Container(
               padding: const EdgeInsets.all(24),
@@ -149,13 +164,21 @@ class _EmergencyAlertScreenState extends State<EmergencyAlertScreen> {
             const Spacer(),
             CustomButton(
               text: 'Send Alert',
-              onPressed: () {
-                ScaffoldMessenger.of(
-                  context,
-                ).showSnackBar(const SnackBar(content: Text('Alert Sent!')));
-                Navigator.pop(context);
-              },
-              backgroundColor: AppColors.white,
+              onPressed: _selectedIndices.isEmpty
+                  ? null
+                  : () {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            'Alert sent to ${_selectedIndices.length} contact(s)',
+                          ),
+                        ),
+                      );
+                      Navigator.pop(context);
+                    },
+              backgroundColor: _selectedIndices.isEmpty
+                  ? Colors.grey
+                  : AppColors.white,
               textColor: Colors.black,
             ),
             const SizedBox(height: 16),

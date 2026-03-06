@@ -5,11 +5,34 @@ import '../../core/theme/app_theme.dart';
 import '../../core/widgets/custom_button.dart';
 import 'incoming_rides_mode_screen.dart';
 
-class ApprovalScreen extends ConsumerWidget {
+class ApprovalScreen extends ConsumerStatefulWidget {
   const ApprovalScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ApprovalScreen> createState() => _ApprovalScreenState();
+}
+
+class _ApprovalScreenState extends ConsumerState<ApprovalScreen>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _hourglassController;
+
+  @override
+  void initState() {
+    super.initState();
+    _hourglassController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 2),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _hourglassController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(
@@ -24,10 +47,13 @@ class ApprovalScreen extends ConsumerWidget {
                   color: AppColors.primary.withValues(alpha: 0.1),
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(
-                  Icons.hourglass_empty_rounded,
-                  size: 64,
-                  color: AppColors.primary,
+                child: RotationTransition(
+                  turns: _hourglassController,
+                  child: const Icon(
+                    Icons.hourglass_empty_rounded,
+                    size: 64,
+                    color: AppColors.primary,
+                  ),
                 ),
               ),
               const SizedBox(height: 32),

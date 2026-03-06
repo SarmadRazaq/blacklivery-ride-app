@@ -165,40 +165,72 @@ class _RideChatScreenState extends State<RideChatScreen> {
               border: Border(top: BorderSide(color: AppColors.inputBorder)),
             ),
             child: SafeArea(
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                decoration: BoxDecoration(
-                  color: AppColors.inputBg,
-                  borderRadius: BorderRadius.circular(30),
-                  border: Border.all(color: AppColors.inputBorder),
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _messageController,
-                        style: AppTextStyles.body.copyWith(color: Colors.white, fontSize: 14),
-                        decoration: InputDecoration(
-                          hintText: 'Type a message...',
-                          hintStyle: AppTextStyles.body.copyWith(
-                            color: AppColors.txtInactive,
-                            fontSize: 14,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    child: Row(
+                      children: [
+                        for (final msg in const [
+                          "I'm here",
+                          "On my way",
+                          "5 minutes away",
+                          "Please wait",
+                          "Thank you",
+                        ])
+                          Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: ActionChip(
+                              label: Text(msg, style: AppTextStyles.caption.copyWith(color: Colors.white, fontSize: 12)),
+                              backgroundColor: AppColors.inputBg,
+                              side: BorderSide(color: AppColors.inputBorder),
+                              onPressed: () {
+                                _messageController.text = msg;
+                                _sendMessage();
+                              },
+                            ),
                           ),
-                          border: InputBorder.none,
-                          contentPadding: const EdgeInsets.symmetric(vertical: 14),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    decoration: BoxDecoration(
+                      color: AppColors.inputBg,
+                      borderRadius: BorderRadius.circular(30),
+                      border: Border.all(color: AppColors.inputBorder),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _messageController,
+                            style: AppTextStyles.body.copyWith(color: Colors.white, fontSize: 14),
+                            decoration: InputDecoration(
+                              hintText: 'Type a message...',
+                              hintStyle: AppTextStyles.body.copyWith(
+                                color: AppColors.txtInactive,
+                                fontSize: 14,
+                              ),
+                              border: InputBorder.none,
+                              contentPadding: const EdgeInsets.symmetric(vertical: 14),
+                            ),
+                            onSubmitted: (_) => _sendMessage(),
+                          ),
                         ),
-                        onSubmitted: (_) => _sendMessage(),
-                      ),
+                        GestureDetector(
+                          onTap: _sendMessage,
+                          child: Container(
+                            padding: const EdgeInsets.all(8),
+                            child: const Icon(Icons.send, color: Colors.white, size: 20),
+                          ),
+                        ),
+                      ],
                     ),
-                    GestureDetector(
-                      onTap: _sendMessage,
-                      child: Container(
-                        padding: const EdgeInsets.all(8),
-                        child: const Icon(Icons.send, color: Colors.white, size: 20),
-                      ),
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
           ),

@@ -287,7 +287,7 @@ class _VehicleOnboardingScreenState
                         controller: _plateController,
                         validator: (v) => (v != null && v.trim().length >= 2)
                             ? null
-                            : 'Required',
+                            : 'Please enter plate number',
                       ),
                       const SizedBox(height: 14),
 
@@ -344,8 +344,8 @@ class _VehicleOnboardingScreenState
                               ],
                               validator: (v) {
                                 final s = int.tryParse(v?.trim() ?? '');
-                                if (s == null || s < 1 || s > 20) {
-                                  return '1–20';
+                                if (s == null || s < 1 || s > 8) {
+                                  return 'Seats must be 1–8';
                                 }
                                 return null;
                               },
@@ -357,7 +357,7 @@ class _VehicleOnboardingScreenState
 
                       // ── Vehicle Type dropdown (no wrapping Container) ──
                       DropdownButtonFormField<String>(
-                        value: _selectedCategory,
+                        initialValue: _selectedCategory,
                         dropdownColor: AppColors.cardBackground,
                         style: const TextStyle(
                             color: AppColors.white, fontSize: 14),

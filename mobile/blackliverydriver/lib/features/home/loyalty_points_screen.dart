@@ -38,6 +38,91 @@ class _LoyaltyPointsScreenState extends State<LoyaltyPointsScreen> {
     }
   }
 
+  Widget _buildPointsBreakdown(List<dynamic> history) {
+    int earned = 0;
+    int redeemed = 0;
+    for (final entry in history) {
+      final e = entry as Map<String, dynamic>;
+      final pts = (e['points'] ?? 0) as num;
+      if (pts > 0) {
+        earned += pts.toInt();
+      } else {
+        redeemed += pts.abs().toInt();
+      }
+    }
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.cardBackground,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Points Breakdown',
+            style: TextStyle(
+              color: AppColors.white,
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: _breakdownItem(
+                  'Earned',
+                  '+$earned',
+                  Colors.greenAccent,
+                  Icons.arrow_upward,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _breakdownItem(
+                  'Redeemed',
+                  '-$redeemed',
+                  Colors.redAccent,
+                  Icons.arrow_downward,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _breakdownItem(String label, String value, Color color, IconData icon) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.background,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(
+        children: [
+          Icon(icon, color: color, size: 20),
+          const SizedBox(height: 6),
+          Text(
+            value,
+            style: TextStyle(
+              color: color,
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            style: const TextStyle(color: AppColors.grey, fontSize: 12),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final account = (_data['account'] as Map<String, dynamic>?) ?? {};
@@ -93,6 +178,8 @@ class _LoyaltyPointsScreenState extends State<LoyaltyPointsScreen> {
                       ],
                     ),
                   ),
+                  const SizedBox(height: 16),
+                  _buildPointsBreakdown(history),
                   const SizedBox(height: 16),
                   const Text(
                     'Available Rewards',

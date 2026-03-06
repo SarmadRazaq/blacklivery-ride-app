@@ -11,6 +11,7 @@ class RegionSettings {
   final String label;
   final String currency;
   final String symbol;
+  final String phoneCode;
   final String unitSystem; // 'metric' or 'imperial'
   final String timezone;
   final String apiRegionKey; // key sent to backend ('nigeria' or 'chicago')
@@ -20,6 +21,7 @@ class RegionSettings {
     required this.label,
     required this.currency,
     required this.symbol,
+    required this.phoneCode,
     required this.unitSystem,
     required this.timezone,
     required this.apiRegionKey,
@@ -41,6 +43,7 @@ class RegionProvider extends ChangeNotifier {
       label: 'Nigeria',
       currency: 'NGN',
       symbol: '₦',
+      phoneCode: '+234',
       unitSystem: 'metric',
       timezone: 'Africa/Lagos',
       apiRegionKey: 'nigeria',
@@ -50,6 +53,7 @@ class RegionProvider extends ChangeNotifier {
       label: 'Chicago, US',
       currency: 'USD',
       symbol: '\$',
+      phoneCode: '+1',
       unitSystem: 'imperial',
       timezone: 'America/Chicago',
       apiRegionKey: 'chicago',
@@ -69,6 +73,7 @@ class RegionProvider extends ChangeNotifier {
   String get currency => current.currency;
   String get symbol => current.symbol;
   String get unitSystem => current.unitSystem;
+  String get phoneCode => current.phoneCode;
   String get apiRegionKey => current.apiRegionKey;
   bool get isNigeria => _currentCode == RegionCode.ng;
   bool get isChicago => _currentCode == RegionCode.usChi;

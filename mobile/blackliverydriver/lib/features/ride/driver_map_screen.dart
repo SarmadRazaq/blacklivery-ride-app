@@ -345,6 +345,20 @@ class _DriverMapScreenState extends ConsumerState<DriverMapScreen> {
     final authProvider = ref.read(authRiverpodProvider);
     final rideProvider = ref.read(rideRiverpodProvider);
 
+    // Prevent going offline during an active ride
+    if (authProvider.isOnline && rideProvider.currentRide != null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Cannot go offline while a ride is in progress',
+            ),
+          ),
+        );
+      }
+      return;
+    }
+
     final lat = _currentPosition?.latitude;
     final lng = _currentPosition?.longitude;
     final heading = _currentPosition?.heading;
@@ -720,10 +734,18 @@ class _DriverMapScreenState extends ConsumerState<DriverMapScreen> {
       drawer: _buildDrawer(),
       body: Stack(
         children: [
-          // Main Content Area
+          // Main Content Area — IndexedStack preserves tab state
           Positioned.fill(
             bottom: 60, // Leave space for bottom nav
-            child: _buildBody(),
+            child: IndexedStack(
+              index: _currentNavIndex,
+              children: [
+                _buildHomeBody(),
+                const BookingsScreen(),
+                const EarningsScreen(),
+                const SettingsScreen(),
+              ],
+            ),
           ),
 
           // Bottom Navigation
@@ -736,21 +758,6 @@ class _DriverMapScreenState extends ConsumerState<DriverMapScreen> {
         ],
       ),
     );
-  }
-
-  Widget _buildBody() {
-    switch (_currentNavIndex) {
-      case 0: // Home (map + welcome, stats, go online)
-        return _buildHomeBody();
-      case 1: // Rides
-        return const BookingsScreen();
-      case 2: // Earnings
-        return const EarningsScreen();
-      case 3: // Settings
-        return const SettingsScreen();
-      default:
-        return _buildHomeBody();
-    }
   }
 
   /// Home tab: map with overlay — welcome bar, Heat Map/Destination/Preferences, stats, Go Online.
@@ -828,6 +835,21 @@ class _DriverMapScreenState extends ConsumerState<DriverMapScreen> {
                   ),
                 ],
               ),
+            ),
+          ),
+        ),
+        // Recenter button
+        Positioned(
+          right: 16,
+          bottom: 320,
+          child: FloatingActionButton.small(
+            heroTag: 'recenter',
+            backgroundColor: AppColors.cardBackground,
+            onPressed: () => _getCurrentLocation(recenterMap: true),
+            child: const Icon(
+              Icons.my_location,
+              color: AppColors.white,
+              size: 20,
             ),
           ),
         ),
@@ -1087,7 +1109,8 @@ class _DriverMapScreenState extends ConsumerState<DriverMapScreen> {
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
           _buildNavItem(Icons.home_rounded, 'Home', 0),
-          _buildNavItem(Icons.list_alt_rounded, 'Rides', 1),
+          _buildNavItem(Icons.list_alt_rounded, 'Rides', 1,
+              badgeCount: ref.watch(rideRiverpodProvider).scheduledRidesCount),
           _buildNavItem(Icons.account_balance_wallet_rounded, 'Earnings', 2),
           _buildNavItem(Icons.settings_rounded, 'Settings', 3),
         ],
@@ -1095,7 +1118,7 @@ class _DriverMapScreenState extends ConsumerState<DriverMapScreen> {
     );
   }
 
-  Widget _buildNavItem(IconData icon, String label, int index) {
+  Widget _buildNavItem(IconData icon, String label, int index, {int badgeCount = 0}) {
     final isSelected = _currentNavIndex == index;
     return GestureDetector(
       onTap: () => _handleBottomNavTap(index),
@@ -1104,10 +1127,18 @@ class _DriverMapScreenState extends ConsumerState<DriverMapScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              icon,
-              color: isSelected ? AppColors.white : AppColors.grey,
-              size: 22,
+            Badge(
+              isLabelVisible: badgeCount > 0,
+              label: Text(
+                '$badgeCount',
+                style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold),
+              ),
+              backgroundColor: AppColors.primary,
+              child: Icon(
+                icon,
+                color: isSelected ? AppColors.white : AppColors.grey,
+                size: 22,
+              ),
             ),
             const SizedBox(height: 4),
             Text(

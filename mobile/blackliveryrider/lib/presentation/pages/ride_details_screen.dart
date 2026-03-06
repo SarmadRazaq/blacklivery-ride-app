@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:share_plus/share_plus.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../core/utils/currency_utils.dart';
@@ -736,11 +737,42 @@ class _RideDetailsScreenState extends State<RideDetailsScreen> {
                 ],
               ),
               const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () => _shareReceipt(),
+                  icon: const Icon(Icons.share, size: 18),
+                  label: const Text('Share Receipt'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.yellow90,
+                    side: const BorderSide(color: AppColors.yellow90),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                  ),
+                ),
+              ),
             ],
           ),
         );
       },
     );
+  }
+
+  void _shareReceipt() {
+    final lines = <String>[
+      'BlackLivery Trip Receipt',
+      'Trip ID: ${ride.id}',
+      'Date: ${_formatDate(ride.date)}',
+      '',
+      'From: ${ride.pickupAddress}',
+      'To: ${ride.dropoffAddress}',
+      '',
+      if (ride.driver != null) 'Driver: ${ride.driver!.name}',
+      if (ride.paymentMethod != null) 'Payment: ${ride.paymentMethod!}',
+      '',
+      'Total: ${CurrencyUtils.format(ride.price)}',
+    ];
+    Share.share(lines.join('\n'));
   }
 
   Widget _receiptRow(String label, String value) {

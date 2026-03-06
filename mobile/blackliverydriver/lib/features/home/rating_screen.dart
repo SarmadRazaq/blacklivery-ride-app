@@ -43,6 +43,32 @@ class _RatingScreenState extends State<RatingScreen> {
       ),
       body: Consumer2<EarningsProvider, AuthProvider>(
         builder: (context, earnings, auth, _) {
+          // Error state
+          if (earnings.ratingError != null) {
+            return RefreshIndicator(
+              onRefresh: () => earnings.loadRatingDistribution(),
+              child: ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                children: [
+                  SizedBox(height: MediaQuery.of(context).size.height * 0.3),
+                  Center(
+                    child: Column(
+                      children: [
+                        Icon(Icons.error_outline, size: 56, color: Colors.grey[700]),
+                        const SizedBox(height: 12),
+                        Text(
+                          earnings.ratingError!,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: Colors.grey[400], fontSize: 14),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }
+
           // Use real data from rating distribution API if available, fall back to earnings data
           final ratingData = earnings.ratingData;
           final rating = (ratingData['averageRating'] as num?)?.toDouble()
@@ -69,14 +95,17 @@ class _RatingScreenState extends State<RatingScreen> {
           // Use real feedback from API
           final recentFeedback = (ratingData['recentFeedback'] as List<dynamic>?) ?? [];
 
-          return SingleChildScrollView(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              children: [
-                const SizedBox(height: 20),
+          return RefreshIndicator(
+            onRefresh: () => earnings.loadRatingDistribution(),
+            child: SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                children: [
+                  const SizedBox(height: 20),
 
-                // Big rating display
-                Container(
+                  // Big rating display
+                  Container(
                   width: 140,
                   height: 140,
                   decoration: BoxDecoration(
@@ -265,6 +294,7 @@ class _RatingScreenState extends State<RatingScreen> {
                 ),
               ],
             ),
+          ),
           );
         },
       ),

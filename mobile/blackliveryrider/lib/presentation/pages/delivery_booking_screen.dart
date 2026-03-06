@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:provider/provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
@@ -7,6 +8,7 @@ import '../../core/utils/currency_utils.dart';
 import '../../core/data/booking_state.dart';
 import '../../core/services/delivery_service.dart';
 import '../widgets/custom_button.dart';
+import '../widgets/ride_map_view.dart';
 
 /// Delivery booking screen — package type, pickup/dropoff, recipient details,
 /// real-time tracking of delivery.
@@ -648,7 +650,7 @@ class _PackageType {
   });
 }
 
-/// Delivery tracking screen — shows live status after delivery is created.
+/// Delivery tracking screen — shows live status, map, receipt after delivery.
 class DeliveryTrackingScreen extends StatefulWidget {
   final String deliveryId;
   final Map<String, dynamic> deliveryData;
@@ -667,6 +669,7 @@ class _DeliveryTrackingScreenState extends State<DeliveryTrackingScreen> {
   final DeliveryService _deliveryService = DeliveryService();
   Map<String, dynamic>? _delivery;
   bool _isLoading = true;
+  bool _deliveredNotified = false;
 
   @override
   void initState() {
@@ -683,9 +686,29 @@ class _DeliveryTrackingScreenState extends State<DeliveryTrackingScreen> {
         widget.deliveryId,
       );
       if (details != null && mounted) {
-        setState(() => _delivery = details);
-        // Stop polling once delivery reaches a terminal state
         final status = details['status'] ?? details['deliveryStatus'];
+        setState(() => _delivery = details);
+
+        // Show delivered notification once
+        if (status == 'delivered' && !_deliveredNotified) {
+          _deliveredNotified = true;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Row(
+                children: [
+                  Icon(Icons.check_circle, color: Colors.white, size: 20),
+                  SizedBox(width: 10),
+                  Text('Package delivered successfully!'),
+                ],
+              ),
+              backgroundColor: Colors.green,
+              duration: const Duration(seconds: 5),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+
+        // Stop polling once delivery reaches a terminal state
         if (status == 'delivered' || status == 'cancelled' || status == 'failed') {
           return; // Don't continue polling
         }
@@ -732,9 +755,39 @@ class _DeliveryTrackingScreenState extends State<DeliveryTrackingScreen> {
     }
   }
 
+  LatLng? get _driverLatLng {
+    final driver = _delivery?['driver'] ?? _delivery?['driverLocation'];
+    if (driver == null) return null;
+    final lat = (driver['lat'] ?? driver['latitude'] as num?)?.toDouble();
+    final lng = (driver['lng'] ?? driver['longitude'] as num?)?.toDouble();
+    if (lat != null && lng != null && lat != 0 && lng != 0) {
+      return LatLng(lat, lng);
+    }
+    return null;
+  }
+
+  LatLng? get _pickupLatLng {
+    final loc = _delivery?['pickupLocation'];
+    if (loc == null) return null;
+    final lat = (loc['lat'] as num?)?.toDouble();
+    final lng = (loc['lng'] as num?)?.toDouble();
+    if (lat != null && lng != null) return LatLng(lat, lng);
+    return null;
+  }
+
+  LatLng? get _dropoffLatLng {
+    final loc = _delivery?['dropoffLocation'];
+    if (loc == null) return null;
+    final lat = (loc['lat'] as num?)?.toDouble();
+    final lng = (loc['lng'] as num?)?.toDouble();
+    if (lat != null && lng != null) return LatLng(lat, lng);
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
     final status = _delivery?['status'] as String?;
+    final isActive = status != 'delivered' && status != 'cancelled' && status != 'failed';
 
     return Scaffold(
       backgroundColor: AppColors.bgPri,
@@ -754,59 +807,173 @@ class _DeliveryTrackingScreenState extends State<DeliveryTrackingScreen> {
                 valueColor: AlwaysStoppedAnimation(AppColors.yellow90),
               ),
             )
-          : Padding(
-              padding: const EdgeInsets.all(AppSpacing.screenHorizontal),
-              child: Column(
-                children: [
-                  const SizedBox(height: AppSpacing.xl),
-
-                  // Status icon
-                  Container(
-                    width: 80,
-                    height: 80,
-                    decoration: BoxDecoration(
-                      color: AppColors.yellow90.withOpacity(0.15),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(
-                      _statusIcon(status),
-                      color: AppColors.yellow90,
-                      size: 40,
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-
-                  Text(
-                    _statusLabel(status),
-                    style: AppTextStyles.heading3,
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Delivery ID: ${widget.deliveryId.substring(0, 8).toUpperCase()}',
-                    style: AppTextStyles.caption.copyWith(
-                      color: AppColors.txtInactive,
+          : Column(
+              children: [
+                // Live map (shows when driver is active)
+                if (isActive && (_driverLatLng != null || _pickupLatLng != null))
+                  SizedBox(
+                    height: 200,
+                    child: RideMapView(
+                      pickup: _pickupLatLng,
+                      dropoff: _dropoffLatLng,
+                      driverLocation: _driverLatLng,
+                      showRoute: _pickupLatLng != null && _dropoffLatLng != null,
                     ),
                   ),
 
-                  const SizedBox(height: AppSpacing.xl),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.all(AppSpacing.screenHorizontal),
+                    child: Column(
+                      children: [
+                        const SizedBox(height: AppSpacing.md),
 
-                  // Timeline
-                  _buildTimeline(status),
+                        // Status icon
+                        Container(
+                          width: 64,
+                          height: 64,
+                          decoration: BoxDecoration(
+                            color: AppColors.yellow90.withOpacity(0.15),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            _statusIcon(status),
+                            color: AppColors.yellow90,
+                            size: 32,
+                          ),
+                        ),
+                        const SizedBox(height: AppSpacing.sm),
 
-                  const Spacer(),
+                        Text(
+                          _statusLabel(status),
+                          style: AppTextStyles.heading3.copyWith(fontSize: 18),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'ID: ${widget.deliveryId.length > 8 ? widget.deliveryId.substring(0, 8).toUpperCase() : widget.deliveryId.toUpperCase()}',
+                          style: AppTextStyles.caption.copyWith(
+                            color: AppColors.txtInactive,
+                          ),
+                        ),
 
-                  if (status == 'delivered')
-                    CustomButton.gradient(
-                      text: 'Done',
-                      onTap: () {
-                        Navigator.popUntil(context, (route) => route.isFirst);
-                      },
+                        const SizedBox(height: AppSpacing.lg),
+
+                        // Timeline
+                        _buildTimeline(status),
+
+                        const Spacer(),
+
+                        // Delivery receipt when completed
+                        if (status == 'delivered') ...[
+                          _buildDeliveryReceipt(),
+                          const SizedBox(height: AppSpacing.md),
+                          CustomButton.gradient(
+                            text: 'Done',
+                            onTap: () {
+                              Navigator.popUntil(context, (route) => route.isFirst);
+                            },
+                          ),
+                        ],
+
+                        const SizedBox(height: AppSpacing.screenBottom),
+                      ],
                     ),
-
-                  const SizedBox(height: AppSpacing.screenBottom),
-                ],
-              ),
+                  ),
+                ),
+              ],
             ),
+    );
+  }
+
+  Widget _buildDeliveryReceipt() {
+    final fare = (_delivery?['estimatedFare'] ?? _delivery?['fare'] as num?)?.toDouble();
+    final distance = (_delivery?['distanceKm'] as num?)?.toDouble();
+    final duration = (_delivery?['durationMinutes'] as num?)?.toInt();
+    final recipient = _delivery?['recipientName'] ?? '';
+    final dropoff = _delivery?['dropoffLocation']?['address'] ?? '';
+
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.cardPadding),
+      decoration: BoxDecoration(
+        color: AppColors.inputBg,
+        borderRadius: BorderRadius.circular(AppSpacing.cardRadius),
+        border: Border.all(color: AppColors.inputBorder),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.receipt_long, color: AppColors.yellow90, size: 20),
+              const SizedBox(width: 8),
+              Text(
+                'Delivery Receipt',
+                style: AppTextStyles.bodySmall.copyWith(
+                  color: AppColors.yellow90,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (recipient.isNotEmpty) _buildReceiptRow('Recipient', '$recipient'),
+          if (dropoff.isNotEmpty) _buildReceiptRow('Delivered to', dropoff),
+          if (distance != null) _buildReceiptRow('Distance', '${distance.toStringAsFixed(1)} km'),
+          if (duration != null) _buildReceiptRow('Duration', '$duration min'),
+          const Divider(color: AppColors.divider, height: 16),
+          if (fare != null)
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Total',
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                Text(
+                  CurrencyUtils.format(fare),
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: AppColors.yellow90,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildReceiptRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            label,
+            style: AppTextStyles.caption.copyWith(
+              color: AppColors.txtInactive,
+              fontSize: 12,
+            ),
+          ),
+          Flexible(
+            child: Text(
+              value,
+              style: AppTextStyles.caption.copyWith(
+                color: Colors.white,
+                fontSize: 12,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.right,
+            ),
+          ),
+        ],
+      ),
     );
   }
 

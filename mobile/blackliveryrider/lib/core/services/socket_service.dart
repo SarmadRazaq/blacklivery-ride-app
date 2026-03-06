@@ -1,8 +1,10 @@
 import 'package:socket_io_client/socket_io_client.dart' as IO;
-import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../services/auth_service.dart';
+import '../services/ride_service.dart';
 import '../network/api_client.dart';
+import '../utils/app_alert.dart';
 
 class SocketService extends ChangeNotifier {
   // Singleton pattern — ensures all providers share the same socket connection
@@ -29,8 +31,13 @@ class SocketService extends ChangeNotifier {
 
   // Driver location tracking
   Function(Map<String, dynamic>)? _onDriverLocationUpdate;
-  // Chat message callback
+  // Chat message callback (set when chat screen is open)
   Function(Map<String, dynamic>)? _onChatMessage;
+  // Global chat notification enabled when no chat screen is active
+  final bool _globalChatNotificationEnabled = true;
+  // Active ride tracking for reconnect sync
+  String? _activeRideId;
+  Function(Map<String, dynamic>)? _onRideUpdate;
 
   bool get isConnected => _isConnected;
   int get reconnectAttempts => _reconnectAttempts;
@@ -75,6 +82,7 @@ class SocketService extends ChangeNotifier {
     _socket!.onConnect((_) {
       debugPrint('SocketService: Connected');
       _isConnected = true;
+      final wasReconnecting = _reconnectAttempts > 0;
       _reconnectAttempts = 0; // Reset on successful connection
 
       // Join rider room so backend can send targeted notifications
@@ -82,6 +90,14 @@ class SocketService extends ChangeNotifier {
       if (uid != null) {
         _socket!.emit('join:rider', uid);
         debugPrint('SocketService: Joined rider room rider:$uid');
+      }
+
+      // Register global chat listener for overlay notifications
+      _registerGlobalChatListener();
+
+      // On reconnect, fetch current ride state to replay missed events
+      if (wasReconnecting && _activeRideId != null && _onRideUpdate != null) {
+        _syncRideStateOnReconnect();
       }
 
       notifyListeners();
@@ -139,6 +155,9 @@ class SocketService extends ChangeNotifier {
     Function(Map<String, dynamic>) onUpdate,
   ) {
     if (_socket == null) return;
+
+    _activeRideId = rideId;
+    _onRideUpdate = onUpdate;
 
     debugPrint(
       'SocketService: Listening to ride:update and specific ride events for $rideId',
@@ -216,6 +235,8 @@ class SocketService extends ChangeNotifier {
     _socket?.off('ride:no_driver');
     _socket?.off('driver:location');
     _onDriverLocationUpdate = null;
+    _activeRideId = null;
+    _onRideUpdate = null;
     debugPrint('SocketService: Stopped listening to ride updates');
   }
 
@@ -254,10 +275,73 @@ class SocketService extends ChangeNotifier {
     debugPrint('SocketService: Emitted quiet_mode=$enabled for ride $rideId');
   }
 
+  /// Register global chat listener — shows overlay notification when
+  /// no chat screen is actively listening.
+  void _registerGlobalChatListener() {
+    if (_socket == null) return;
+
+    void handleGlobalChat(dynamic data) {
+      // Only show global notification when chat screen is not open
+      if (_onChatMessage != null || !_globalChatNotificationEnabled) return;
+      final msg = Map<String, dynamic>.from(data);
+      final sender = msg['senderName'] ?? msg['sender'] ?? 'Driver';
+      final text = msg['message'] ?? msg['text'] ?? 'New message';
+      debugPrint('SocketService: Global chat notification from $sender');
+      final messenger = AppAlert.messengerKey.currentState;
+      if (messenger != null && messenger.mounted) {
+        messenger
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(Icons.chat_bubble, color: Colors.white, size: 18),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '$sender',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                          ),
+                        ),
+                        Text(
+                          '$text',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              backgroundColor: const Color(0xFF2C2C2C),
+              behavior: SnackBarBehavior.floating,
+              duration: const Duration(seconds: 4),
+              margin: const EdgeInsets.only(top: 8, left: 12, right: 12, bottom: 8),
+            ),
+          );
+      }
+    }
+
+    _socket!.on('chat:message', handleGlobalChat);
+    _socket!.on('chat:new_message', handleGlobalChat);
+    _socket!.on('ride:chat', handleGlobalChat);
+  }
+
   /// Listen for incoming chat messages via socket
   void listenToChatMessages(Function(Map<String, dynamic>) onMessage) {
     if (_socket == null) return;
     _onChatMessage = onMessage;
+    // Re-register so the screen callback takes priority
+    _socket!.off('chat:message');
+    _socket!.off('chat:new_message');
+    _socket!.off('ride:chat');
     _socket!.on('chat:message', (data) {
       debugPrint('SocketService: chat:message received');
       _onChatMessage?.call(Map<String, dynamic>.from(data));
@@ -272,12 +356,36 @@ class SocketService extends ChangeNotifier {
     });
   }
 
-  /// Stop listening for chat messages
+  /// Stop listening for chat messages — re-enable global notification
   void stopListeningToChat() {
+    _onChatMessage = null;
     _socket?.off('chat:message');
     _socket?.off('chat:new_message');
     _socket?.off('ride:chat');
-    _onChatMessage = null;
+    // Re-register global listener
+    _registerGlobalChatListener();
+  }
+
+  /// Fetch current ride state from REST API after reconnect to replay missed events.
+  Future<void> _syncRideStateOnReconnect() async {
+    final rideId = _activeRideId;
+    final callback = _onRideUpdate;
+    if (rideId == null || callback == null) return;
+
+    debugPrint('SocketService: Syncing ride state after reconnect for $rideId');
+    try {
+      final rideService = RideService();
+      final details = await rideService.getRideDetails(rideId);
+      if (details != null) {
+        debugPrint('SocketService: Replayed ride state: ${details['status']}');
+        callback(details);
+      }
+    } catch (e) {
+      debugPrint('SocketService: Failed to sync ride state: $e');
+    }
+
+    // Re-register ride event listeners
+    listenToRideUpdates(rideId, callback);
   }
 
   void disconnect() {

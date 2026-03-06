@@ -59,6 +59,21 @@ class _PayoutScreenState extends ConsumerState<PayoutScreen> {
       return;
     }
 
+    // Region-aware minimum payout threshold
+    final region = ref.read(regionRiverpodProvider);
+    final double minimumPayout = region.isNigeria ? 1000.0 : 5.0;
+    final String symbol = region.isNigeria ? '₦' : '\$';
+    if (amount < minimumPayout) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Minimum payout amount is $symbol${minimumPayout.toStringAsFixed(0)}',
+          ),
+        ),
+      );
+      return;
+    }
+
     try {
       await ref.read(earningsRiverpodProvider).requestPayout(
         amount,

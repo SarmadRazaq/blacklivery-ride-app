@@ -11,6 +11,7 @@ class EarningsProvider with ChangeNotifier {
   EarningsDashboard? _dashboard;
   bool _isLoading = false;
   String? _error;
+  bool _isShowingCachedData = false;
 
   // New properties for Payouts/Ratings
   List<Map<String, dynamic>> _banks = [];
@@ -20,6 +21,7 @@ class EarningsProvider with ChangeNotifier {
   EarningsDashboard? get dashboard => _dashboard;
   bool get isLoading => _isLoading;
   String? get error => _error;
+  bool get isShowingCachedData => _isShowingCachedData;
 
   List<Map<String, dynamic>> get banks => _banks;
   List<dynamic> get payoutHistory => _payoutHistory;
@@ -45,6 +47,7 @@ class EarningsProvider with ChangeNotifier {
   Future<void> fetchDashboard() async {
     _isLoading = true;
     _error = null;
+    _isShowingCachedData = false;
     notifyListeners();
 
     try {
@@ -52,6 +55,7 @@ class EarningsProvider with ChangeNotifier {
         final cached = CacheService().getJson('earnings_dashboard');
         if (cached != null) {
           _dashboard = EarningsDashboard.fromJson(cached);
+          _isShowingCachedData = true;
         } else {
           _error = 'No internet connection and no cached data available.';
         }
@@ -59,6 +63,7 @@ class EarningsProvider with ChangeNotifier {
       }
 
       _dashboard = await _earningsService.getEarningsDashboard();
+      _isShowingCachedData = false;
       CacheService().setJson('earnings_dashboard', _dashboard!.toJson());
     } catch (e) {
       _error = e.toString();

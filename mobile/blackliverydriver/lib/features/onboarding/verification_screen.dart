@@ -4,6 +4,7 @@ import '../../core/providers/riverpod_providers.dart';
 import 'package:file_picker/file_picker.dart';
 import 'dart:io';
 import '../../core/theme/app_theme.dart';
+import '../../features/auth/data/services/driver_service.dart';
 import 'account_setup_screen.dart';
 
 class VerificationScreen extends ConsumerStatefulWidget {
@@ -150,10 +151,21 @@ class _VerificationScreenState extends ConsumerState<VerificationScreen> {
 
     setState(() => _isSubmitting = true);
     try {
+      await DriverService().saveVerificationDetails(
+        vehicleType: _selectedCar,
+        liveryPlateNumber: _plateController.text.trim(),
+      );
+
       if (mounted) {
         Navigator.of(
           context,
         ).push(MaterialPageRoute(builder: (_) => const AccountSetupScreen()));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to save: ${e.toString()}')),
+        );
       }
     } finally {
       if (mounted) setState(() => _isSubmitting = false);

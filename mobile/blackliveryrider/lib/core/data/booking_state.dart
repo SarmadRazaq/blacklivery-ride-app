@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/ride_service.dart';
 import '../services/socket_service.dart';
 import '../services/location_service.dart';
@@ -12,7 +13,18 @@ import '../models/booking_model.dart';
 class BookingState extends ChangeNotifier {
   static final BookingState _instance = BookingState._internal();
   factory BookingState() => _instance;
-  BookingState._internal();
+  BookingState._internal() {
+    _loadPaymentMethod();
+  }
+
+  Future<void> _loadPaymentMethod() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getString('payment_method');
+    if (saved != null && const {'wallet', 'cash', 'card'}.contains(saved)) {
+      _paymentMethod = saved;
+      notifyListeners();
+    }
+  }
 
   bool _isLoading = false;
   bool get isLoading => _isLoading;
@@ -115,6 +127,9 @@ class BookingState extends ChangeNotifier {
   void setPaymentMethod(String method) {
     _paymentMethod = method;
     notifyListeners();
+    SharedPreferences.getInstance().then((prefs) {
+      prefs.setString('payment_method', method);
+    });
   }
 
   List<Driver> _nearbyDrivers = [];

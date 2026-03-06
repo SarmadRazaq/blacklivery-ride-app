@@ -80,6 +80,20 @@ class _TripCompletedScreenState extends ConsumerState<TripCompletedScreen> {
     final total = fare + tips;
     final distance = ride.pricing.distance;
 
+    // Compute trip duration from timestamps
+    String durationText = '—';
+    if (ride.startedAt != null && ride.completedAt != null) {
+      final diff = ride.completedAt!.difference(ride.startedAt!);
+      final mins = diff.inMinutes;
+      if (mins < 60) {
+        durationText = '$mins min';
+      } else {
+        final h = mins ~/ 60;
+        final m = mins % 60;
+        durationText = '${h}h ${m}m';
+      }
+    }
+
     return Scaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(
@@ -181,16 +195,12 @@ class _TripCompletedScreenState extends ConsumerState<TripCompletedScreen> {
                             ],
                           ),
                         ),
-                        const SizedBox(width: 8),
-                        Text(
-                          '${distance.toStringAsFixed(1)} km',
-                          style: TextStyle(
-                            color: Colors.grey[500],
-                            fontSize: 12,
-                          ),
-                        ),
                       ],
                     ),
+                    const Divider(color: AppColors.darkGrey, height: 20),
+                    _buildRow('Distance', '${distance.toStringAsFixed(1)} km'),
+                    const Divider(color: AppColors.darkGrey, height: 20),
+                    _buildRow('Duration', durationText),
                   ],
                 ),
               ),

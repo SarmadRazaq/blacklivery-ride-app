@@ -180,6 +180,34 @@ class _RideRequestOverlayState extends State<RideRequestOverlay>
                   ),
                 ),
                 const SizedBox(height: 14),
+                // Rider info row
+                if ((widget.rideData['riderName'] ?? widget.rideData['name']) != null)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: Row(
+                      children: [
+                        CircleAvatar(
+                          radius: 16,
+                          backgroundColor: Colors.white.withValues(alpha: 0.12),
+                          backgroundImage: widget.rideData['riderAvatar'] != null
+                              ? NetworkImage(widget.rideData['riderAvatar'])
+                              : null,
+                          child: widget.rideData['riderAvatar'] == null
+                              ? const Icon(Icons.person, color: Colors.grey, size: 18)
+                              : null,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          widget.rideData['riderName'] ?? widget.rideData['name'] ?? '',
+                          style: const TextStyle(
+                            color: AppColors.white,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 Row(
                   children: [
                     Container(
@@ -197,6 +225,31 @@ class _RideRequestOverlayState extends State<RideRequestOverlay>
                         ),
                       ),
                     ),
+                    if ((widget.rideData['duration'] ?? '').toString().isNotEmpty) ...[
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.timer_outlined, color: AppColors.white, size: 13),
+                            const SizedBox(width: 4),
+                            Text(
+                              widget.rideData['duration'].toString(),
+                              style: const TextStyle(
+                                color: AppColors.white,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                     const Spacer(),
                     Text(
                       CurrencyUtils.format(

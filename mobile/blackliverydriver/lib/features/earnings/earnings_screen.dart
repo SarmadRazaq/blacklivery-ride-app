@@ -123,7 +123,13 @@ class _EarningsScreenState extends ConsumerState<EarningsScreen> {
           // If the backend sends 'Jan', 'Feb' in the 'day' field for monthly stats, it works.
           // If not, we might need to conform. For now assuming backend sends correct labels.
 
-          return CustomScrollView(
+          return RefreshIndicator(
+            onRefresh: () async {
+              setState(() => _retryCount = 0);
+              await provider.fetchDashboard();
+            },
+            color: const Color(0xFFCDFF00),
+            child: CustomScrollView(
             slivers: [
               // 1. App Bar
               const SliverAppBar(
@@ -148,6 +154,28 @@ class _EarningsScreenState extends ConsumerState<EarningsScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min, // Important!
                     children: [
+                      // --- Cached data banner ---
+                      if (provider.isShowingCachedData)
+                        Container(
+                          width: double.infinity,
+                          margin: const EdgeInsets.only(bottom: 12),
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: Colors.orange.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.orange.withValues(alpha: 0.3)),
+                          ),
+                          child: const Row(
+                            children: [
+                              Icon(Icons.cloud_off, color: Colors.orange, size: 16),
+                              SizedBox(width: 8),
+                              Text(
+                                'Showing cached data',
+                                style: TextStyle(color: Colors.orange, fontSize: 13),
+                              ),
+                            ],
+                          ),
+                        ),
                       // --- TOP GAUGE ---
                       DailyEarningsGauge(
                         data: dailyEarningsData,
@@ -425,6 +453,7 @@ class _EarningsScreenState extends ConsumerState<EarningsScreen> {
                 ),
               ),
             ],
+          ),
           );
         },
       ),

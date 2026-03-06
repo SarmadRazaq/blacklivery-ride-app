@@ -261,6 +261,9 @@ class _EmergencyContactsScreenState extends State<EmergencyContactsScreen> {
                           if (v == null || v.trim().isEmpty) {
                             return 'Phone is required';
                           }
+                          if (v.trim().length < 7) {
+                            return 'Enter a valid phone number';
+                          }
                           return null;
                         },
                       ),
@@ -268,7 +271,31 @@ class _EmergencyContactsScreenState extends State<EmergencyContactsScreen> {
                   ),
                 ),
 
-                const SizedBox(height: 32),
+                const SizedBox(height: 16),
+
+                // ── Skip ──
+                Center(
+                  child: TextButton(
+                    onPressed: _isSubmitting
+                        ? null
+                        : () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => const VerificationScreen(),
+                              ),
+                            );
+                          },
+                    child: Text(
+                      'Skip for now',
+                      style: TextStyle(
+                        color: Colors.grey[500],
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 8),
                 _buildStepDots(1),
                 const SizedBox(height: 20),
 

@@ -23,6 +23,7 @@ class _RideCompletedScreenState extends State<RideCompletedScreen> {
   int _rating = 5;
   double? _actualFare;
   bool _loadingFare = false;
+  Map<String, dynamic>? _fareBreakdown;
   final TextEditingController _tipController = TextEditingController();
   final TextEditingController _feedbackController = TextEditingController();
 
@@ -43,10 +44,14 @@ class _RideCompletedScreenState extends State<RideCompletedScreen> {
       final details = await RideService().getRideDetails(rideId);
       if (details != null && mounted) {
         final pricing = details['pricing'] as Map<String, dynamic>?;
+        final breakdown = pricing?['breakdown'] as Map<String, dynamic>?;
         final finalFare = (pricing?['finalFare'] as num?)?.toDouble()
             ?? (details['finalFare'] as num?)?.toDouble();
-        if (finalFare != null && finalFare > 0) {
-          setState(() => _actualFare = finalFare);
+        if (mounted) {
+          setState(() {
+            if (finalFare != null && finalFare > 0) _actualFare = finalFare;
+            _fareBreakdown = breakdown ?? pricing;
+          });
         }
       }
     } catch (e) {
@@ -197,6 +202,29 @@ class _RideCompletedScreenState extends State<RideCompletedScreen> {
                     const SizedBox(height: 16),
                     const Divider(color: AppColors.inputBorder),
                     const SizedBox(height: 16),
+                    if (_fareBreakdown != null) ...[
+                      if ((_fareBreakdown!['baseFare'] as num?) != null)
+                        _buildSummaryRow('Base fare', CurrencyUtils.formatExact((_fareBreakdown!['baseFare'] as num).toDouble())),
+                      if ((_fareBreakdown!['baseFare'] as num?) != null)
+                        const SizedBox(height: 8),
+                      if ((_fareBreakdown!['distanceFare'] as num?) != null)
+                        _buildSummaryRow('Distance fare', CurrencyUtils.formatExact((_fareBreakdown!['distanceFare'] as num).toDouble())),
+                      if ((_fareBreakdown!['distanceFare'] as num?) != null)
+                        const SizedBox(height: 8),
+                      if ((_fareBreakdown!['timeFare'] as num?) != null)
+                        _buildSummaryRow('Time fare', CurrencyUtils.formatExact((_fareBreakdown!['timeFare'] as num).toDouble())),
+                      if ((_fareBreakdown!['timeFare'] as num?) != null)
+                        const SizedBox(height: 8),
+                      if ((_fareBreakdown!['surgeFare'] as num?) != null && (_fareBreakdown!['surgeFare'] as num) > 0)
+                        _buildSummaryRow(
+                          'Surge (${((_fareBreakdown!['surgeMultiplier'] as num?) ?? 1.0).toStringAsFixed(1)}x)',
+                          CurrencyUtils.formatExact((_fareBreakdown!['surgeFare'] as num).toDouble()),
+                        ),
+                      if ((_fareBreakdown!['surgeFare'] as num?) != null && (_fareBreakdown!['surgeFare'] as num) > 0)
+                        const SizedBox(height: 8),
+                      const Divider(color: AppColors.inputBorder),
+                      const SizedBox(height: 8),
+                    ],
                     _buildSummaryRow(
                       'Distance',
                       '${booking?.distanceKm.toStringAsFixed(1) ?? '0'} ${Provider.of<RegionProvider>(context, listen: false).isNigeria ? 'km' : 'mi'}',

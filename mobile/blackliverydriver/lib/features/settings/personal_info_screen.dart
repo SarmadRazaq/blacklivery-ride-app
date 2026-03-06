@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:provider/provider.dart' as provider;
 import '../../core/providers/riverpod_providers.dart';
+import '../../core/providers/region_provider.dart';
 import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
 import '../../core/theme/app_theme.dart';
 import '../../features/auth/screens/login_screen.dart';
@@ -89,6 +91,12 @@ class _PersonalInfoScreenState extends ConsumerState<PersonalInfoScreen> {
           ),
           TextButton(
             onPressed: () async {
+              if (controller.text.trim().isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('$label cannot be empty')),
+                );
+                return;
+              }
               Navigator.pop(context);
               if (controller.text.trim() != initialValue) {
                 await onSave(controller.text.trim());
@@ -240,12 +248,18 @@ class _PersonalInfoScreenState extends ConsumerState<PersonalInfoScreen> {
                   _showUpdateDialog('Email', emailText == 'N/A' ? '' : emailText, _updateEmail),
               ),
               const Divider(color: Color(0xFF333333), height: 1),
-              _buildRow(
-                icon: Icons.phone_android_rounded,
-                text: phoneText,
-                isLast: true,
-                onEdit: () =>
-                  _showUpdateDialog('Phone', phoneText == 'N/A' ? '' : phoneText, _updatePhone),
+              Builder(
+                builder: (context) {
+                  final regionProvider = provider.Provider.of<RegionProvider>(context);
+                  final phoneCodePrefix = regionProvider.phoneCode;
+                  return _buildRow(
+                    icon: Icons.phone_android_rounded,
+                    text: '$phoneCodePrefix ${phoneText == 'N/A' ? '' : phoneText}'.trim(),
+                    isLast: true,
+                    onEdit: () =>
+                      _showUpdateDialog('Phone', phoneText == 'N/A' ? '' : phoneText, _updatePhone),
+                  );
+                },
               ),
             ],
           ),

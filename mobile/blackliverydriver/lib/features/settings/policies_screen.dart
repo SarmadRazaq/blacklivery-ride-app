@@ -59,6 +59,20 @@ class PoliciesScreen extends StatelessWidget {
             trailing: const Icon(Icons.open_in_new, color: Colors.grey),
             onTap: () => _openUrl(context, 'https://blacklivery.com/terms'),
           ),
+          const SizedBox(height: 12),
+          ListTile(
+            tileColor: const Color(0xFF1E1E1E),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            leading: const Icon(Icons.people_outline, color: Colors.white),
+            title: const Text(
+              'Community Guidelines',
+              style: TextStyle(color: Colors.white),
+            ),
+            trailing: const Icon(Icons.open_in_new, color: Colors.grey),
+            onTap: () => _openUrl(context, 'https://blacklivery.com/community'),
+          ),
         ],
       ),
     );

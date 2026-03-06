@@ -7,6 +7,7 @@ import '../../core/services/ride_service.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/currency_utils.dart';
 import '../ride/data/models/ride_model.dart';
+import '../ride/ride_request_detail_screen.dart';
 import 'ride_history_screen.dart';
 
 class BookingsScreen extends ConsumerStatefulWidget {
@@ -56,7 +57,7 @@ class _BookingsScreenState extends ConsumerState<BookingsScreen> {
               'assets/images/upcoming-riders.png',
               fit: BoxFit.contain,
               width: double.infinity,
-              errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+              errorBuilder: (_, _, _) => const SizedBox.shrink(),
             ),
           ),
 
@@ -202,7 +203,29 @@ class _BookingsScreenState extends ConsumerState<BookingsScreen> {
   Widget _buildUpcomingCard(Ride ride) {
     final dateStr = ride.startedAt ?? ride.acceptedAt ?? ride.createdAt;
 
-    return Container(
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => RideRequestDetailScreen(
+              rideData: {
+                'id': ride.id,
+                'riderName': ride.rider?.name ?? 'Unknown Rider',
+                'pickup_address': ride.pickupAddress,
+                'dropoff_address': ride.dropoffAddress,
+                'price': ride.fare,
+                'fare': ride.fare,
+                'distance': '${ride.pricing.distance.toStringAsFixed(1)} km',
+                'paymentMethod': ride.payment?.gateway?.toUpperCase() ?? 'CASH',
+                'scheduledAt': ride.startedAt ?? ride.acceptedAt,
+                'vehicleType': ride.vehicleCategory,
+              },
+            ),
+          ),
+        );
+      },
+      child: Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: const Color(0xFF1E1E1E),
@@ -257,7 +280,7 @@ class _BookingsScreenState extends ConsumerState<BookingsScreen> {
                 'assets/images/car-move.png',
                 height: 80,
                 fit: BoxFit.contain,
-                errorBuilder: (_, __, ___) => const Icon(
+                errorBuilder: (_, _, _) => const Icon(
                   Icons.directions_car,
                   color: Colors.grey,
                   size: 48,
@@ -402,6 +425,7 @@ class _BookingsScreenState extends ConsumerState<BookingsScreen> {
           ),
         ],
       ),
+    ),
     );
   }
 }

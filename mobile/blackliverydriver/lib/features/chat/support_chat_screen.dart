@@ -5,7 +5,8 @@ import 'data/models/support_ticket_model.dart';
 import 'data/services/support_service.dart';
 
 class SupportChatScreen extends StatefulWidget {
-  const SupportChatScreen({super.key});
+  final String? ticketId;
+  const SupportChatScreen({super.key, this.ticketId});
 
   @override
   State<SupportChatScreen> createState() => _SupportChatScreenState();
@@ -45,14 +46,17 @@ class _SupportChatScreenState extends State<SupportChatScreen> {
     try {
       final tickets = await _supportService.getTickets();
       if (tickets.isNotEmpty) {
-        // Use the most recent ticket
-        // Backend returns list, we sort by createdAt descending usually, or we sort here
-        // Our model sort messages, but list of tickets?
-        // Assuming backend returns descending or we pick first.
-        // Let's pick the first one which is usually latest if default sort.
-        // Or sort them:
-        tickets.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-        _activeTicket = tickets.first;
+        if (widget.ticketId != null) {
+          // Open a specific ticket by ID
+          _activeTicket = tickets.firstWhere(
+            (t) => t.id == widget.ticketId,
+            orElse: () => tickets.first,
+          );
+        } else {
+          // Fall back to most recent ticket
+          tickets.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+          _activeTicket = tickets.first;
+        }
       }
     } catch (e) {
       debugPrint('Error fetching tickets: $e');

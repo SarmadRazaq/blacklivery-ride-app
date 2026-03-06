@@ -19,6 +19,50 @@ const REGION_MAP: Record<string, { country: string; currency: CurrencyCode; code
     US: { country: 'United States', currency: 'USD', code: 'US-CHI' }
 };
 
+/** Parse a human-readable device name from user-agent string */
+function parseDeviceName(userAgent: string): string {
+    if (!userAgent || userAgent === 'unknown') return 'Unknown Device';
+    // Android device model
+    const androidMatch = userAgent.match(/Android[^;]*;\s*([^)]+)\)/);
+    if (androidMatch) return androidMatch[1].trim();
+    // iOS device
+    if (userAgent.includes('iPhone')) return 'iPhone';
+    if (userAgent.includes('iPad')) return 'iPad';
+    // Desktop browsers
+    if (userAgent.includes('Windows')) return 'Windows PC';
+    if (userAgent.includes('Macintosh')) return 'Mac';
+    if (userAgent.includes('Linux')) return 'Linux PC';
+    // Flutter/Dart client
+    if (userAgent.includes('Dart') || userAgent.includes('Flutter')) return 'Mobile App';
+    return 'Unknown Device';
+}
+
+/** Parse device type (mobile/tablet/desktop) from user-agent string */
+function parseDeviceType(userAgent: string): string {
+    if (!userAgent || userAgent === 'unknown') return 'unknown';
+    const ua = userAgent.toLowerCase();
+    if (ua.includes('ipad') || ua.includes('tablet')) return 'tablet';
+    if (ua.includes('android') || ua.includes('iphone') || ua.includes('mobile') || ua.includes('dart') || ua.includes('flutter')) return 'mobile';
+    if (ua.includes('windows') || ua.includes('macintosh') || ua.includes('linux')) return 'desktop';
+    return 'unknown';
+}
+
+/** Format a date as a human-readable time-ago string */
+function formatTimeAgo(date: Date | string): string {
+    const d = typeof date === 'string' ? new Date(date) : date;
+    if (isNaN(d.getTime())) return 'Unknown';
+    const now = new Date();
+    const diffMs = now.getTime() - d.getTime();
+    const mins = Math.floor(diffMs / 60000);
+    if (mins < 1) return 'Just now';
+    if (mins < 60) return `${mins} min ago`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `${hours} hours ago`;
+    const days = Math.floor(hours / 24);
+    if (days < 7) return `${days} days ago`;
+    return d.toLocaleDateString();
+}
+
 const normalizePhone = (phone?: string) => phone?.replace(/\D/g, '') ?? '';
 
 const normalizeRegionInput = (value?: string): string =>
@@ -157,12 +201,22 @@ export const login = async (req: Request, res: Response): Promise<void> => {
 
         logger.info({ uid, email: normalizedEmail }, 'User login');
 
+        // Parse device info from headers and user-agent
+        const userAgent = (req.headers['user-agent'] as string) || 'unknown';
+        const ipAddress = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.ip || 'unknown';
+        const deviceName = (req.headers['x-device-name'] as string) || parseDeviceName(userAgent);
+        const deviceType = (req.headers['x-device-type'] as string) || parseDeviceType(userAgent);
+
         // Record login history
         const loginEntry = {
             loginAt: new Date(),
-            ip: req.ip || req.headers['x-forwarded-for'] || 'unknown',
-            userAgent: req.headers['user-agent'] || 'unknown',
-            device: req.headers['x-device-name'] || 'unknown',
+            timestamp: new Date().toISOString(),
+            ipAddress,
+            userAgent,
+            deviceName,
+            deviceType,
+            location: ipAddress !== 'unknown' ? `IP: ${ipAddress}` : 'Unknown location',
+            status: 'success',
         };
         try {
             await db.collection('users').doc(uid)
@@ -175,9 +229,11 @@ export const login = async (req: Request, res: Response): Promise<void> => {
         const sessionData = {
             createdAt: new Date(),
             lastActiveAt: new Date(),
-            ip: loginEntry.ip,
-            userAgent: loginEntry.userAgent,
-            device: loginEntry.device,
+            ipAddress,
+            userAgent,
+            deviceName,
+            deviceType,
+            location: loginEntry.location,
         };
         try {
             await db.collection('users').doc(uid)
@@ -1341,10 +1397,23 @@ export const getActiveSessions = async (req: AuthRequest, res: Response): Promis
         const sessionsRef = db.collection('users').doc(uid).collection('sessions');
         const snapshot = await sessionsRef.orderBy('lastActiveAt', 'desc').get();
 
-        const sessions = snapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data()
-        }));
+        // Get current session token to mark isCurrent
+        const currentToken = req.headers.authorization?.replace('Bearer ', '');
+
+        const sessions = snapshot.docs.map((doc, index) => {
+            const data = doc.data();
+            const lastActiveAt = data.lastActiveAt?.toDate?.() ?? data.lastActiveAt;
+            return {
+                id: doc.id,
+                deviceName: data.deviceName || data.device || parseDeviceName(data.userAgent || ''),
+                deviceType: data.deviceType || parseDeviceType(data.userAgent || ''),
+                location: data.location || (data.ipAddress || data.ip ? `IP: ${data.ipAddress || data.ip}` : 'Unknown location'),
+                lastActive: lastActiveAt ? formatTimeAgo(lastActiveAt) : 'Unknown',
+                isCurrent: index === 0, // Most recent session is likely the current one
+                createdAt: data.createdAt,
+                lastActiveAt: data.lastActiveAt,
+            };
+        });
 
         res.status(200).json({ data: sessions });
     } catch (error) {
@@ -1413,10 +1482,19 @@ export const getLoginHistory = async (req: AuthRequest, res: Response): Promise<
             .limit(50)
             .get();
 
-        const history = snapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data()
-        }));
+        const history = snapshot.docs.map(doc => {
+            const data = doc.data();
+            const loginAt = data.loginAt?.toDate?.() ?? data.loginAt;
+            return {
+                id: doc.id,
+                deviceName: data.deviceName || data.device || parseDeviceName(data.userAgent || ''),
+                deviceType: data.deviceType || parseDeviceType(data.userAgent || ''),
+                location: data.location || (data.ipAddress || data.ip ? `IP: ${data.ipAddress || data.ip}` : 'Unknown location'),
+                ipAddress: data.ipAddress || data.ip || 'Unknown',
+                timestamp: data.timestamp || (loginAt instanceof Date ? loginAt.toISOString() : loginAt) || null,
+                status: data.status || 'success',
+            };
+        });
 
         res.status(200).json({ data: history });
     } catch (error) {

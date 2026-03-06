@@ -73,7 +73,7 @@ class AuthService {
           'fullName': fullName,
           'phoneNumber': phoneNumber,
           'role': 'driver',
-          if (region != null) 'region': region,
+          'region': ?region,
         },
         options: Options(extra: {'suppressGlobalError': true}),
       );

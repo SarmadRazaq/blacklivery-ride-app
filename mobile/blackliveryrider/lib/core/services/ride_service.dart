@@ -150,6 +150,11 @@ class RideService {
                 return 0;
               })(),
               capacity: cat['capacity'] as int,
+              surgeMultiplier: (() {
+                final surge = estimate?['surgeMultiplier'];
+                if (surge is num) return surge.toDouble();
+                return 1.0;
+              })(),
             ),
           );
         } catch (e) {

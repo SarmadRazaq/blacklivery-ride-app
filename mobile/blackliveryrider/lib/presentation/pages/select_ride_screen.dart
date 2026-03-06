@@ -497,6 +497,23 @@ class _SelectRideScreenState extends State<SelectRideScreen> {
                         fontSize: 20,
                       ),
                     ),
+                    if (option.hasSurge)
+                      Container(
+                        margin: const EdgeInsets.only(top: 2),
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          '${option.surgeMultiplier.toStringAsFixed(1)}x surge',
+                          style: AppTextStyles.caption.copyWith(
+                            color: Colors.orange,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 10,
+                          ),
+                        ),
+                      ),
                     const SizedBox(height: 2),
                     Text(
                       option.name,

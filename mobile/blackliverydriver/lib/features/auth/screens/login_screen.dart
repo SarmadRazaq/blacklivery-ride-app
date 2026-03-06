@@ -28,6 +28,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   final BiometricService _biometricService = BiometricService();
   final AuthService _authService = AuthService();
+
+  String _cleanError(Object e) {
+    final msg = e.toString();
+    return msg.startsWith('Exception: ') ? msg.substring(11) : msg;
+  }
   bool _canUseBiometric = false;
 
   /// Navigate based on driver's onboarding/approval status
@@ -118,9 +123,16 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     final email = _emailController.text.trim();
     final password = _passwordController.text;
 
-    if (email.isEmpty || password.isEmpty) {
+    if (email.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter email and password')),
+        const SnackBar(content: Text('Please enter your email')),
+      );
+      return;
+    }
+
+    if (password.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter your password')),
       );
       return;
     }
@@ -152,7 +164,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Login failed: ${e.toString()}')),
+          SnackBar(content: Text(_cleanError(e))),
         );
       }
     } finally {
@@ -180,7 +192,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Google sign-in failed: ${e.toString()}')),
+          SnackBar(content: Text('Google sign-in failed: ${_cleanError(e)}')),
         );
       }
     } finally {
@@ -207,7 +219,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Apple sign-in failed: ${e.toString()}')),
+          SnackBar(content: Text('Apple sign-in failed: ${_cleanError(e)}')),
         );
       }
     } finally {

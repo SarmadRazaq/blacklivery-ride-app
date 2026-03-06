@@ -7,6 +7,7 @@ class RideOption {
   final double pricePerKm;
   final int estimatedMinutes;
   final int capacity;
+  final double surgeMultiplier;
 
   RideOption({
     required this.id,
@@ -17,6 +18,7 @@ class RideOption {
     required this.pricePerKm,
     required this.estimatedMinutes,
     required this.capacity,
+    this.surgeMultiplier = 1.0,
   });
 
   factory RideOption.fromJson(Map<String, dynamic> json) {
@@ -29,6 +31,7 @@ class RideOption {
       pricePerKm: (json['pricePerKm'] as num?)?.toDouble() ?? 0.0,
       estimatedMinutes: json['estimatedMinutes'] ?? 0,
       capacity: json['capacity'] ?? 4,
+      surgeMultiplier: (json['surgeMultiplier'] as num?)?.toDouble() ?? 1.0,
     );
   }
 
@@ -42,10 +45,15 @@ class RideOption {
       'pricePerKm': pricePerKm,
       'estimatedMinutes': estimatedMinutes,
       'capacity': capacity,
+      'surgeMultiplier': surgeMultiplier,
     };
   }
 
+  bool get hasSurge => surgeMultiplier > 1.0;
+
   double calculatePrice(double distanceKm) {
+    // Note: When basePrice comes from backend estimatedFare, surge is already included.
+    // surgeMultiplier is stored for display purposes only.
     return basePrice + (pricePerKm * distanceKm);
   }
 }

@@ -8,6 +8,7 @@ import 'package:geolocator/geolocator.dart';
 import '../../core/services/location_service.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/currency_utils.dart';
+import '../../core/widgets/slide_to_action.dart';
 import 'data/services/navigation_service.dart';
 import 'trip_screen.dart';
 import '../chat/chat_screen.dart';
@@ -104,6 +105,7 @@ class _RideAcceptedScreenState extends ConsumerState<RideAcceptedScreen> {
 
     final driverPosition = LatLng(driverLat, driverLng);
     final pickupPosition = LatLng(pickupLat, pickupLng);
+    final dropoffPosition = LatLng(widget.ride.dropoffLat, widget.ride.dropoffLng);
 
     _routeCoordinates = [driverPosition, pickupPosition];
 
@@ -114,14 +116,20 @@ class _RideAcceptedScreenState extends ConsumerState<RideAcceptedScreen> {
         position: driverPosition,
         icon:
             _driverIcon ??
-            BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
+            BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue),
         infoWindow: const InfoWindow(title: 'Your Location'),
       ),
       Marker(
         markerId: const MarkerId('pickup'),
         position: pickupPosition,
-        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
         infoWindow: const InfoWindow(title: 'Pickup Location'),
+      ),
+      Marker(
+        markerId: const MarkerId('dropoff'),
+        position: dropoffPosition,
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+        infoWindow: const InfoWindow(title: 'Drop-off Location'),
       ),
     };
 
@@ -229,28 +237,31 @@ class _RideAcceptedScreenState extends ConsumerState<RideAcceptedScreen> {
             'Cancel Ride?',
             style: TextStyle(color: AppColors.white),
           ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Please select a reason:',
-                style: TextStyle(color: AppColors.grey),
-              ),
-              const SizedBox(height: 8),
-              ...reasons.map((r) => RadioListTile<String>(
-                    title: Text(r,
-                        style: const TextStyle(
-                            color: AppColors.white, fontSize: 13)),
-                    value: r,
-                    groupValue: selectedReason,
-                    activeColor: AppColors.primary,
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                    onChanged: (v) =>
-                        setDialogState(() => selectedReason = v!),
-                  )),
-            ],
+          content: RadioGroup<String>(
+            groupValue: selectedReason,
+            onChanged: (v) {
+              if (v != null) setDialogState(() => selectedReason = v);
+            },
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Please select a reason:',
+                  style: TextStyle(color: AppColors.grey),
+                ),
+                const SizedBox(height: 8),
+                ...reasons.map((r) => RadioListTile<String>(
+                      title: Text(r,
+                          style: const TextStyle(
+                              color: AppColors.white, fontSize: 13)),
+                      value: r,
+                      activeColor: AppColors.primary,
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                    )),
+              ],
+            ),
           ),
           actions: [
             TextButton(
@@ -292,17 +303,32 @@ class _RideAcceptedScreenState extends ConsumerState<RideAcceptedScreen> {
   }
 
   void _navigateToPickup() async {
-    setState(() {
-      _rideStatus = RideStatus.navigating;
-    });
+    // Open external maps for turn-by-turn navigation to pickup
+    final pickupLat = widget.ride.pickupLat;
+    final pickupLng = widget.ride.pickupLng;
+    final url = Uri.parse(
+      _navService.getGoogleMapsNavigationUrl(pickupLat, pickupLng),
+    );
+    if (await canLaunchUrl(url)) {
+      await launchUrl(url, mode: LaunchMode.externalApplication);
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not launch maps')),
+        );
+      }
+    }
 
-    // Start listening to location updates
+    // Also start tracking location to detect arrival
+    if (_rideStatus == RideStatus.accepted) {
+      setState(() {
+        _rideStatus = RideStatus.navigating;
+      });
+    }
+
     final positionStream = _locationService.getPositionStream();
+    _positionSubscription?.cancel();
     _positionSubscription = positionStream.listen((position) {
-      // Calculate distance to pickup
-      final pickupLat = widget.ride.pickupLat;
-      final pickupLng = widget.ride.pickupLng;
-
       final distance = _locationService.getDistanceBetween(
         position.latitude,
         position.longitude,
@@ -581,6 +607,34 @@ class _RideAcceptedScreenState extends ConsumerState<RideAcceptedScreen> {
                   child: Text(
                     widget.ride.pickupAddress,
                     style: TextStyle(color: Colors.grey[400], fontSize: 14),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          // Dropoff address
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Row(
+              children: [
+                Container(
+                  width: 10,
+                  height: 10,
+                  decoration: const BoxDecoration(
+                    color: Colors.red,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    widget.ride.dropoffAddress,
+                    style: TextStyle(color: Colors.grey[400], fontSize: 14),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
               ],
@@ -677,38 +731,44 @@ class _RideAcceptedScreenState extends ConsumerState<RideAcceptedScreen> {
 
           const SizedBox(height: 20),
 
-          // Action Button
+          // Action Buttons
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: GestureDetector(
-              onTap: _rideStatus == RideStatus.arrived
-                  ? _arrivedAtPickup
-                  : _navigateToPickup,
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                decoration: BoxDecoration(
-                  color: AppColors.white,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.chevron_right, color: Colors.black),
-                    const Icon(Icons.chevron_right, color: Colors.black54),
-                    const SizedBox(width: 8),
-                    Text(
-                      _getButtonText(),
-                      style: const TextStyle(
-                        color: Colors.black,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
+            child: _rideStatus == RideStatus.arrived
+                ? SlideToAction(
+                    text: 'Slide to confirm arrival',
+                    onSlide: () async => _arrivedAtPickup(),
+                    outerColor: AppColors.white,
+                    innerColor: Colors.black,
+                    textColor: Colors.black,
+                    sliderButtonIcon: Icons.chevron_right,
+                  )
+                : GestureDetector(
+                    onTap: _navigateToPickup,
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      decoration: BoxDecoration(
+                        color: AppColors.white,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.navigation, color: Colors.black),
+                          const SizedBox(width: 8),
+                          Text(
+                            _getButtonText(),
+                            style: const TextStyle(
+                              color: Colors.black,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                  ],
-                ),
-              ),
-            ),
+                  ),
           ),
 
           const SizedBox(height: 32),

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/providers/riverpod_providers.dart';
@@ -26,14 +27,31 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   String _serviceMode = 'both'; // 'ride', 'delivery', 'both'
+  StreamSubscription<bool>? _connectivitySub;
+  bool _wasOffline = false;
 
   @override
   void initState() {
     super.initState();
+    _wasOffline = !ConnectivityService().isOnline;
     // Load earnings data when screen initializes
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(earningsRiverpodProvider).loadEarningsData();
     });
+    // Auto-refresh data when connectivity is restored
+    _connectivitySub = ConnectivityService().onConnectivityChanged.listen((isOnline) {
+      if (isOnline && _wasOffline && mounted) {
+        ref.read(earningsRiverpodProvider).loadEarningsData();
+        ref.read(authRiverpodProvider).getProfile();
+      }
+      _wasOffline = !isOnline;
+    });
+  }
+
+  @override
+  void dispose() {
+    _connectivitySub?.cancel();
+    super.dispose();
   }
 
   @override

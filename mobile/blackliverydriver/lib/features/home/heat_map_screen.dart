@@ -96,17 +96,14 @@ class _HeatMapScreenState extends State<HeatMapScreen> {
         if (type == 'Rides' && !prefs.acceptRides) continue;
         if (type == 'Deliveries' && !prefs.acceptDeliveries) continue;
 
-        // Choose color based on type
+        // Choose color based on demand intensity level
         Color zoneColor;
-        switch (type) {
-          case 'Surge':
-            zoneColor = Colors.red;
-            break;
-          case 'Deliveries':
-            zoneColor = Colors.blue;
-            break;
-          default:
-            zoneColor = Colors.orange;
+        if (intensity >= 0.7) {
+          zoneColor = Colors.red;    // High demand
+        } else if (intensity >= 0.4) {
+          zoneColor = Colors.yellow; // Medium demand
+        } else {
+          zoneColor = Colors.green;  // Low demand
         }
 
         circles.add(

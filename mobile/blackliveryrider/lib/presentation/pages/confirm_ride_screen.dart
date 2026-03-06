@@ -9,6 +9,7 @@ import '../../core/data/booking_state.dart';
 import '../../core/services/promotion_service.dart';
 import '../widgets/vehicle_icon.dart';
 import '../../core/services/payment_service.dart';
+import '../../core/services/wallet_service.dart';
 import '../widgets/custom_button.dart';
 import '../widgets/ride_map_view.dart';
 import 'searching_driver_screen.dart';
@@ -31,11 +32,13 @@ class _ConfirmRideScreenState extends State<ConfirmRideScreen> {
   double _discountAmount = 0;
   String? _savedCardLabel;
   List<Map<String, dynamic>> _savedCards = [];
+  double? _walletBalance;
 
   @override
   void initState() {
     super.initState();
     _loadSavedCards();
+    _loadWalletBalance();
   }
 
   @override
@@ -59,6 +62,15 @@ class _ConfirmRideScreenState extends State<ConfirmRideScreen> {
     } catch (e) {
       // Ignore — fallback
     }
+  }
+
+  Future<void> _loadWalletBalance() async {
+    try {
+      final balance = await WalletService().getBalance();
+      if (mounted) {
+        setState(() => _walletBalance = balance);
+      }
+    } catch (_) {}
   }
 
   String _paymentMethodLabel(String method) {
@@ -114,7 +126,9 @@ class _ConfirmRideScreenState extends State<ConfirmRideScreen> {
               const SizedBox(height: 20),
               Text('Payment Method', style: AppTextStyles.heading3),
               const SizedBox(height: 20),
-              _paymentOption(ctx, 'wallet', Icons.account_balance_wallet, 'Wallet', current == 'wallet'),
+              _paymentOption(ctx, 'wallet', Icons.account_balance_wallet,
+                  _walletBalance != null ? 'Wallet (${CurrencyUtils.format(_walletBalance!)})' : 'Wallet',
+                  current == 'wallet'),
               const SizedBox(height: 10),
               if (_savedCards.isNotEmpty)
                 _paymentOption(ctx, 'card', Icons.credit_card, _savedCardLabel ?? 'Card', current == 'card'),
@@ -450,6 +464,14 @@ class _ConfirmRideScreenState extends State<ConfirmRideScreen> {
                               'Distance (${distance.toStringAsFixed(1)} ${Provider.of<RegionProvider>(context, listen: false).isNigeria ? 'km' : 'mi'})',
                               CurrencyUtils.formatExact(rideOption.pricePerKm * distance),
                             ),
+                            if (rideOption.hasSurge) ...[
+                              const SizedBox(height: 8),
+                              _buildFareRow(
+                                'Surge (${rideOption.surgeMultiplier.toStringAsFixed(1)}x)',
+                                'Applied',
+                                valueColor: Colors.orange,
+                              ),
+                            ],
                             if (_discountAmount > 0) ...[
                               const SizedBox(height: 8),
                               _buildFareRow('Promo discount', '- ${CurrencyUtils.formatExact(_discountAmount)}', valueColor: Colors.green),
@@ -610,13 +632,35 @@ class _ConfirmRideScreenState extends State<ConfirmRideScreen> {
             // Confirm Button
             Padding(
               padding: const EdgeInsets.all(20),
-              child: CustomButton.main(
-                text: _isLoading
-                    ? 'Processing...'
-                    : (Provider.of<BookingState>(context).isPickupNow
-                        ? 'Confirm & Book'
-                        : 'Schedule Ride'),
-                onTap: _isLoading ? null : _confirmRide,
+              child: Column(
+                children: [
+                  CustomButton.main(
+                    text: _isLoading
+                        ? 'Processing...'
+                        : (Provider.of<BookingState>(context).isPickupNow
+                            ? 'Confirm & Book'
+                            : 'Schedule Ride'),
+                    onTap: _isLoading ? null : _confirmRide,
+                  ),
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    width: double.infinity,
+                    child: TextButton(
+                      onPressed: _isLoading
+                          ? null
+                          : () {
+                              Navigator.pop(context);
+                            },
+                      child: Text(
+                        'Cancel',
+                        style: AppTextStyles.body.copyWith(
+                          color: Colors.red,
+                          fontSize: 15,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ],

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -34,11 +35,16 @@ class RideInProgressScreen extends StatefulWidget {
 class _RideInProgressScreenState extends State<RideInProgressScreen> {
   int _minutesRemaining = 15;
   Timer? _timer;
+  Timer? _elapsedTimer;
+  int _elapsedSeconds = 0;
   final Completer<GoogleMapController> _mapController = Completer();
   final NavigationService _navigationService = NavigationService();
   Set<Marker> _markers = {};
   Set<Polyline> _polylines = {};
   bool _isInitiatingPayment = false;
+  List<LatLng> _expectedRoute = [];
+  bool _isDeviated = false;
+  static const double _deviationThresholdMeters = 200;
 
   // Dark map style
   static const String _darkMapStyle = '''
@@ -65,6 +71,7 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
   @override
   void dispose() {
     _timer?.cancel();
+    _elapsedTimer?.cancel();
     // Dispose GoogleMapController to free native resources
     if (_mapController.isCompleted) {
       _mapController.future.then((c) => c.dispose());
@@ -76,6 +83,10 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
     // Refresh ETA from Directions API every 30 seconds instead of artificial countdown
     _timer = Timer.periodic(const Duration(seconds: 30), (timer) {
       _refreshEta();
+    });
+    // Elapsed trip timer — ticks every second
+    _elapsedTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      setState(() => _elapsedSeconds++);
     });
   }
 
@@ -109,10 +120,87 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
           });
         }
       }
+
+      // Check route deviation
+      if (_expectedRoute.isNotEmpty &&
+          driver != null &&
+          driver.latitude != 0 &&
+          driver.longitude != 0) {
+        _checkRouteDeviation(origin);
+      }
     } catch (e) {
       debugPrint('Failed to refresh ETA: $e');
     }
   }
+
+  /// Check if driver has deviated from expected route.
+  void _checkRouteDeviation(LatLng driverPos) {
+    final minDist = _minDistanceToPolyline(driverPos, _expectedRoute);
+    final deviated = minDist > _deviationThresholdMeters;
+    if (deviated && !_isDeviated && mounted) {
+      setState(() => _isDeviated = true);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text(
+            'Driver appears to be off the expected route',
+          ),
+          backgroundColor: Colors.orange,
+          duration: const Duration(seconds: 5),
+          action: SnackBarAction(
+            label: 'OK',
+            textColor: Colors.white,
+            onPressed: () {},
+          ),
+        ),
+      );
+    } else if (!deviated && _isDeviated) {
+      setState(() => _isDeviated = false);
+    }
+  }
+
+  /// Minimum distance (meters) from [point] to polyline defined by [polyPoints].
+  static double _minDistanceToPolyline(LatLng point, List<LatLng> polyPoints) {
+    double minDist = double.infinity;
+    for (int i = 0; i < polyPoints.length - 1; i++) {
+      final d = _distanceToSegment(point, polyPoints[i], polyPoints[i + 1]);
+      if (d < minDist) minDist = d;
+    }
+    return minDist;
+  }
+
+  /// Distance (meters) from [p] to line segment [a]-[b] using Haversine.
+  static double _distanceToSegment(LatLng p, LatLng a, LatLng b) {
+    final dAB = _haversine(a, b);
+    if (dAB < 1) return _haversine(p, a); // degenerate segment
+    // Project p onto segment a-b
+    final t = (((p.latitude - a.latitude) * (b.latitude - a.latitude)) +
+            ((p.longitude - a.longitude) * (b.longitude - a.longitude))) /
+        (((b.latitude - a.latitude) * (b.latitude - a.latitude)) +
+            ((b.longitude - a.longitude) * (b.longitude - a.longitude)));
+    final clamped = t.clamp(0.0, 1.0);
+    final proj = LatLng(
+      a.latitude + clamped * (b.latitude - a.latitude),
+      a.longitude + clamped * (b.longitude - a.longitude),
+    );
+    return _haversine(p, proj);
+  }
+
+  /// Haversine distance in meters.
+  static double _haversine(LatLng a, LatLng b) {
+    const r = 6371000.0;
+    final dLat = _deg2rad(b.latitude - a.latitude);
+    final dLng = _deg2rad(b.longitude - a.longitude);
+    final sLat = math.sin(dLat / 2);
+    final sLng = math.sin(dLng / 2);
+    final h = sLat * sLat +
+        math.cos(_deg2rad(a.latitude)) *
+            math.cos(_deg2rad(b.latitude)) *
+            sLng *
+            sLng;
+    return 2 * r * math.asin(math.sqrt(h));
+  }
+
+  static double _deg2rad(double deg) => deg * math.pi / 180;
 
   Future<void> _setupMap() async {
     final bookingState = Provider.of<BookingState>(context, listen: false);
@@ -178,6 +266,8 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
           final leg = routes[0]['legs'][0];
           final durationSeconds = leg['duration']['value'] as int;
           final etaMinutes = (durationSeconds / 60).ceil();
+
+          _expectedRoute = decodedPoints;
 
           setState(() {
             _minutesRemaining = etaMinutes;
@@ -545,6 +635,13 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
                           '${booking?.distanceKm.toStringAsFixed(1) ?? '0'} ${Provider.of<RegionProvider>(context, listen: false).isNigeria ? 'km' : 'mi'}',
                           style: AppTextStyles.body.copyWith(
                             color: AppColors.yellow90,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Text(
+                          '${(_elapsedSeconds ~/ 60).toString().padLeft(2, '0')}:${(_elapsedSeconds % 60).toString().padLeft(2, '0')}',
+                          style: AppTextStyles.body.copyWith(
+                            color: AppColors.txtInactive,
                           ),
                         ),
                       ],

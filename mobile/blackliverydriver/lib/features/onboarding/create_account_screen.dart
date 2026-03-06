@@ -118,8 +118,7 @@ class _CreateAccountScreenState extends ConsumerState<CreateAccountScreen> {
           ? data['error']?.toString() ?? data['message']?.toString()
           : null;
 
-      if (statusCode == 409 &&
-          (serverMessage?.toLowerCase().contains('email') ?? false)) {
+      if (statusCode == 409) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: const Text('Email already registered. Please login.'),
@@ -143,7 +142,7 @@ class _CreateAccountScreenState extends ConsumerState<CreateAccountScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
-              'Network timeout. Check your backend/API and try again.',
+              'Network error. Check connection.',
             ),
           ),
         );

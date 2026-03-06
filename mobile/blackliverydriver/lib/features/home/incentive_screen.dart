@@ -51,6 +51,7 @@ class _IncentiveScreenState extends State<IncentiveScreen> {
           final peakTrips = (data['peakTrips'] as num?)?.toInt() ?? 0;
           final totalEarnings = provider.totalEarnings;
           final isChicago = context.watch<RegionProvider>().isChicago;
+          final dailyTrips = (data['dailyTrips'] as num?)?.toInt() ?? 0;
 
           return RefreshIndicator(
             onRefresh: () => provider.loadEarningsData(),
@@ -60,6 +61,19 @@ class _IncentiveScreenState extends State<IncentiveScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Daily trip goal
+                  _buildProgressCard(
+                    title: 'Daily Trip Goal',
+                    current: dailyTrips,
+                    target: isChicago ? 8 : 15,
+                    reward: isChicago
+                        ? '${CurrencyUtils.format(50, currency: 'USD')} Bonus'
+                        : '${CurrencyUtils.format(2000)} Bonus',
+                    icon: Icons.today,
+                    subtitle: 'Complete ${isChicago ? 8 : 15} trips today',
+                  ),
+                  const SizedBox(height: 16),
+
                   if (!isChicago) ...[
                     // Nigeria weekly trip goal
                     _buildProgressCard(
@@ -205,6 +219,19 @@ class _IncentiveScreenState extends State<IncentiveScreen> {
                             '• Peak hours earn extra ${CurrencyUtils.format(isChicago ? 5 : 300, currency: isChicago ? 'USD' : 'NGN')}–${CurrencyUtils.format(isChicago ? 8 : 500, currency: isChicago ? 'USD' : 'NGN')} per trip'),
                         _buildInfoLine(
                             '• Bonuses are paid weekly on Mondays'),
+                        const SizedBox(height: 12),
+                        const Text(
+                          'Peak Hours',
+                          style: TextStyle(
+                            color: AppColors.primary,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 13,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        _buildInfoLine('  Morning: 7:00 AM – 9:00 AM'),
+                        _buildInfoLine('  Afternoon: 12:00 PM – 2:00 PM'),
+                        _buildInfoLine('  Evening: 5:00 PM – 8:00 PM'),
                       ],
                     ),
                   ),

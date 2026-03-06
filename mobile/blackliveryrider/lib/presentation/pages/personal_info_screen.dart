@@ -3,6 +3,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
 import 'package:provider/provider.dart';
 import '../../core/providers/auth_provider.dart';
+import '../../core/providers/region_provider.dart';
 
 class PersonalInfoScreen extends StatefulWidget {
   const PersonalInfoScreen({super.key});
@@ -149,9 +150,17 @@ class _PersonalInfoScreenState extends State<PersonalInfoScreen> {
             const SizedBox(height: 16),
 
             // Phone field (read-only — changing auth credentials requires re-verification)
-            _buildReadOnlyField(
-              icon: Icons.phone_outlined,
-              value: _phoneNumber.isEmpty ? 'Not set' : _phoneNumber,
+            Builder(
+              builder: (context) {
+                final phoneCodePrefix = context.watch<RegionProvider>().phoneCode;
+                final phoneDisplay = _phoneNumber.isEmpty
+                    ? 'Not set'
+                    : '$phoneCodePrefix $_phoneNumber';
+                return _buildReadOnlyField(
+                  icon: Icons.phone_outlined,
+                  value: phoneDisplay,
+                );
+              },
             ),
           ],
         ),

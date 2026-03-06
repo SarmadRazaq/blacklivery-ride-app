@@ -91,6 +91,43 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   return const Center(child: CircularProgressIndicator());
                 }
 
+                if (provider.error != null && provider.messages.isEmpty) {
+                  return Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.error_outline, color: Colors.grey[600], size: 48),
+                        const SizedBox(height: 12),
+                        Text(
+                          'Unable to load chat',
+                          style: TextStyle(color: Colors.grey[400], fontSize: 16),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+
+                if (!provider.isLoading && provider.messages.isEmpty) {
+                  return Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.chat_bubble_outline, color: Colors.grey[600], size: 48),
+                        const SizedBox(height: 12),
+                        Text(
+                          'Start a conversation',
+                          style: TextStyle(color: Colors.grey[400], fontSize: 16),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Send a message to your rider',
+                          style: TextStyle(color: Colors.grey[600], fontSize: 13),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+
                 // Sort messages descending for reverse list
                 final messages = List.from(provider.messages.reversed);
 
@@ -143,8 +180,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              // Using intl or simple string
-                              "${msg.timestamp.hour}:${msg.timestamp.minute.toString().padLeft(2, '0')}",
+                              _relativeTime(msg.timestamp),
                               style: TextStyle(
                                 color: msg.isFromDriver
                                     ? Colors.black54
@@ -165,6 +201,16 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         ],
       ),
     );
+  }
+
+  String _relativeTime(DateTime timestamp) {
+    final now = DateTime.now();
+    final diff = now.difference(timestamp);
+    if (diff.inSeconds < 60) return 'Just now';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+    if (diff.inHours < 24) return '${diff.inHours}h ago';
+    if (diff.inDays < 7) return '${diff.inDays}d ago';
+    return '${timestamp.day}/${timestamp.month}';
   }
 
   Widget _buildInputArea() {

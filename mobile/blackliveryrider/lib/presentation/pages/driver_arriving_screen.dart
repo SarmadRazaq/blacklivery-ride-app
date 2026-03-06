@@ -10,6 +10,7 @@ import 'package:provider/provider.dart';
 import '../../core/data/booking_state.dart';
 import '../../core/services/socket_service.dart';
 import '../../core/services/location_service.dart';
+import '../../core/services/navigation_service.dart';
 import '../widgets/vehicle_icon.dart';
 import '../widgets/ride_map_view.dart';
 import 'driving_to_destination_screen.dart';
@@ -28,7 +29,10 @@ class _DriverArrivingScreenState extends State<DriverArrivingScreen> {
   bool _hasNavigatedToTrip = false;
   final SocketService _socketService = SocketService();
   final LocationService _locationService = LocationService();
+  final NavigationService _navigationService = NavigationService();
   StreamSubscription? _locationSub;
+  List<LatLng> _routePoints = [];
+  DateTime? _lastRouteFetch;
 
   @override
   void initState() {
@@ -65,9 +69,42 @@ class _DriverArrivingScreenState extends State<DriverArrivingScreen> {
               _driverLatLng = LatLng(lat, lng);
               if (eta != null) _etaMinutes = eta;
             });
+            _fetchDriverToPickupRoute();
           }
         }
       });
+    }
+  }
+
+  /// Fetch route polyline from driver to pickup (throttled to every 15s).
+  Future<void> _fetchDriverToPickupRoute() async {
+    if (_driverLatLng == null) return;
+    final now = DateTime.now();
+    if (_lastRouteFetch != null &&
+        now.difference(_lastRouteFetch!).inSeconds < 15) {
+      return;
+    }
+    _lastRouteFetch = now;
+
+    final bookingState = Provider.of<BookingState>(context, listen: false);
+    final pickup = bookingState.pickupLocation;
+    if (pickup == null) return;
+
+    final pickupLatLng = LatLng(pickup.latitude, pickup.longitude);
+    try {
+      final routeData =
+          await _navigationService.getRoute(_driverLatLng!, pickupLatLng);
+      if (routeData['status'] == 'OK' && mounted) {
+        final routes = routeData['routes'] as List;
+        if (routes.isNotEmpty) {
+          final encoded =
+              routes[0]['overview_polyline']['points'] as String;
+          final points = _navigationService.decodePolyline(encoded);
+          setState(() => _routePoints = points);
+        }
+      }
+    } catch (e) {
+      debugPrint('Failed to fetch driver→pickup route: $e');
     }
   }
 
@@ -185,67 +222,98 @@ class _DriverArrivingScreenState extends State<DriverArrivingScreen> {
 
   void _cancelRide() {
     final reasonController = TextEditingController();
+    final bookingState = Provider.of<BookingState>(context, listen: false);
+    final createdAt = bookingState.currentBooking?.scheduledTime;
+    final gracePeriod = const Duration(minutes: 2);
+    final isWithinGrace = createdAt != null &&
+        DateTime.now().difference(createdAt) <= gracePeriod;
+
+    String? reasonError;
+
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: AppColors.bgSec,
-        title: Text('Cancel Ride?', style: AppTextStyles.heading3),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Are you sure you want to cancel this ride? Cancellation fees may apply.',
-              style: AppTextStyles.body.copyWith(color: AppColors.txtInactive),
-            ),
-            const SizedBox(height: 16),
-            Container(
-              decoration: BoxDecoration(
-                color: AppColors.bgPri,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: AppColors.inputBorder),
-              ),
-              child: TextField(
-                controller: reasonController,
-                maxLines: 3,
-                maxLength: 300,
-                style: AppTextStyles.body.copyWith(color: Colors.white),
-                decoration: InputDecoration(
-                  hintText: 'Reason for cancellation (optional)',
-                  hintStyle: AppTextStyles.body.copyWith(
-                    color: AppColors.txtInactive,
-                    fontSize: 13,
-                  ),
-                  border: InputBorder.none,
-                  counterStyle: AppTextStyles.caption.copyWith(
-                    color: AppColors.txtInactive,
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          backgroundColor: AppColors.bgSec,
+          title: Text('Cancel Ride?', style: AppTextStyles.heading3),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                isWithinGrace
+                    ? 'You are within the 2-minute grace period. No cancellation fee will be charged.'
+                    : 'Cancellation fees may apply since the grace period has passed.',
+                style: AppTextStyles.body.copyWith(
+                  color: isWithinGrace ? Colors.green : Colors.orange,
+                  fontSize: 13,
                 ),
+              ),
+              const SizedBox(height: 16),
+              Container(
+                decoration: BoxDecoration(
+                  color: AppColors.bgPri,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: reasonError != null ? Colors.red : AppColors.inputBorder,
+                  ),
+                ),
+                child: TextField(
+                  controller: reasonController,
+                  maxLines: 3,
+                  maxLength: 300,
+                  style: AppTextStyles.body.copyWith(color: Colors.white),
+                  decoration: InputDecoration(
+                    hintText: 'Reason for cancellation (required)',
+                    hintStyle: AppTextStyles.body.copyWith(
+                      color: AppColors.txtInactive,
+                      fontSize: 13,
+                    ),
+                    border: InputBorder.none,
+                    counterStyle: AppTextStyles.caption.copyWith(
+                      color: AppColors.txtInactive,
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  ),
+                ),
+              ),
+              if (reasonError != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    reasonError!,
+                    style: const TextStyle(color: Colors.red, fontSize: 12),
+                  ),
+                ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text('No', style: AppTextStyles.body),
+            ),
+            TextButton(
+              onPressed: () {
+                final reason = reasonController.text.trim();
+                if (reason.isEmpty) {
+                  setDialogState(() {
+                    reasonError = 'Please provide a reason';
+                  });
+                  return;
+                }
+                Navigator.pop(context);
+                Provider.of<BookingState>(context, listen: false).cancelBooking(
+                  reason: reason,
+                );
+                Navigator.of(context).popUntil((route) => route.isFirst);
+              },
+              child: Text(
+                'Yes, Cancel',
+                style: AppTextStyles.body.copyWith(color: Colors.red),
               ),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text('No', style: AppTextStyles.body),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              final reason = reasonController.text.trim();
-              Provider.of<BookingState>(context, listen: false).cancelBooking(
-                reason: reason.isNotEmpty ? reason : null,
-              );
-              Navigator.of(context).popUntil((route) => route.isFirst);
-            },
-            child: Text(
-              'Yes, Cancel',
-              style: AppTextStyles.body.copyWith(color: Colors.red),
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -299,10 +367,12 @@ class _DriverArrivingScreenState extends State<DriverArrivingScreen> {
             flex: 2,
             child: Stack(
               children: [
-                // Real Google Map with driver location
+                // Real Google Map with driver location and route
                 RideMapView(
                   pickup: pickupLatLng,
                   driverLocation: _driverLatLng,
+                  showRoute: _routePoints.isNotEmpty,
+                  routePoints: _routePoints,
                 ),
 
                 // Back button

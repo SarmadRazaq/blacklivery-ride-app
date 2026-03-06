@@ -5,6 +5,7 @@ import 'dart:io';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/providers/riverpod_providers.dart';
 import '../data/services/driver_service.dart';
+import '../screens/login_screen.dart';
 
 class EditProfileScreen extends ConsumerStatefulWidget {
   const EditProfileScreen({super.key});
@@ -63,9 +64,45 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
         await _driverService.updateProfileField('phoneNumber', phoneNumber);
       }
 
+      final newEmail = _emailController.text.trim();
+      final currentEmail = user?.email ?? '';
+      final emailChanged = newEmail.isNotEmpty && newEmail != currentEmail;
+      if (emailChanged) {
+        await _driverService.updateProfileField('email', newEmail);
+      }
+
       // Refresh cached profile
       if (mounted) {
         await ref.read(authRiverpodProvider).getProfile();
+      }
+
+      if (emailChanged && mounted) {
+        await showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (ctx) => AlertDialog(
+            backgroundColor: const Color(0xFF1E1E1E),
+            title: const Text('Email Updated', style: TextStyle(color: Colors.white)),
+            content: const Text(
+              'For security reasons, please log in again with your new email.',
+              style: TextStyle(color: Colors.white70),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  ref.read(authRiverpodProvider).logout();
+                  Navigator.of(context).pushAndRemoveUntil(
+                    MaterialPageRoute(builder: (_) => const LoginScreen()),
+                    (route) => false,
+                  );
+                },
+                child: const Text('OK', style: TextStyle(color: Colors.blue)),
+              ),
+            ],
+          ),
+        );
+        return;
       }
 
       if (mounted) {
@@ -231,6 +268,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                 controller: _phoneController,
                 hint: 'Enter phone number',
                 keyboardType: TextInputType.phone,
+                validator: (v) => (v == null || v.trim().isEmpty) ? 'Phone number is required' : null,
               ),
               const SizedBox(height: 20),
 
@@ -239,11 +277,12 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
               _buildTextField(
                 controller: _emailController,
                 hint: 'Email address',
-                enabled: false, // Email cannot be changed
+                keyboardType: TextInputType.emailAddress,
+                validator: (v) => (v == null || v.trim().isEmpty) ? 'Email is required' : null,
               ),
               const SizedBox(height: 8),
               Text(
-                'Email cannot be changed',
+                'Changing email will require re-login',
                 style: TextStyle(color: Colors.grey[600], fontSize: 12),
               ),
               const SizedBox(height: 40),

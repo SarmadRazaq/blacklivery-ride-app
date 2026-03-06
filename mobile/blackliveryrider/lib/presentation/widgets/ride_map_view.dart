@@ -38,8 +38,25 @@ class RideMapView extends StatefulWidget {
   State<RideMapView> createState() => _RideMapViewState();
 }
 
-class _RideMapViewState extends State<RideMapView> {
+class _RideMapViewState extends State<RideMapView>
+    with SingleTickerProviderStateMixin {
   final Completer<GoogleMapController> _controller = Completer();
+
+  // Smooth marker interpolation
+  AnimationController? _markerAnimController;
+  LatLng? _previousDriverLatLng;
+  LatLng? _animatedDriverLatLng;
+
+  @override
+  void initState() {
+    super.initState();
+    _animatedDriverLatLng = widget.driverLocation;
+    _previousDriverLatLng = widget.driverLocation;
+    _markerAnimController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    );
+  }
 
   Set<Marker> get _markers {
     final markers = <Marker>{};
@@ -66,11 +83,12 @@ class _RideMapViewState extends State<RideMapView> {
       );
     }
 
-    if (widget.driverLocation != null) {
+    final driverPos = _animatedDriverLatLng ?? widget.driverLocation;
+    if (driverPos != null) {
       markers.add(
         Marker(
           markerId: const MarkerId('driver'),
-          position: widget.driverLocation!,
+          position: driverPos,
           icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueYellow),
           infoWindow: const InfoWindow(title: 'Driver'),
         ),
@@ -121,18 +139,41 @@ class _RideMapViewState extends State<RideMapView> {
   @override
   void didUpdateWidget(covariant RideMapView oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // Animate camera when driver location updates
+    // Smoothly interpolate driver marker to new position
     if (widget.driverLocation != null &&
         widget.driverLocation != oldWidget.driverLocation) {
-      _animateToDriver();
+      _previousDriverLatLng =
+          _animatedDriverLatLng ?? oldWidget.driverLocation ?? widget.driverLocation;
+      _interpolateDriver(widget.driverLocation!);
     }
+  }
+
+  void _interpolateDriver(LatLng target) {
+    final from = _previousDriverLatLng ?? target;
+    _markerAnimController!.reset();
+    final animation = Tween<double>(begin: 0, end: 1).animate(
+      CurvedAnimation(parent: _markerAnimController!, curve: Curves.easeInOut),
+    );
+    animation.addListener(() {
+      final t = animation.value;
+      setState(() {
+        _animatedDriverLatLng = LatLng(
+          from.latitude + (target.latitude - from.latitude) * t,
+          from.longitude + (target.longitude - from.longitude) * t,
+        );
+      });
+    });
+    _markerAnimController!.forward();
+    _animateToDriver();
   }
 
   Future<void> _animateToDriver() async {
     if (!_controller.isCompleted) return;
     final controller = await _controller.future;
+    final pos = _animatedDriverLatLng ?? widget.driverLocation;
+    if (pos == null) return;
     controller.animateCamera(
-      CameraUpdate.newLatLng(widget.driverLocation!),
+      CameraUpdate.newLatLng(pos),
     );
   }
 
@@ -172,6 +213,7 @@ class _RideMapViewState extends State<RideMapView> {
 
   @override
   void dispose() {
+    _markerAnimController?.dispose();
     // Dispose GoogleMapController to free native resources
     if (_controller.isCompleted) {
       _controller.future.then((c) => c.dispose());

@@ -3,6 +3,8 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/currency_utils.dart';
 import '../../features/chat/support_chat_screen.dart';
+import '../../features/chat/data/models/support_ticket_model.dart';
+import '../../features/chat/data/services/support_service.dart';
 
 /// Support / Help screen for driver app — ticket list, FAQ, and new ticket form.
 class SupportScreen extends StatefulWidget {
@@ -13,6 +15,8 @@ class SupportScreen extends StatefulWidget {
 }
 
 class _SupportScreenState extends State<SupportScreen> {
+  final SupportService _supportService = SupportService();
+
   static final List<Map<String, dynamic>> _faqItems = [
     {
       'q': 'How do I receive my payout?',
@@ -74,6 +78,18 @@ class _SupportScreenState extends State<SupportScreen> {
                 MaterialPageRoute(builder: (_) => const SupportChatScreen()),
               );
             },
+          ),
+          _buildSupportOption(
+            icon: Icons.confirmation_number_outlined,
+            title: 'My Tickets',
+            subtitle: 'View your support tickets and their statuses',
+            onTap: () => _showTicketsBottomSheet(context),
+          ),
+          _buildSupportOption(
+            icon: Icons.add_circle_outline,
+            title: 'New Ticket',
+            subtitle: 'Create a new support ticket with a specific subject',
+            onTap: () => _showNewTicketDialog(context),
           ),
           _buildSupportOption(
             icon: Icons.phone_outlined,
@@ -245,6 +261,280 @@ class _SupportScreenState extends State<SupportScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  // ── My Tickets bottom sheet (SUP-D-02 / SUP-D-04 / SUP-D-05) ──
+
+  void _showTicketsBottomSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) {
+        return DraggableScrollableSheet(
+          initialChildSize: 0.55,
+          minChildSize: 0.3,
+          maxChildSize: 0.85,
+          builder: (context, scrollController) {
+            return Container(
+              decoration: const BoxDecoration(
+                color: Color(0xFF1E1E1E),
+                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Center(
+                          child: Container(
+                            width: 40,
+                            height: 4,
+                            decoration: BoxDecoration(
+                              color: Colors.grey[600],
+                              borderRadius: BorderRadius.circular(2),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        const Text(
+                          'My Tickets',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                      ],
+                    ),
+                  ),
+                  Expanded(
+                    child: FutureBuilder<List<SupportTicket>>(
+                      future: _supportService.getTickets(),
+                      builder: (context, snapshot) {
+                        if (snapshot.connectionState == ConnectionState.waiting) {
+                          return const Center(child: CircularProgressIndicator());
+                        }
+                        if (snapshot.hasError) {
+                          return Center(
+                            child: Text(
+                              'Unable to load tickets',
+                              style: TextStyle(color: Colors.grey[500]),
+                            ),
+                          );
+                        }
+                        final tickets = snapshot.data ?? [];
+                        if (tickets.isEmpty) {
+                          return Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.inbox_outlined, size: 56, color: Colors.grey[700]),
+                                const SizedBox(height: 12),
+                                const Text(
+                                  'No tickets yet',
+                                  style: TextStyle(color: Colors.white, fontSize: 16),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Your support tickets will appear here.',
+                                  style: TextStyle(color: Colors.grey[500], fontSize: 13),
+                                ),
+                              ],
+                            ),
+                          );
+                        }
+                        // Sort newest first
+                        tickets.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+                        return ListView.separated(
+                          controller: scrollController,
+                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                          itemCount: tickets.length,
+                          separatorBuilder: (_, _) => Divider(color: Colors.grey[800], height: 1),
+                          itemBuilder: (context, index) {
+                            final ticket = tickets[index];
+                            return _buildTicketTile(ticket);
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildTicketTile(SupportTicket ticket) {
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      title: Text(
+        ticket.subject.isNotEmpty ? ticket.subject : 'Support Request',
+        style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w500),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      subtitle: Text(
+        '${ticket.createdAt.day}/${ticket.createdAt.month}/${ticket.createdAt.year}',
+        style: TextStyle(color: Colors.grey[500], fontSize: 12),
+      ),
+      trailing: _buildStatusChip(ticket.status),
+      onTap: () {
+        Navigator.pop(context); // close bottom sheet
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => SupportChatScreen(ticketId: ticket.id),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildStatusChip(String status) {
+    Color color;
+    String label;
+    switch (status) {
+      case 'open':
+        color = Colors.blue;
+        label = 'Open';
+        break;
+      case 'in_progress':
+        color = Colors.orange;
+        label = 'In Progress';
+        break;
+      case 'resolved':
+        color = Colors.green;
+        label = 'Resolved';
+        break;
+      case 'closed':
+        color = Colors.grey;
+        label = 'Closed';
+        break;
+      default:
+        color = Colors.grey;
+        label = status;
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withValues(alpha: 0.4)),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w600),
+      ),
+    );
+  }
+
+  // ── New Ticket dialog (SUP-D-03) ──
+
+  void _showNewTicketDialog(BuildContext context) {
+    final subjectController = TextEditingController();
+    final messageController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFF1E1E1E),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text('New Ticket', style: TextStyle(color: Colors.white)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: subjectController,
+                style: const TextStyle(color: Colors.white),
+                cursorColor: AppColors.primary,
+                decoration: InputDecoration(
+                  hintText: 'Subject',
+                  hintStyle: TextStyle(color: Colors.grey[600]),
+                  filled: true,
+                  fillColor: AppColors.background,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: messageController,
+                style: const TextStyle(color: Colors.white),
+                cursorColor: AppColors.primary,
+                minLines: 3,
+                maxLines: 5,
+                decoration: InputDecoration(
+                  hintText: 'Describe your issue...',
+                  hintStyle: TextStyle(color: Colors.grey[600]),
+                  filled: true,
+                  fillColor: AppColors.background,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text('Cancel', style: TextStyle(color: Colors.grey[400])),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              onPressed: () async {
+                final subject = subjectController.text.trim();
+                final message = messageController.text.trim();
+                if (subject.isEmpty || message.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Please fill in both fields')),
+                  );
+                  return;
+                }
+                Navigator.pop(ctx);
+                try {
+                  final ticket = await _supportService.createTicket(subject, message);
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Ticket created successfully')),
+                    );
+                    // Open the newly created ticket chat
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => SupportChatScreen(ticketId: ticket.id),
+                      ),
+                    );
+                  }
+                } catch (e) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Error: $e')),
+                    );
+                  }
+                }
+              },
+              child: const Text('Submit', style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        );
+      },
     );
   }
 }

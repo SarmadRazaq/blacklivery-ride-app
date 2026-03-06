@@ -245,28 +245,31 @@ class _TripScreenState extends ConsumerState<TripScreen> {
             'Cancel Ride?',
             style: TextStyle(color: AppColors.white),
           ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Please select a reason:',
-                style: TextStyle(color: AppColors.grey),
-              ),
-              const SizedBox(height: 8),
-              ...reasons.map((r) => RadioListTile<String>(
-                    title: Text(r,
-                        style: const TextStyle(
-                            color: AppColors.white, fontSize: 13)),
-                    value: r,
-                    groupValue: selectedReason,
-                    activeColor: AppColors.primary,
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                    onChanged: (v) =>
-                        setDialogState(() => selectedReason = v!),
-                  )),
-            ],
+          content: RadioGroup<String>(
+            groupValue: selectedReason,
+            onChanged: (v) {
+              if (v != null) setDialogState(() => selectedReason = v);
+            },
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Please select a reason:',
+                  style: TextStyle(color: AppColors.grey),
+                ),
+                const SizedBox(height: 8),
+                ...reasons.map((r) => RadioListTile<String>(
+                      title: Text(r,
+                          style: const TextStyle(
+                              color: AppColors.white, fontSize: 13)),
+                      value: r,
+                      activeColor: AppColors.primary,
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                    )),
+              ],
+            ),
           ),
           actions: [
             TextButton(
@@ -327,8 +330,9 @@ class _TripScreenState extends ConsumerState<TripScreen> {
       return;
     }
 
+    // Use turn-by-turn navigation URL
     final url = Uri.parse(
-      'https://www.google.com/maps/search/?api=1&query=$lat,$lng',
+      _navService.getGoogleMapsNavigationUrl(lat, lng),
     );
     if (await canLaunchUrl(url)) {
       await launchUrl(url, mode: LaunchMode.externalApplication);
@@ -372,8 +376,7 @@ class _TripScreenState extends ConsumerState<TripScreen> {
                 children: [
                   _buildLocationHeader(),
                   const Spacer(),
-                  if (_tripStatus != TripStatus.inProgress)
-                    _buildCancelButton(),
+                  _buildCancelButton(),
                 ],
               ),
             ),
@@ -701,101 +704,155 @@ class _TripScreenState extends ConsumerState<TripScreen> {
 
         const SizedBox(height: 16),
 
-        // Price Info with Quiet Mode
+        // Price Info + Action Buttons (Navigate, Call, Chat)
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 24),
-          child: Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: AppColors.inputBackground,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          child: Row(
+            children: [
+              GestureDetector(
+                onTap: () async {
+                  final phone = widget.ride.rider?.phone;
+                  if (phone == null || phone.isEmpty) {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Rider phone number not available')),
+                      );
+                    }
+                    return;
+                  }
+                  try {
+                    await launchUrl(Uri.parse('tel:$phone'));
+                  } catch (_) {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Could not launch phone dialer')),
+                      );
+                    }
+                  }
+                },
+                child: Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: AppColors.inputBackground,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(Icons.phone, color: AppColors.primary, size: 20),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                decoration: BoxDecoration(
+                  color: AppColors.inputBackground,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
                   children: [
                     Text(
-                      widget.ride.rider?.name ?? 'Passenger',
+                      CurrencyUtils.format(widget.ride.fare),
                       style: const TextStyle(
                         color: AppColors.white,
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
-                    Row(
-                      children: [
-                        Text(
-                          CurrencyUtils.format(widget.ride.fare),
-                          style: const TextStyle(
-                            color: AppColors.white,
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          '• ${widget.ride.payment?.gateway ?? 'Cash'}',
-                          style: TextStyle(
-                            color: Colors.grey[400],
-                            fontSize: 14,
-                          ),
-                        ),
-                      ],
+                    const SizedBox(width: 4),
+                    Text(
+                      '• ${widget.ride.payment?.gateway ?? 'Cash'}',
+                      style: TextStyle(color: Colors.grey[400], fontSize: 14),
                     ),
                   ],
                 ),
-                if (widget.ride.rider?.quietMode == true) ...[
-                  const SizedBox(height: 12),
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: AppColors.cardBackground,
-                      borderRadius: BorderRadius.circular(8),
+              ),
+              GestureDetector(
+                onTap: _launchMaps,
+                child: Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: AppColors.inputBackground,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(Icons.navigation, color: AppColors.primary, size: 20),
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Spacer(),
+              GestureDetector(
+                onTap: () {
+                  final rideId = widget.ride.id;
+                  if (rideId.isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Ride ID not available')),
+                    );
+                    return;
+                  }
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (context) => ChatScreen(
+                        rideId: rideId,
+                        riderName: widget.ride.rider?.name ?? 'Rider',
+                      ),
                     ),
-                    child: Row(
+                  );
+                },
+                child: Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: AppColors.inputBackground,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(Icons.message, color: AppColors.white, size: 20),
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 12),
+
+        // Quiet Mode indicator
+        if (widget.ride.rider?.quietMode == true)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.inputBackground,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.volume_off, color: AppColors.primary, size: 20),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Icon(
-                          Icons.volume_off,
-                          color: AppColors.primary,
-                          size: 20,
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                'Quiet Mode',
-                                style: TextStyle(
-                                  color: AppColors.white,
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              Text(
-                                'Rider has selected Quiet Mode which means they prefer little to no conversation.',
-                                style: TextStyle(
-                                  color: Colors.grey[400],
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ],
+                        const Text(
+                          'Quiet Mode',
+                          style: TextStyle(
+                            color: AppColors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
                           ),
+                        ),
+                        Text(
+                          'Rider prefers little to no conversation.',
+                          style: TextStyle(color: Colors.grey[400], fontSize: 12),
                         ),
                       ],
                     ),
                   ),
                 ],
-              ],
+              ),
             ),
           ),
-        ),
 
         const SizedBox(height: 20),
 
-        // End Trip Button
         // End Trip Slider
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -895,7 +952,35 @@ class _TripScreenState extends ConsumerState<TripScreen> {
           longitude: position.longitude,
           heading: position.heading,
         );
+
+        // Update driver marker on map
+        _updateDriverMarker(LatLng(position.latitude, position.longitude));
       }
     });
+  }
+
+  void _updateDriverMarker(LatLng position) async {
+    if (!mounted) return;
+    setState(() {
+      final markers = Set<Marker>.from(_markers);
+      markers.removeWhere((m) => m.markerId.value == 'driver');
+      markers.add(
+        Marker(
+          markerId: const MarkerId('driver'),
+          position: position,
+          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue),
+          infoWindow: const InfoWindow(title: 'You'),
+        ),
+      );
+      _markers = markers;
+    });
+
+    // Animate camera to follow driver
+    try {
+      final controller = await _mapController.future;
+      controller.animateCamera(
+        CameraUpdate.newLatLng(position),
+      );
+    } catch (_) {}
   }
 }

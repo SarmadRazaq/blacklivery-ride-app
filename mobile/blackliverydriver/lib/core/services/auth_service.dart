@@ -160,12 +160,12 @@ class AuthService {
   }) async {
     try {
       final payload = <String, dynamic>{
-        if (fullName != null) 'fullName': fullName,
-        if (phoneNumber != null) 'phoneNumber': phoneNumber,
-        if (profileImage != null) 'profileImage': profileImage,
-        if (email != null) 'email': email,
-        if (region != null) 'region': region,
-        if (emergencyContacts != null) 'emergencyContacts': emergencyContacts,
+        'fullName': ?fullName,
+        'phoneNumber': ?phoneNumber,
+        'profileImage': ?profileImage,
+        'email': ?email,
+        'region': ?region,
+        'emergencyContacts': ?emergencyContacts,
       };
 
       final response = await _apiClient.dio.patch(
@@ -256,9 +256,9 @@ class AuthService {
   String _handleFirebaseError(firebase_auth.FirebaseAuthException e) {
     switch (e.code) {
       case 'user-not-found':
-        return 'No account found with this email';
       case 'wrong-password':
-        return 'Incorrect password';
+      case 'invalid-credential':
+        return 'Invalid email or password';
       case 'invalid-email':
         return 'Invalid email address';
       case 'user-disabled':
