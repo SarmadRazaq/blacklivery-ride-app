@@ -67,7 +67,6 @@ const UsersPage = () => {
             const params = new URLSearchParams();
             if (search) params.append('search', search);
             if (roleFilter) params.append('role', roleFilter);
-            if (onboardingStatusFilter) params.append('onboardingStatus', onboardingStatusFilter);
 
             const response = await api.get(`${ADMIN_USERS}?${params.toString()}`, { signal: controller.signal });
             setUsers(response.data);
@@ -78,7 +77,7 @@ const UsersPage = () => {
         } finally {
             if (!controller.signal.aborted) setLoading(false);
         }
-    }, [search, roleFilter, onboardingStatusFilter]);
+    }, [search, roleFilter]);
 
     useEffect(() => {
         const debounce = setTimeout(() => {

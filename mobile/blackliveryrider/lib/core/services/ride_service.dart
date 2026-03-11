@@ -302,6 +302,7 @@ class RideService {
       }
       if (airportCode != null && airportCode.isNotEmpty) {
         payload['airportCode'] = airportCode;
+        payload['isAirport'] = true;
       }
       if (scheduledAt != null) {
         payload['scheduledAt'] = scheduledAt.toUtc().toIso8601String();
@@ -350,6 +351,21 @@ class RideService {
     } catch (e) {
       debugPrint('RideService.getRideDetails error: $e');
       throw Exception('Failed to get ride details');
+    }
+  }
+
+  /// Get rider's current active ride (for app-restart recovery)
+  /// Endpoint: GET /api/v1/rides/active
+  Future<Map<String, dynamic>?> getActiveRide() async {
+    try {
+      final response = await _dio.get('/api/v1/rides/active');
+      final data = _extractMapData(response.data);
+      // Returns null when server says "No active ride"
+      if (data.isEmpty || data['id'] == null) return null;
+      return data;
+    } catch (e) {
+      debugPrint('RideService.getActiveRide error: $e');
+      return null;
     }
   }
 

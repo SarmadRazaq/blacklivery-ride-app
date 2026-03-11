@@ -638,13 +638,18 @@ class _RideDetailsScreenState extends State<RideDetailsScreen> {
     showModalBottomSheet(
       context: context,
       backgroundColor: AppColors.bgSec,
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (ctx) {
-        return Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
+        return ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(ctx).size.height * 0.85,
+          ),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -715,6 +720,11 @@ class _RideDetailsScreenState extends State<RideDetailsScreen> {
               if (ride.baseFare != null || ride.distanceFare != null || ride.timeFare != null)
                 const Divider(color: AppColors.inputBorder, height: 24),
 
+              if (ride.tip != null && ride.tip! > 0)
+                _receiptRow('Tip', CurrencyUtils.format(ride.tip!, currency: ride.currency)),
+              if (ride.tip != null && ride.tip! > 0)
+                const Divider(color: AppColors.inputBorder, height: 24),
+
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -727,7 +737,7 @@ class _RideDetailsScreenState extends State<RideDetailsScreen> {
                     ),
                   ),
                   Text(
-                    CurrencyUtils.format(ride.price),
+                    CurrencyUtils.format(ride.price + (ride.tip ?? 0)),
                     style: AppTextStyles.body.copyWith(
                       color: AppColors.yellow90,
                       fontWeight: FontWeight.w700,
@@ -752,6 +762,7 @@ class _RideDetailsScreenState extends State<RideDetailsScreen> {
                 ),
               ),
             ],
+          ),
           ),
         );
       },

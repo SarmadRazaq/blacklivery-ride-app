@@ -36,6 +36,7 @@ class _TripScreenState extends ConsumerState<TripScreen> {
   List<LatLng> _tripRouteCoordinates = [];
   Set<Marker> _markers = {};
   Set<Polyline> _polylines = {};
+  DateTime? _tripStartedAt;
 
   // ... (style constants) ...
   static const String _darkMapStyle = '''
@@ -191,6 +192,7 @@ class _TripScreenState extends ConsumerState<TripScreen> {
       await ref.read(rideRiverpodProvider).updateStatus('in_progress');
       if (mounted) {
         setState(() {
+          _tripStartedAt = DateTime.now();
           _tripStatus = TripStatus.inProgress;
         });
       }
@@ -206,6 +208,11 @@ class _TripScreenState extends ConsumerState<TripScreen> {
   void _endTrip() async {
     // Capture navigator before async gap so navigation works even if mounted flips
     final navigator = Navigator.of(context);
+    final completedRide = widget.ride.copyWith(
+      status: 'completed',
+      startedAt: _tripStartedAt ?? widget.ride.startedAt,
+      completedAt: DateTime.now(),
+    );
     var completed = false;
     try {
       await ref.read(rideRiverpodProvider).updateStatus('completed');
@@ -220,7 +227,7 @@ class _TripScreenState extends ConsumerState<TripScreen> {
     if (completed) {
       navigator.pushReplacement(
         MaterialPageRoute(
-          builder: (_) => TripCompletedScreen(ride: widget.ride),
+          builder: (_) => TripCompletedScreen(ride: completedRide),
         ),
       );
     }
@@ -313,6 +320,11 @@ class _TripScreenState extends ConsumerState<TripScreen> {
         ),
       ),
     );
+  }
+
+  String _capitalizePayment(String value) {
+    if (value.isEmpty) return value;
+    return value[0].toUpperCase() + value.substring(1);
   }
 
   void _launchMaps() async {
@@ -600,7 +612,7 @@ class _TripScreenState extends ConsumerState<TripScreen> {
                     ),
                     const SizedBox(width: 4),
                     Text(
-                      '• ${widget.ride.payment?.gateway ?? 'Cash'}',
+                      '• ${_capitalizePayment(widget.ride.paymentMethod ?? widget.ride.payment?.gateway ?? 'Cash')}',
                       style: TextStyle(color: Colors.grey[400], fontSize: 14),
                     ),
                   ],
@@ -759,7 +771,7 @@ class _TripScreenState extends ConsumerState<TripScreen> {
                     ),
                     const SizedBox(width: 4),
                     Text(
-                      '• ${widget.ride.payment?.gateway ?? 'Cash'}',
+                      '• ${_capitalizePayment(widget.ride.paymentMethod ?? widget.ride.payment?.gateway ?? 'Cash')}',
                       style: TextStyle(color: Colors.grey[400], fontSize: 14),
                     ),
                   ],

@@ -2,6 +2,7 @@ import { RegionCode, CurrencyCode } from '../config/region.config';
 
 export type RideStatus =
     | 'requested'
+    | 'scheduled'
     | 'finding_driver'
     | 'accepted'
     | 'arrived'
@@ -38,6 +39,7 @@ export interface IRide {
     vehicleCategory: string;
     region: RegionCode;
     city?: 'lagos' | 'abuja' | 'chicago';
+    paymentMethod?: 'wallet' | 'cash' | 'card';
 
     // Airport Transfer
     isAirport?: boolean;
@@ -107,6 +109,13 @@ export interface IRide {
         dispatchedAt?: Date;
     };
     requestedDriverIds?: string[];
+    scheduledAt?: Date;
+    stops?: Array<{
+        lat: number;
+        lng: number;
+        address: string;
+        addedAt: Date;
+    }>;
     createdAt: Date;
     updatedAt?: Date;
     acceptedAt?: Date;

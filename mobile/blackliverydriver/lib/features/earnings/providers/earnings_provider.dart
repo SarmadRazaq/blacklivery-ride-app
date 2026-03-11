@@ -76,11 +76,16 @@ class EarningsProvider with ChangeNotifier {
 
   Future<void> loadEarningsData() => fetchDashboard();
 
-  /// Locally override the daily goal (persisted only in memory for now).
-  void setDailyGoal(double goal) {
+  /// Update the daily earnings goal (persisted to backend).
+  Future<void> setDailyGoal(double goal) async {
     if (_dashboard != null) {
       _dashboard = _dashboard!.copyWithGoal(goal);
       notifyListeners();
+    }
+    try {
+      await _earningsService.updateEarningsGoal(goal);
+    } catch (e) {
+      debugPrint('Error saving earnings goal: $e');
     }
   }
 

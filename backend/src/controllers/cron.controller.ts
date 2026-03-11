@@ -251,7 +251,7 @@ export const dispatchScheduledRides = async (req: Request, res: Response) => {
         const dispatchWindow = new Date(now.getTime() + 5 * 60 * 1000); // 5 min ahead
 
         const scheduledRides = await db.collection('rides')
-            .where('status', '==', 'requested')
+            .where('status', '==', 'scheduled')
             .where('scheduledAt', '<=', dispatchWindow)
             .where('scheduledAt', '>=', new Date(now.getTime() - 30 * 60 * 1000)) // not older than 30 min
             .limit(50)

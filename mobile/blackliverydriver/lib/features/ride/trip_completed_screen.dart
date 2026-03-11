@@ -242,7 +242,7 @@ class _TripCompletedScreenState extends ConsumerState<TripCompletedScreen> {
                     const Divider(color: AppColors.darkGrey, height: 20),
                     _buildRow(
                       'Payment Method',
-                      ride.payment?.gateway ?? 'Cash',
+                      _capitalizePayment(ride.paymentMethod ?? ride.payment?.gateway ?? 'Cash'),
                     ),
                   ],
                 ),
@@ -420,6 +420,11 @@ class _TripCompletedScreenState extends ConsumerState<TripCompletedScreen> {
         ],
       ),
     );
+  }
+
+  String _capitalizePayment(String value) {
+    if (value.isEmpty) return value;
+    return value[0].toUpperCase() + value.substring(1);
   }
 
   Widget _buildRow(String label, String value) {

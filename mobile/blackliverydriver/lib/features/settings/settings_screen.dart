@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/providers/riverpod_providers.dart';
+import '../../core/providers/region_provider.dart';
 
 import '../../features/auth/screens/login_screen.dart';
 import '../../features/auth/screens/documents_screen.dart';
@@ -93,6 +94,11 @@ class SettingsScreen extends ConsumerWidget {
                   ),
                 ),
               ),
+            ]),
+            const SizedBox(height: 24),
+            // Region selector
+            _buildGroup([
+              _buildRegionTile(context, ref),
             ]),
             const SizedBox(height: 24),
             // Group 2
@@ -194,6 +200,94 @@ class SettingsScreen extends ConsumerWidget {
       trailing: Icon(Icons.chevron_right, color: Colors.grey[600], size: 24),
       onTap: onTap,
       contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+    );
+  }
+
+  Widget _buildRegionTile(BuildContext context, WidgetRef ref) {
+    final region = ref.watch(regionRiverpodProvider);
+    return ListTile(
+      leading: Icon(Icons.public, color: Colors.grey[400], size: 22),
+      title: Text(
+        'Region — ${region.current.label}',
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 16,
+          fontWeight: FontWeight.w500,
+        ),
+      ),
+      trailing: Icon(Icons.chevron_right, color: Colors.grey[600], size: 24),
+      onTap: () => _showRegionPicker(context, ref),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+    );
+  }
+
+  void _showRegionPicker(BuildContext context, WidgetRef ref) {
+    final region = ref.read(regionRiverpodProvider);
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1E1E1E),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) {
+        return Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Select Region',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Sets your currency and pricing region',
+                style: TextStyle(color: Colors.grey[500], fontSize: 13),
+              ),
+              const SizedBox(height: 20),
+              ...region.allRegions.map((r) {
+                final isSelected = r.code == region.code;
+                return ListTile(
+                  onTap: () {
+                    region.setRegion(r.code);
+                    Navigator.pop(context);
+                  },
+                  leading: Icon(
+                    Icons.public,
+                    color: isSelected ? const Color(0xFFE6C94E) : Colors.grey[500],
+                  ),
+                  title: Text(
+                    r.label,
+                    style: TextStyle(
+                      color: isSelected ? const Color(0xFFE6C94E) : Colors.white,
+                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                    ),
+                  ),
+                  subtitle: Text(
+                    '${r.currency} (${r.symbol})',
+                    style: TextStyle(color: Colors.grey[500], fontSize: 13),
+                  ),
+                  trailing: isSelected
+                      ? const Icon(Icons.check_circle, color: Color(0xFFE6C94E))
+                      : null,
+                  tileColor: isSelected
+                      ? const Color(0xFFE6C94E).withOpacity(0.08)
+                      : Colors.transparent,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                );
+              }),
+              const SizedBox(height: 12),
+            ],
+          ),
+        );
+      },
     );
   }
 

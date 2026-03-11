@@ -119,9 +119,10 @@ class _CreateAccountScreenState extends ConsumerState<CreateAccountScreen> {
           : null;
 
       if (statusCode == 409) {
+        final msg = serverMessage ?? 'Account already registered';
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text('Email already registered. Please login.'),
+            content: Text('$msg. Please login.'),
             action: SnackBarAction(
               label: 'Login',
               onPressed: () {

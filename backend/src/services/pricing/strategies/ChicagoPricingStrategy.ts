@@ -163,11 +163,11 @@ export class ChicagoPricingStrategy implements IPricingStrategy {
     }
 
     calculateWaitTimeFee(ride: IRide, waitMinutes: number): number {
-        const freeMinutes = ride.isAirport ? 60 : 0;
+        const freeMinutes = ride.isAirport ? 60 : 5;
         if (waitMinutes <= freeMinutes) return 0;
         
         const billable = waitMinutes - freeMinutes;
-        return billable * 1.00;
+        return +(billable * 1.00).toFixed(2);
     }
 }
 

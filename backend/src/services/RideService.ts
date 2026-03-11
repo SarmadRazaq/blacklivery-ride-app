@@ -86,6 +86,17 @@ export class RideService {
         if (value.includes('suv') || value.includes('suburban') || value.includes('crossover') || value.includes('jeep')) return 'suv';
         if (value.includes('sedan') || value.includes('standard') || value.includes('compact') || value.includes('economy')) return 'sedan';
 
+        // Map known car model names from the driver app's picker to categories
+        const modelToCategory: Record<string, string> = {
+            'lincoln town car': 'sedan',
+            'cadillac xts': 'sedan',
+            'mercedes s-class': 'first_class',
+            'bmw 7 series': 'first_class',
+            'chevrolet suburban': 'suv',
+            'chrysler 300': 'sedan',
+        };
+        if (modelToCategory[value]) return modelToCategory[value];
+
         const canonical = new Set(['sedan', 'suv', 'xl', 'first_class', 'motorbike']);
         return canonical.has(value) ? value : null;
     }
@@ -299,6 +310,8 @@ export class RideService {
         const baseHash = encodeGeohash(lat, lng, precision);
         const buckets = Array.from(new Set([baseHash, ...geohashNeighbors(baseHash)].map((hash) => hash.substring(0, precision))));
 
+        logger.info({ lat, lng, radiusKm, precision, field, baseHash, buckets, filters }, '[matching] findNearbyDrivers query params');
+
         const snapshots = await Promise.all(
             buckets.map((bucket) =>
                 db
@@ -314,15 +327,45 @@ export class RideService {
         const candidates = new Map<string, FirebaseFirestore.DocumentSnapshot>();
         snapshots.forEach((snap) => snap.docs.forEach((doc) => candidates.set(doc.id, doc)));
 
+        logger.info({ candidateCount: candidates.size }, '[matching] Firestore candidates found (pre-filter)');
+
+        // Log all online drivers found to diagnose matching failures
+        if (candidates.size === 0) {
+            // Check if ANY online drivers exist at all
+            const anyOnline = await db.collection('users')
+                .where('role', '==', 'driver')
+                .where('driverStatus.isOnline', '==', true)
+                .limit(5)
+                .get();
+            if (anyOnline.empty) {
+                logger.warn('[matching] No online drivers in entire system');
+            } else {
+                anyOnline.docs.forEach(doc => {
+                    const d = doc.data();
+                    logger.info({
+                        driverId: doc.id,
+                        geohash5: d.driverStatus?.geohash5,
+                        geohash4: d.driverStatus?.geohash4,
+                        isOnline: d.driverStatus?.isOnline,
+                        countryCode: d.countryCode,
+                        onboardingStatus: d.driverOnboarding?.status
+                    }, '[matching] Online driver exists but geohash mismatch');
+                });
+            }
+        }
+
         return Array.from(candidates.values())
             .map((doc) => ({ id: doc.id, ...(doc.data() as any) }))
             .filter((driver) => {
                 const driverId = driver.uid ?? driver.id;
-                if (!driverId) return false;
+                if (!driverId) { logger.debug({ id: driver.id }, '[matching] filtered: no driverId'); return false; }
 
-                if (filters.excludeDriverIds?.includes(driverId)) return false;
+                if (filters.excludeDriverIds?.includes(driverId)) { logger.debug({ driverId }, '[matching] filtered: excluded'); return false; }
 
-                if ((driver.driverOnboarding?.status ?? '').toLowerCase() !== 'approved') return false;
+                if ((driver.driverOnboarding?.status ?? '').toLowerCase() !== 'approved') {
+                    logger.debug({ driverId, status: driver.driverOnboarding?.status }, '[matching] filtered: not approved');
+                    return false;
+                }
 
                 // Match vehicle categories using normalized profile/onboarding values.
                 if (filters.vehicleCategory) {
@@ -340,6 +383,7 @@ export class RideService {
 
                     if (requestedCategory && offeredCategory) {
                         if (!this.isVehicleCategoryCompatible(requestedCategory, offeredCategory)) {
+                            logger.debug({ driverId, requestedCategory, offeredCategory }, '[matching] filtered: vehicle mismatch');
                             return false;
                         }
                     }
@@ -357,15 +401,19 @@ export class RideService {
                                 ? 'ng'
                                 : rawFilter;
 
-                    if (driverCountry !== normalizedFilter) return false;
+                    if (driverCountry !== normalizedFilter) {
+                        logger.debug({ driverId, driverCountry, normalizedFilter }, '[matching] filtered: region mismatch');
+                        return false;
+                    }
                 }
 
                 const rating = Number(driver.driverDetails?.rating ?? 0);
                 const ratingPolicy = this.getDriverRatingPolicy(filters.region);
-                if (rating > 0 && rating < ratingPolicy.neutralMin) return false;
-                if (!driver.driverStatus?.lastKnownLocation) return false;
-                if (driver.driverStatus?.currentRideId) return false;
+                if (rating > 0 && rating < ratingPolicy.neutralMin) { logger.debug({ driverId, rating }, '[matching] filtered: low rating'); return false; }
+                if (!driver.driverStatus?.lastKnownLocation) { logger.debug({ driverId }, '[matching] filtered: no location'); return false; }
+                if (driver.driverStatus?.currentRideId) { logger.debug({ driverId }, '[matching] filtered: busy'); return false; }
 
+                logger.debug({ driverId }, '[matching] driver passed all filters');
                 return true;
             })
             .map((driver) => {
@@ -386,7 +434,13 @@ export class RideService {
                     location
                 };
             })
-            .filter((driver) => driver.distanceKm <= radiusKm)
+            .filter((driver) => {
+                if (driver.distanceKm > radiusKm) {
+                    logger.debug({ driverId: driver.id, distanceKm: driver.distanceKm, radiusKm }, '[matching] filtered: distance exceeds radius');
+                    return false;
+                }
+                return true;
+            })
             .sort((a, b) => {
                 // Rating tiers: 4.8+ = priority, 4.5-4.7 = neutral, <4.5 = deprioritized
                 const ratingPolicy = this.getDriverRatingPolicy(filters.region);
@@ -445,6 +499,7 @@ export class RideService {
                     const updates = {
                         status: input.status,
                         updatedAt: now,
+                        ...(input.status === 'arrived' && { arrivedAt: now }),
                         ...(input.status === 'in_progress' && { startedAt: now })
                     };
 
@@ -465,6 +520,12 @@ export class RideService {
                     };
 
                     tx.update(rideRef, updates);
+                    // Clear driver's currentRideId atomically within the transaction
+                    if (ride.driverId) {
+                        tx.update(db.collection('users').doc(ride.driverId), {
+                            'driverStatus.currentRideId': FieldValue.delete()
+                        });
+                    }
                     updatedRide = { ...ride, ...updates };
                     break;
                 }
@@ -499,6 +560,12 @@ export class RideService {
                     };
 
                     tx.update(rideRef, updates);
+                    // Clear driver's currentRideId atomically within the transaction
+                    if (ride.driverId) {
+                        tx.update(db.collection('users').doc(ride.driverId), {
+                            'driverStatus.currentRideId': FieldValue.delete()
+                        });
+                    }
                     updatedRide = { ...ride, ...updates, pricing: { ...ride.pricing, cancellationFee: fee } };
                     this.stopDriverMatching(ride.id!);
                     break;
@@ -587,11 +654,15 @@ export class RideService {
         }
 
         try {
+            logger.info({ rideId, batch: state.batch, radius: state.radius, pickup: ride.pickupLocation, region: ride.region, vehicleCategory: ride.vehicleCategory }, '[matching] dispatchDriverBatch starting');
+
             const drivers = await this.findNearbyDrivers(ride.pickupLocation.lat, ride.pickupLocation.lng, state.radius, {
                 vehicleCategory: ride.vehicleCategory,
                 region: ride.region,
                 excludeDriverIds: ride.requestedDriverIds ?? []
             });
+
+            logger.info({ rideId, driversFound: drivers.length, batch: state.batch }, '[matching] dispatchDriverBatch result');
 
             if (!drivers.length) {
                 if (state.batch >= this.MAX_BATCHES - 1) {
@@ -621,11 +692,14 @@ export class RideService {
                 riderInfo = {
                     riderId: ride.riderId,
                     riderName: rd.fullName || rd.displayName || 'Rider',
-                    riderPhone: rd.phone || rd.phoneNumber || ''
+                    riderPhone: rd.phone || rd.phoneNumber || '',
+                    riderPhotoUrl: rd.photoURL || ''
                 };
             } catch (err) {
                 logger.warn({ err, riderId: ride.riderId }, 'Failed to fetch rider info for ride:offer');
             }
+
+            logger.info({ rideId, driverIds, batch: state.batch }, '[matching] Sending ride:offer to drivers');
 
             batch.forEach((driver) => {
                 socketService.notifyDriver(driver.id, 'ride:offer', {
@@ -635,8 +709,14 @@ export class RideService {
                     dropoffLocation: ride.dropoffLocation,
                     pricing: ride.pricing,
                     estimatedFare: ride.pricing?.estimatedFare,
+                    paymentMethod: ride.paymentMethod,
                     etaSeconds: driver.etaSeconds,
                     distanceKm: driver.distanceKm,
+                    bookingType: ride.bookingType ?? 'on_demand',
+                    isAirport: ride.isAirport ?? false,
+                    vehicleCategory: ride.vehicleCategory,
+                    ...(ride.scheduledAt && { scheduledAt: ride.scheduledAt }),
+                    ...(ride.deliveryDetails ? { deliveryDetails: ride.deliveryDetails } : {}),
                     ...riderInfo
                 });
             });
@@ -721,14 +801,15 @@ export class RideService {
                             const driverDoc = await db.collection('users').doc(ride.driverId).get();
                             const dd = driverDoc.data() ?? {};
                             const dp = dd.driverProfile ?? {};
+                            const onb = dd.driverOnboarding ?? {};
                             driverInfo = {
                                 driverName: dd.fullName || dd.displayName || 'Driver',
                                 driverPhoto: dd.photoURL || dp.photoURL || '',
                                 driverRating: dp.rating ?? dd.rating ?? 5.0,
                                 driverPhone: dd.phone || dd.phoneNumber || '',
-                                vehicleModel: dp.vehicleModel || dp.vehicle?.model || '',
-                                vehicleColor: dp.vehicleColor || dp.vehicle?.color || '',
-                                vehiclePlate: dp.licensePlate || dp.vehicle?.plateNumber || ''
+                                vehicleModel: dp.vehicleModel || dp.vehicle?.model || onb.vehicleType || '',
+                                vehicleColor: dp.vehicleColor || dp.vehicle?.color || onb.vehicleColor || '',
+                                vehiclePlate: dp.licensePlate || dp.vehicle?.plateNumber || onb.liveryPlateNumber || ''
                             };
                         } catch (err) {
                             logger.warn({ err, driverId: ride.driverId }, 'Failed to fetch driver profile for ride:accepted');
@@ -748,7 +829,10 @@ export class RideService {
                 break;
             case 'arrived':
                 rideTrackingService.updateStage(ride.id!, 'arrived');
-                socketService.notifyRider(ride.riderId, 'ride:driver_arrived', { rideId: ride.id });
+                socketService.notifyRider(ride.riderId, 'ride:driver_arrived', {
+                    rideId: ride.id,
+                    arrivedAt: (ride as any).arrivedAt ?? new Date().toISOString(),
+                });
                 break;
             case 'in_progress':
                 rideTrackingService.updateStage(ride.id!, 'in_progress');
@@ -756,9 +840,64 @@ export class RideService {
                 break;
             case 'completed':
                 rideTrackingService.stopTracking(ride.id!);
-                socketService.notifyRider(ride.riderId, 'ride:completed', { rideId: ride.id });
-                if (ride.driverId) socketService.notifyDriver(ride.driverId, 'ride:completed', { rideId: ride.id });
+                // Calculate waiting time fare if driver waited before trip started
+                {
+                    const arrivedAt = this.parseTimestamp((ride as any).arrivedAt);
+                    const startedAt = this.parseTimestamp((ride as any).startedAt);
+                    if (arrivedAt && startedAt && startedAt > arrivedAt) {
+                        const waitMinutes = (startedAt.getTime() - arrivedAt.getTime()) / 60000;
+                        const waitTimeFare = pricingService.calculateWaitTimeFee(ride, waitMinutes);
+                        if (waitTimeFare > 0) {
+                            const estimatedFare = ride.pricing?.estimatedFare ?? 0;
+                            const finalFare = +(estimatedFare + waitTimeFare).toFixed(2);
+                            const breakdown = ride.pricing?.breakdown ?? {} as any;
+                            await db.collection('rides').doc(ride.id!).update({
+                                'pricing.finalFare': finalFare,
+                                'pricing.waitTimeFee': waitTimeFare,
+                                'pricing.breakdown.waitTimeFare': waitTimeFare,
+                            });
+                            ride.pricing = {
+                                ...ride.pricing,
+                                finalFare,
+                                waitTimeFee: waitTimeFare,
+                                breakdown: { ...breakdown, waitTimeFare },
+                            } as any;
+                            logger.info({ rideId: ride.id, waitMinutes: +waitMinutes.toFixed(1), waitTimeFare, finalFare }, 'Wait time fare applied');
+                        }
+                    }
+                }
+                // Settle payment BEFORE notifying so earnings are available when driver fetches
                 await this.settleRidePayment(ride);
+
+                // Populate driver info for the completion notification
+                let driverInfo: Record<string, any> | undefined;
+                if (ride.driverId) {
+                    try {
+                        const driverSnap = await db.collection('users').doc(ride.driverId).get();
+                        const dd = driverSnap.data() ?? {};
+                        const dp = dd.driverDetails ?? {};
+                        driverInfo = {
+                            id: ride.driverId,
+                            name: dd.fullName || dd.displayName || 'Driver',
+                            photoUrl: dd.photoURL || '',
+                            rating: dp.rating ?? dd.rating ?? 5.0,
+                        };
+                    } catch (err) {
+                        logger.warn({ err, driverId: ride.driverId }, 'Failed to populate driver info for completion event');
+                    }
+                }
+
+                socketService.notifyRider(ride.riderId, 'ride:completed', {
+                    rideId: ride.id,
+                    pricing: ride.pricing,
+                    paymentMethod: ride.paymentMethod,
+                    driver: driverInfo,
+                });
+                if (ride.driverId) socketService.notifyDriver(ride.driverId, 'ride:completed', {
+                    rideId: ride.id,
+                    pricing: ride.pricing,
+                    paymentMethod: ride.paymentMethod,
+                });
                 if (ride.driverId) {
                     await incentiveService.processTripCompletion(ride).catch(err => logger.error({ err, rideId: ride.id }, 'Failed to award incentives'));
                     // Clear driver's currentRideId
@@ -853,10 +992,6 @@ export class RideService {
 
             const reference =
                 ride.payment?.holdReference ?? ride.payment?.reference ?? ride.pricing?.paymentReference;
-            if (!reference) {
-                logger.info({ rideId: ride.id }, 'No payment reference on ride; skipping settlement');
-                return;
-            }
 
             const config = await this.getPaymentsConfig(ride.region);
             const driverSnap = await db.collection('users').doc(ride.driverId).get();
@@ -899,30 +1034,71 @@ export class RideService {
                         percentage: config.microDeductions?.percentage ?? 0
                     };
 
-            const { driverAmount, commissionAmount, microAmount } = await walletService.captureEscrowHold(reference, {
-                driverId: ride.driverId,
-                commissionRate,
-                rideId: ride.id,
-                microDeductions,
-                subscriptionSnapshot: subscriptionActive
-                    ? {
-                        planId: subscription?.planId,
-                        discountRate:
-                            subscription?.discountRate ??
-                            config.subscription?.discountRate ??
-                            config.subscription?.defaultDiscount,
-                        activeUntil: subscriptionExpiry ?? undefined,
-                        status: subscription?.status
-                    }
-                    : undefined,
-                metadata: {
+            let driverAmount: number;
+            let commissionAmount: number;
+            let microAmount: number;
+
+            if (reference) {
+                // Escrow hold exists — capture it
+                const result = await walletService.captureEscrowHold(reference, {
+                    driverId: ride.driverId,
+                    commissionRate,
                     rideId: ride.id,
-                    riderId: ride.riderId,
-                    region: ride.region,
-                    subscriptionActive,
-                    microDeductions
+                    microDeductions,
+                    subscriptionSnapshot: subscriptionActive
+                        ? {
+                            planId: subscription?.planId,
+                            discountRate:
+                                subscription?.discountRate ??
+                                config.subscription?.discountRate ??
+                                config.subscription?.defaultDiscount,
+                            activeUntil: subscriptionExpiry ?? undefined,
+                            status: subscription?.status
+                        }
+                        : undefined,
+                    metadata: {
+                        rideId: ride.id,
+                        riderId: ride.riderId,
+                        region: ride.region,
+                        subscriptionActive,
+                        microDeductions
+                    }
+                });
+                driverAmount = result.driverAmount;
+                commissionAmount = result.commissionAmount;
+                microAmount = result.microAmount ?? 0;
+            } else {
+                // Cash/wallet ride with no escrow hold — calculate settlement directly
+                const fare = ride.pricing?.finalFare ?? ride.pricing?.estimatedFare ?? 0;
+                if (fare <= 0) {
+                    logger.info({ rideId: ride.id }, 'No payment reference and no fare on ride; skipping settlement');
+                    return;
                 }
-            });
+                commissionAmount = +(fare * commissionRate).toFixed(2);
+                microAmount = +((fare * (microDeductions.percentage || 0)) + (microDeductions.flatFee || 0)).toFixed(2);
+                driverAmount = +(fare - commissionAmount - microAmount).toFixed(2);
+                logger.info(
+                    { rideId: ride.id, fare, method: ride.paymentMethod ?? 'unknown' },
+                    'No escrow hold — calculating settlement directly from fare'
+                );
+
+                // Credit driver wallet directly (for cash/no-hold rides)
+                if (driverAmount > 0) {
+                    const currency = (ride.pricing?.currency as 'NGN' | 'USD') || 'NGN';
+                    await walletService.processTransaction(
+                        ride.driverId,
+                        driverAmount,
+                        'credit',
+                        'driver_payout',
+                        `Ride payout ${ride.id}`,
+                        `SETTLE-${ride.id}-${Date.now()}`,
+                        {
+                            walletCurrency: currency,
+                            metadata: { rideId: ride.id, riderId: ride.riderId, method: ride.paymentMethod ?? 'cash' }
+                        }
+                    );
+                }
+            }
 
             await db
                 .collection('rides')
@@ -1070,7 +1246,7 @@ export class RideService {
         userId: string,
         role: 'rider' | 'driver',
         options: { page?: number; limit?: number; status?: string } = {}
-    ): Promise<{ rides: IRide[]; total: number; page: number; limit: number }> {
+    ): Promise<{ rides: any[]; total: number; page: number; limit: number }> {
         const { page = 1, limit = 20, status } = options;
         const offset = (page - 1) * limit;
 
@@ -1091,7 +1267,49 @@ export class RideService {
         const snapshot = await query.offset(offset).limit(limit).get();
         const rides = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as IRide));
 
-        return { rides, total, page, limit };
+        // Populate driver/rider info for each ride
+        const populatedRides = await Promise.all(rides.map(async (ride) => {
+            const rideObj: any = { ...ride };
+            try {
+                if (role === 'rider' && ride.driverId) {
+                    // Populate driver info for rider's ride history
+                    const [driverSnap, onbSnap] = await Promise.all([
+                        db.collection('users').doc(ride.driverId).get(),
+                        db.collection('driver_applications').doc(ride.driverId).get()
+                    ]);
+                    const dd = driverSnap.data() ?? {};
+                    const dp = dd.driverDetails ?? {};
+                    const onb = onbSnap.data() ?? {};
+                    rideObj.driver = {
+                        id: ride.driverId,
+                        name: dd.fullName || dd.displayName || 'Driver',
+                        photoUrl: dd.photoURL || '',
+                        rating: dp.rating ?? dd.rating ?? 5.0,
+                        phone: dd.phone || dd.phoneNumber || '',
+                        vehicleModel: dp.vehicleModel || dp.vehicle?.model || onb.vehicleType || '',
+                        vehicleColor: dp.vehicleColor || dp.vehicle?.color || onb.vehicleColor || '',
+                        plateNumber: dp.licensePlate || dp.vehicle?.plateNumber || onb.liveryPlateNumber || '',
+                    };
+                } else if (role === 'driver' && ride.riderId) {
+                    // Populate rider info for driver's ride history
+                    const riderSnap = await db.collection('users').doc(ride.riderId).get();
+                    const rd = riderSnap.data() ?? {};
+                    rideObj.rider = {
+                        id: ride.riderId,
+                        displayName: rd.fullName || rd.displayName || 'Rider',
+                        name: rd.fullName || rd.displayName || 'Rider',
+                        photoURL: rd.photoURL || '',
+                        phone: rd.phone || rd.phoneNumber || '',
+                        rating: rd.riderRating ?? 5.0,
+                    };
+                }
+            } catch (err) {
+                logger.warn({ err, rideId: ride.id }, 'Failed to populate user info for ride history');
+            }
+            return rideObj;
+        }));
+
+        return { rides: populatedRides, total, page, limit };
     }
 
     /**

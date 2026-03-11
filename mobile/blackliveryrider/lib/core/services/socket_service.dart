@@ -38,6 +38,14 @@ class SocketService extends ChangeNotifier {
   // Active ride tracking for reconnect sync
   String? _activeRideId;
   Function(Map<String, dynamic>)? _onRideUpdate;
+  Map<String, dynamic>? _pendingStateSync;
+
+  /// Consume pending state sync data (set by ride:state_sync before listeners registered).
+  Map<String, dynamic>? consumePendingStateSync() {
+    final data = _pendingStateSync;
+    _pendingStateSync = null;
+    return data;
+  }
 
   bool get isConnected => _isConnected;
   int get reconnectAttempts => _reconnectAttempts;
@@ -94,6 +102,18 @@ class SocketService extends ChangeNotifier {
 
       // Register global chat listener for overlay notifications
       _registerGlobalChatListener();
+
+      // Listen for ride state sync (pushed by backend on room join)
+      _socket!.on('ride:state_sync', (data) {
+        debugPrint('SocketService: ride:state_sync received: ${data['status']}');
+        final rideId = data['id']?.toString();
+        if (rideId != null && _onRideUpdate != null) {
+          _onRideUpdate!(Map<String, dynamic>.from(data));
+        } else if (rideId != null) {
+          // Store for BookingState to pick up during restoreActiveRide
+          _pendingStateSync = Map<String, dynamic>.from(data);
+        }
+      });
 
       // On reconnect, fetch current ride state to replay missed events
       if (wasReconnecting && _activeRideId != null && _onRideUpdate != null) {

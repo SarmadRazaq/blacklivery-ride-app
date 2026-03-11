@@ -4,9 +4,10 @@ import LiveMap from '../components/LiveMap';
 import api from '../api/client';
 import { ADMIN_ANALYTICS_EARNINGS, ADMIN_RIDES_ACTIVE, ADMIN_USERS } from '../api/endpoints';
 import { formatCurrency } from '../config/regions';
+import { AlertTriangle, X, MapPin } from 'lucide-react';
 
 const DashboardPage = () => {
-    const { socket } = useSocket();
+    const { socket, sosAlerts, dismissSosAlert } = useSocket();
     const [stats, setStats] = useState({
         revenue: 0,
         activeDrivers: 0,
@@ -66,6 +67,40 @@ const DashboardPage = () => {
     return (
         <div>
             <h1 className="text-3xl font-bold text-gray-800 mb-6">Dashboard</h1>
+
+            {/* SOS Alert Banner */}
+            {sosAlerts.length > 0 && (
+                <div className="mb-6 space-y-3">
+                    {sosAlerts.map(alert => (
+                        <div key={alert.id} className="bg-red-50 border-2 border-red-500 rounded-xl p-4 flex items-start gap-4 animate-pulse">
+                            <AlertTriangle size={24} className="text-red-600 flex-shrink-0 mt-0.5" />
+                            <div className="flex-1">
+                                <h3 className="text-red-800 font-bold text-lg">SOS Emergency Alert</h3>
+                                <p className="text-red-700 text-sm mt-1">
+                                    <span className="font-semibold">{alert.userName || alert.userId}</span>
+                                    {alert.role && <span className="capitalize"> ({alert.role})</span>}
+                                    {alert.rideId && <span> &mdash; Ride: <span className="font-mono">{alert.rideId.substring(0, 8)}...</span></span>}
+                                </p>
+                                {alert.message && <p className="text-red-600 text-sm mt-1">{alert.message}</p>}
+                                {alert.location && (
+                                    <p className="text-red-600 text-sm mt-1 flex items-center gap-1">
+                                        <MapPin size={14} />
+                                        {alert.location.lat.toFixed(6)}, {alert.location.lng.toFixed(6)}
+                                    </p>
+                                )}
+                                <p className="text-red-400 text-xs mt-2">{new Date(alert.timestamp).toLocaleString()}</p>
+                            </div>
+                            <button
+                                onClick={() => dismissSosAlert(alert.id)}
+                                className="text-red-400 hover:text-red-600 p-1"
+                                title="Dismiss alert"
+                            >
+                                <X size={20} />
+                            </button>
+                        </div>
+                    ))}
+                </div>
+            )}
 
             {/* Stats Grid */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">

@@ -143,29 +143,41 @@ class AuthService {
     required String password,
     required String code,
   }) async {
-    try {
-      final normalizedEmail = email.trim().toLowerCase();
-      final verifyResponse = await _apiClient.dio.post(
-        ApiConstants.registerVerify,
-        data: {
-          'email': normalizedEmail,
-          'otp': code,
-          'password': password,
-        },
-        options: Options(extra: {'suppressGlobalError': true}),
-      );
+    final normalizedEmail = email.trim().toLowerCase();
+    final verifyResponse = await _apiClient.dio.post(
+      ApiConstants.registerVerify,
+      data: {
+        'email': normalizedEmail,
+        'otp': code,
+        'password': password,
+      },
+      options: Options(extra: {'suppressGlobalError': true}),
+    );
 
-      await _firebaseAuth.signInWithEmailAndPassword(
-        email: normalizedEmail,
-        password: password,
-      );
+    final responseData = verifyResponse.data as Map<String, dynamic>;
+    final token = responseData['token'] as String?;
 
-      _pendingEmail = null;
-
-      return (verifyResponse.data as Map<String, dynamic>);
-    } catch (e) {
-      rethrow;
+    // Try custom token first (more reliable), then fall back to email/password
+    bool signedIn = false;
+    if (token != null && token.isNotEmpty) {
+      try {
+        await _firebaseAuth.signInWithCustomToken(token);
+        signedIn = true;
+      } catch (_) {}
     }
+
+    if (!signedIn) {
+      try {
+        await _firebaseAuth.signInWithEmailAndPassword(
+          email: normalizedEmail,
+          password: password,
+        );
+        signedIn = true;
+      } catch (_) {}
+    }
+
+    _pendingEmail = null;
+    return responseData;
   }
 
   Future<void> resendEmailVerification() async {

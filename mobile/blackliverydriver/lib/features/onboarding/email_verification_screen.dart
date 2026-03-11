@@ -1,8 +1,10 @@
 import 'dart:async';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../core/network/api_error_message.dart';
 import '../../core/providers/riverpod_providers.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/custom_button.dart';
@@ -61,6 +63,45 @@ class _EmailVerificationScreenState extends ConsumerState<EmailVerificationScree
     super.dispose();
   }
 
+  /// Check if error is a signup-expired error (410 or 400 with known messages)
+  bool _isSignupExpired(Object e) {
+    if (e is! DioException) return false;
+    final status = e.response?.statusCode;
+    if (status == 410) return true;
+    if (status == 400) {
+      final data = e.response?.data;
+      if (data is Map) {
+        final error = data['error']?.toString() ?? '';
+        return error.contains('pending signup') || error.contains('expired');
+      }
+    }
+    return false;
+  }
+
+  /// Re-register to recreate the pending signup and get a fresh OTP
+  Future<bool> _reRegister() async {
+    try {
+      await ref.read(authRiverpodProvider).register(
+        email: widget.email,
+        password: widget.password,
+        firstName: widget.firstName ?? '',
+        lastName: widget.lastName ?? '',
+        phone: widget.phoneNumber ?? '',
+        region: widget.region,
+      );
+      _otpController.clear();
+      _startResendTimer();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('New verification code sent to your email. Please check your inbox.')),
+        );
+      }
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   void _checkEmailVerification() async {
     final code = _otpController.text.trim();
     if (code.length != 6) {
@@ -100,13 +141,17 @@ class _EmailVerificationScreenState extends ConsumerState<EmailVerificationScree
         );
       }
     } catch (e) {
+      // If signup expired, auto re-register to get a fresh OTP
+      if (_isSignupExpired(e)) {
+        await _reRegister();
+        return;
+      }
       if (mounted) {
+        final message = e is DioException
+            ? apiErrorMessage(e)
+            : 'Verification failed. Please try again.';
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Verification failed: ${e.toString()}',
-            ),
-          ),
+          SnackBar(content: Text(message)),
         );
       }
     }
@@ -125,6 +170,11 @@ class _EmailVerificationScreenState extends ConsumerState<EmailVerificationScree
         );
       }
     } catch (e) {
+      // If pending signup expired/missing, re-register to create a new one
+      if (_isSignupExpired(e)) {
+        final ok = await _reRegister();
+        if (ok) return;
+      }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Failed to resend: ${e.toString()}')),

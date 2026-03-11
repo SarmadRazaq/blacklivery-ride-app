@@ -94,6 +94,22 @@ Future<void> main() async {
 class BlackLiveryApp extends ConsumerWidget {
   const BlackLiveryApp({super.key});
 
+  // Track already-synced backend region to avoid overriding local selection
+  static String? _lastSyncedProfileRegion;
+
+  void _syncRegionFromProfile(AuthProvider auth, RegionProvider regionProvider) {
+    final profileRegion = auth.user?.region;
+    if (profileRegion == null || profileRegion.isEmpty) return;
+    if (_lastSyncedProfileRegion == profileRegion) return;
+    _lastSyncedProfileRegion = profileRegion;
+    final mappedRegion = RegionProvider.fromBackendCode(profileRegion);
+    if (mappedRegion != null && mappedRegion != regionProvider.code) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        regionProvider.setRegion(mappedRegion);
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return provider.MultiProvider(
@@ -109,15 +125,9 @@ class BlackLiveryApp extends ConsumerWidget {
       ],
       child: provider.Consumer2<AuthProvider, RegionProvider>(
         builder: (context, auth, regionProvider, _) {
-          final backendRegionCode = auth.user?.region;
-          final mappedRegion = RegionProvider.fromBackendCode(backendRegionCode);
-          if (mappedRegion != null && mappedRegion != regionProvider.code) {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (context.mounted) {
-                regionProvider.setRegion(mappedRegion);
-              }
-            });
-          }
+          // One-time sync: seed region from backend profile only on first load.
+          // After that, local user selection takes precedence.
+          _syncRegionFromProfile(auth, regionProvider);
 
           final goRouter = ref.watch(goRouterProvider);
 

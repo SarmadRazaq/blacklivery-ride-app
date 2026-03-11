@@ -17,6 +17,9 @@ class RideProvider with ChangeNotifier {
   final NavigationService _navService = NavigationService();
   final SocketService _socketService = SocketService();
 
+  /// Called when a ride is completed or cancelled — allows external refresh triggers.
+  VoidCallback? onRideCompleted;
+
   Ride? _currentRide;
   bool _isLoading = false;
   String? _error;
@@ -97,6 +100,14 @@ class RideProvider with ChangeNotifier {
         _isLoading = false;
         _error = null;
         notifyListeners();
+        onRideCompleted?.call();
+        return;
+      }
+
+      // Handle state sync on reconnect — refresh active ride from backend
+      if (data['type'] == 'ride_state_sync') {
+        debugPrint('RideProvider: ride:state_sync received — refreshing active ride');
+        checkForActiveRide();
         return;
       }
 
@@ -147,9 +158,10 @@ class RideProvider with ChangeNotifier {
         }
 
         // Auto-decline delivery requests if driver has disabled deliveries
+        final isDelivery = eventType == 'delivery_request' ||
+            requestData['bookingType'] == 'delivery';
         if (prefsProvider != null) {
-          if (eventType == 'delivery_request' &&
-              !prefsProvider.acceptDeliveries) {
+          if (isDelivery && !prefsProvider.acceptDeliveries) {
             debugPrint(
               'RideProvider: Auto-declining delivery (preference off)',
             );
@@ -159,7 +171,7 @@ class RideProvider with ChangeNotifier {
             }
             return;
           }
-          if (eventType == 'ride_request' && !prefsProvider.acceptRides) {
+          if (!isDelivery && eventType == 'ride_request' && !prefsProvider.acceptRides) {
             debugPrint('RideProvider: Auto-declining ride (preference off)');
             final id = requestData['id'] ?? requestData['_id'];
             if (id != null) {
@@ -206,7 +218,9 @@ class RideProvider with ChangeNotifier {
           }
           // Filter airport rides
           final isAirport =
+              requestData['isAirport'] == true ||
               requestData['isAirportRide'] == true ||
+              requestData['bookingType'] == 'airport_transfer' ||
               (requestData['pickupAddress']?.toString().toLowerCase().contains(
                     'airport',
                   ) ??
@@ -229,7 +243,7 @@ class RideProvider with ChangeNotifier {
 
         // Ensure it looks like a request (has ID)
         if (requestData['id'] != null || requestData['_id'] != null) {
-          if (eventType == 'delivery_request') {
+          if (isDelivery) {
             // Parse as delivery-specific request
             _pendingDeliveryRequest = DeliveryRequest.fromJson(
               Map<String, dynamic>.from(requestData),
@@ -449,6 +463,9 @@ class RideProvider with ChangeNotifier {
     notifyListeners();
     try {
       await _rideService.updateRideStatus(rideId, 'accepted');
+      // Clear pending requests so listeners don't re-trigger the overlay
+      _pendingRideRequest = null;
+      _pendingDeliveryRequest = null;
       // Fetch ride details or assume it is the current one
       await checkForActiveRide();
     } catch (e) {
@@ -478,6 +495,7 @@ class RideProvider with ChangeNotifier {
       await checkForActiveRide(); // Refresh (also updates cache)
       if (status == 'completed' || status == 'cancelled') {
         await clearCachedRide();
+        onRideCompleted?.call();
       }
     } catch (e) {
       _error = e.toString();

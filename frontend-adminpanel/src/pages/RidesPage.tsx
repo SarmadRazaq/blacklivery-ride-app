@@ -6,7 +6,7 @@ import Button from '../components/ui/Button';
 import { Eye, XCircle, ChevronDown, ChevronUp } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { useSocket } from '../context/SocketContext';
-import { ADMIN_RIDES, ADMIN_RIDES_ACTIVE, adminRideCancel } from '../api/endpoints';
+import { ADMIN_RIDES, ADMIN_RIDES_ACTIVE, adminRideCancel, adminRideDetail } from '../api/endpoints';
 import { SHORT_ID_LENGTH, ADMIN_CANCEL_REASON } from '../config/constants';
 import { RIDE_STATUS_BADGE } from '../config/regions';
 
@@ -18,7 +18,31 @@ interface Ride {
     pickupLocation: { lat?: number; lng?: number; address?: string };
     dropoffLocation: { lat?: number; lng?: number; address?: string };
     fare?: number;
-    pricing?: { finalFare?: number; estimatedFare?: number; currency?: string };
+    pricing?: {
+        finalFare?: number;
+        estimatedFare?: number;
+        currency?: string;
+        breakdown?: {
+            baseFare?: number;
+            distanceFare?: number;
+            timeFare?: number;
+            trafficSurcharge?: number;
+            tollFee?: number;
+            surgeMultiplier?: number;
+            platformFee?: number;
+        };
+    };
+    payment?: {
+        method?: string;
+        gateway?: string;
+        reference?: string;
+        settlement?: {
+            driverAmount?: number;
+            commissionAmount?: number;
+            commissionRate?: number;
+        };
+    };
+    rating?: { rider?: number; driver?: number; feedback?: string };
     createdAt: unknown;
     driverLocation?: { lat?: number; lng?: number } | null;
     riderInfo?: { name: string; phone: string; email: string };

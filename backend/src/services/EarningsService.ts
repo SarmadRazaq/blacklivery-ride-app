@@ -35,6 +35,11 @@ export class EarningsService {
 
         const config = await getEarningsConfig();
 
+        // Fetch driver-specific earnings goal (falls back to global config)
+        const driverDoc = await db.collection('users').doc(driverId).get();
+        const driverData = driverDoc.data();
+        const driverGoal = driverData?.earningsGoal ?? (driverData?.region === 'US' ? config.earningGoalUSD : config.earningGoalNGN);
+
         // Fetch completed rides in range (Max 365 days)
         // Optimization: In real app, aggregate this in a separate collection.
         // For now, query all rides this year.
@@ -76,7 +81,7 @@ export class EarningsService {
             today: {
                 ...todayStats,
                 onlineTime: 0,
-                goal: config.earningGoalNGN
+                goal: driverGoal
             },
             week: {
                 ...weekStats,
@@ -103,6 +108,10 @@ export class EarningsService {
         };
     }
 
+    async updateEarningsGoal(driverId: string, goal: number): Promise<void> {
+        await db.collection('users').doc(driverId).update({ earningsGoal: goal });
+    }
+
     async getPayoutHistory(driverId: string) {
         const payoutsSnap = await db.collection('payouts')
             .where('driverId', '==', driverId)
@@ -119,8 +128,11 @@ export class EarningsService {
 
     private calculateStats(rides: Ride[], start: Date, end: Date) {
         const rangeRides = rides.filter(r => {
-            const date = r.completedAt ? new Date(r.completedAt) : null;
-            return date && date >= start && date < end;
+            if (!r.completedAt) return false;
+            // Handle both Firestore Timestamp objects and JS Date/string
+            const raw = r.completedAt as any;
+            const date = raw?.toDate ? raw.toDate() : new Date(raw);
+            return date && !isNaN(date.getTime()) && date >= start && date < end;
         });
 
         const amount = rangeRides.reduce((sum, r) => sum + (r.payment?.settlement?.driverAmount || 0), 0);

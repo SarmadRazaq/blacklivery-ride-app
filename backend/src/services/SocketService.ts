@@ -66,8 +66,15 @@ export class SocketService {
     }
 
     public notifyDriver(driverId: string, event: string, data: any): void {
-        if (!this.io) return;
-        this.io.to(`driver:${driverId}`).emit(event, data);
+        if (!this.io) {
+            logger.warn({ driverId, event }, '[socket] notifyDriver: io not initialized');
+            return;
+        }
+        const room = `driver:${driverId}`;
+        const sockets = this.io.sockets.adapter.rooms.get(room);
+        const socketCount = sockets?.size ?? 0;
+        logger.info({ driverId, event, room, socketCount }, '[socket] notifyDriver emitting');
+        this.io.to(room).emit(event, data);
 
         // Push Notification
         const pushConfig = PUSH_EVENTS[event];

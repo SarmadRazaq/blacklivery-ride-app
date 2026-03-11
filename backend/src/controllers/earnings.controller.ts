@@ -14,6 +14,22 @@ export const getEarningsDashboard = async (req: AuthRequest, res: Response): Pro
     }
 };
 
+export const updateEarningsGoal = async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const { uid } = req.user;
+        const { goal } = req.body;
+        if (typeof goal !== 'number' || goal <= 0) {
+            res.status(400).json({ error: 'Goal must be a positive number' });
+            return;
+        }
+        await earningsService.updateEarningsGoal(uid, goal);
+        res.status(200).json({ success: true, goal });
+    } catch (error) {
+        logger.error({ err: error }, 'updateEarningsGoal failed');
+        res.status(500).json({ error: 'Unable to update earnings goal' });
+    }
+};
+
 export const getPayouts = async (req: AuthRequest, res: Response): Promise<void> => {
     try {
         const { uid } = req.user;

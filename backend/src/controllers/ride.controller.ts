@@ -39,7 +39,28 @@ export const getRide = async (req: AuthRequest, res: Response): Promise<void> =>
             return;
         }
 
-        res.status(200).json(ride);
+        // Populate driver info if present
+        if (rideData.driverId && !rideData.driver) {
+            try {
+                const driverSnap = await db.collection('users').doc(rideData.driverId).get();
+                const dd = driverSnap.data() ?? {};
+                const dp = dd.driverDetails ?? {};
+                rideData.driver = {
+                    id: rideData.driverId,
+                    name: dd.fullName || dd.displayName || 'Driver',
+                    photoUrl: dd.photoURL || '',
+                    rating: dp.rating ?? dd.rating ?? 5.0,
+                    phone: dd.phone || dd.phoneNumber || '',
+                    vehicleModel: dp.vehicleModel || dp.vehicle?.model || '',
+                    vehicleColor: dp.vehicleColor || dp.vehicle?.color || '',
+                    plateNumber: dp.licensePlate || dp.vehicle?.plateNumber || '',
+                };
+            } catch (err) {
+                logger.warn({ err, driverId: rideData.driverId }, 'Failed to populate driver info for getRide');
+            }
+        }
+
+        res.status(200).json(rideData);
     } catch (error) {
         logger.error({ err: error, rideId: req.params.id }, 'Failed to fetch ride');
         res.status(500).json({ error: 'Unable to fetch ride' });
@@ -318,5 +339,112 @@ export const sosAlert = async (req: AuthRequest, res: Response): Promise<void> =
     } catch (error) {
         logger.error({ err: error, rideId: req.params.id }, 'SOS alert failed');
         res.status(500).json({ error: 'Unable to process SOS alert' });
+    }
+};
+
+/**
+ * Get the rider's current active ride (if any).
+ * Used for app-restart recovery and reconnect state sync.
+ */
+export const getRiderActiveRide = async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const uid = req.user.uid;
+        const snapshot = await db.collection('rides')
+            .where('riderId', '==', uid)
+            .where('status', 'in', ['finding_driver', 'pending', 'accepted', 'arrived', 'in_progress'])
+            .orderBy('createdAt', 'desc')
+            .limit(1)
+            .get();
+
+        if (snapshot.empty) {
+            res.status(200).json({ success: true, data: null, message: 'No active ride' });
+            return;
+        }
+
+        const doc = snapshot.docs[0];
+        const rideData: Record<string, any> = { id: doc.id, ...(doc.data() as Record<string, any>) };
+
+        // Populate driver info if assigned
+        if (rideData.driverId) {
+            try {
+                const driverDoc = await db.collection('users').doc(rideData.driverId).get();
+                if (driverDoc.exists) {
+                    const dd = driverDoc.data()!;
+                    const dp = dd.driverProfile ?? {};
+                    const onb = dd.driverOnboarding ?? {};
+                    rideData.driver = {
+                        id: rideData.driverId,
+                        name: dd.fullName || dd.displayName || 'Driver',
+                        photoUrl: dd.photoURL || dp.photoURL || '',
+                        rating: dp.rating ?? dd.rating ?? 5.0,
+                        phone: dd.phone || dd.phoneNumber || '',
+                        carModel: dp.vehicleModel || dp.vehicle?.model || onb.vehicleType || '',
+                        carColor: dp.vehicleColor || dp.vehicle?.color || onb.vehicleColor || '',
+                        licensePlate: dp.licensePlate || dp.vehicle?.plateNumber || onb.liveryPlateNumber || '',
+                    };
+                }
+            } catch (e) {
+                logger.warn({ driverId: rideData.driverId }, 'Failed to populate driver info for active ride');
+            }
+        }
+
+        res.status(200).json({ success: true, data: rideData });
+    } catch (error) {
+        logger.error({ err: error }, 'getRiderActiveRide failed');
+        res.status(500).json({ error: 'Unable to fetch active ride' });
+    }
+};
+
+export const addStop = async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const rideId = req.params.id;
+        const { lat, lng, address } = req.body;
+
+        if (typeof lat !== 'number' || typeof lng !== 'number' || !address) {
+            res.status(400).json({ error: 'lat, lng (numbers) and address (string) are required' });
+            return;
+        }
+
+        const rideDoc = await db.collection('rides').doc(rideId).get();
+        if (!rideDoc.exists) {
+            res.status(404).json({ error: 'Ride not found' });
+            return;
+        }
+
+        const ride = rideDoc.data()!;
+        if (ride.riderId !== req.user.uid) {
+            res.status(403).json({ error: 'Not authorized' });
+            return;
+        }
+
+        if (!['accepted', 'arrived', 'in_progress'].includes(ride.status)) {
+            res.status(409).json({ error: 'Cannot add stop in current ride status' });
+            return;
+        }
+
+        const existingStops = ride.stops ?? [];
+        if (existingStops.length >= 3) {
+            res.status(400).json({ error: 'Maximum 3 stops allowed' });
+            return;
+        }
+
+        const newStop = { lat, lng, address, addedAt: new Date() };
+        const updatedStops = [...existingStops, newStop];
+
+        await db.collection('rides').doc(rideId).update({ stops: updatedStops });
+
+        // Notify driver of the new stop
+        if (ride.driverId) {
+            socketService.notifyDriver(ride.driverId, 'ride:stop_added', {
+                rideId,
+                stop: newStop,
+                stops: updatedStops,
+            });
+        }
+
+        res.status(200).json({ success: true, stops: updatedStops });
+    } catch (error) {
+        logger.error({ err: error, rideId: req.params.id }, 'addStop failed');
+        res.status(500).json({ error: 'Unable to add stop' });
     }
 };

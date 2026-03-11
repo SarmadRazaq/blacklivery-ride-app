@@ -4,11 +4,12 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/providers/riverpod_providers.dart';
+import '../../core/providers/region_provider.dart';
+import '../../core/utils/region_geofence.dart';
 import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
 import '../../core/theme/app_theme.dart';
 import 'ride_request_overlay.dart';
 import 'ride_accepted_screen.dart';
-import 'ride_request_detail_screen.dart';
 import '../history/bookings_screen.dart';
 import '../earnings/earnings_screen.dart';
 import '../settings/settings_screen.dart';
@@ -51,6 +52,7 @@ class _DriverMapScreenState extends ConsumerState<DriverMapScreen> {
   BitmapDescriptor? _vehicleMarkerIcon;
   Timer? _heartbeatTimer;
   bool _isSendingHeartbeat = false;
+  RegionCode? _lastRegionCode;
 
   // Initial camera position (will be updated with actual location)
   static const CameraPosition _initialPosition = CameraPosition(
@@ -151,6 +153,10 @@ class _DriverMapScreenState extends ConsumerState<DriverMapScreen> {
       if (isOnline) {
         _startHeartbeatLoop();
       }
+      // Track initial region and listen for changes
+      final regionProvider = ref.read(regionRiverpodProvider);
+      _lastRegionCode = regionProvider.code;
+      regionProvider.addListener(_onRegionChanged);
     });
   }
 
@@ -193,6 +199,7 @@ class _DriverMapScreenState extends ConsumerState<DriverMapScreen> {
             'id': pendingRequest.id,
             'riderName': pendingRequest.riderName,
             'riderPhone': pendingRequest.riderPhone,
+            'riderAvatar': pendingRequest.riderPhotoUrl,
             'pickup_lat': pendingRequest.pickupLat,
             'pickup_lng': pendingRequest.pickupLng,
             'pickup_address': pendingRequest.pickupAddress,
@@ -205,6 +212,9 @@ class _DriverMapScreenState extends ConsumerState<DriverMapScreen> {
             'distanceKm': '${pendingRequest.distance.toStringAsFixed(1)} km',
             'duration': '${pendingRequest.estimatedDuration} min',
             'scheduledAt': pendingRequest.scheduledTime,
+            'bookingType': pendingRequest.bookingType,
+            'isAirport': pendingRequest.isAirport,
+            'paymentMethod': pendingRequest.paymentMethod,
           });
         }
       };
@@ -230,8 +240,46 @@ class _DriverMapScreenState extends ConsumerState<DriverMapScreen> {
         ref.read(rideRiverpodProvider).removeListener(_rideListenerCallback!);
       } catch (_) {}
     }
+    try {
+      ref.read(regionRiverpodProvider).removeListener(_onRegionChanged);
+    } catch (_) {}
     _mapController?.dispose();
     super.dispose();
+  }
+
+  /// Called when RegionProvider notifies — re-center map to new region.
+  void _onRegionChanged() {
+    final regionProvider = ref.read(regionRiverpodProvider);
+    if (regionProvider.code == _lastRegionCode) return;
+    _lastRegionCode = regionProvider.code;
+
+    final LatLng regionCenter = regionProvider.isChicago
+        ? const LatLng(41.8781, -87.6298)
+        : const LatLng(6.5244, 3.3792);
+
+    _animateToPosition(regionCenter);
+
+    // Re-fetch GPS — if it matches the new region, the driver marker reappears
+    _getCurrentLocation(recenterMap: true);
+  }
+
+  Future<void> _animateToPosition(LatLng target) async {
+    if (_mapController != null) {
+      await _mapController!.animateCamera(
+        CameraUpdate.newCameraPosition(
+          CameraPosition(target: target, zoom: 14.0),
+        ),
+      );
+      return;
+    }
+    if (_controller.isCompleted) {
+      final controller = await _controller.future;
+      await controller.animateCamera(
+        CameraUpdate.newCameraPosition(
+          CameraPosition(target: target, zoom: 14.0),
+        ),
+      );
+    }
   }
 
   Future<void> _getCurrentLocation({bool recenterMap = false}) async {
@@ -275,6 +323,27 @@ class _DriverMapScreenState extends ConsumerState<DriverMapScreen> {
 
     try {
       _currentPosition = await Geolocator.getCurrentPosition();
+
+      debugPrint('[DriverMap] GPS: ${_currentPosition!.latitude}, ${_currentPosition!.longitude}');
+
+      // If GPS is outside the selected region, fall back to region center
+      final regionProvider = ref.read(regionRiverpodProvider);
+      final gpsRegion = RegionGeofence.regionOf(
+        _currentPosition!.latitude,
+        _currentPosition!.longitude,
+      );
+      debugPrint('[DriverMap] gpsRegion=$gpsRegion, apiRegionKey=${regionProvider.apiRegionKey}');
+      if (gpsRegion != regionProvider.apiRegionKey) {
+        // GPS doesn't match selected region (e.g. emulator) — use region default
+        final LatLng regionCenter = regionProvider.isChicago
+            ? const LatLng(41.8781, -87.6298)
+            : const LatLng(6.5244, 3.3792);
+        _currentPosition = null;
+        _updateMarkers();
+        await _animateToPosition(regionCenter);
+        return;
+      }
+
       _updateMarkers();
 
       if (recenterMap || _currentNavIndex == 0) {
@@ -316,12 +385,16 @@ class _DriverMapScreenState extends ConsumerState<DriverMapScreen> {
 
     if (!mounted) return;
 
+    debugPrint('[DriverMap] _updateMarkers: _currentPosition=$_currentPosition, markerIcon=${_vehicleMarkerIcon != null}');
+
     setState(() {
       final updated = Set<Marker>.from(_markers);
 
+      // Always remove old driver marker first
+      updated.removeWhere((marker) => marker.markerId == const MarkerId('driver'));
+
       // Update driver location marker when available.
       if (_currentPosition != null) {
-        updated.removeWhere((marker) => marker.markerId == const MarkerId('driver'));
         updated.add(
           Marker(
             markerId: const MarkerId('driver'),
@@ -331,6 +404,21 @@ class _DriverMapScreenState extends ConsumerState<DriverMapScreen> {
             ),
             icon: _vehicleMarkerIcon ?? BitmapDescriptor.defaultMarker,
             rotation: _currentPosition?.heading ?? 0,
+            anchor: const Offset(0.5, 0.5),
+            infoWindow: const InfoWindow(title: 'Your Location'),
+          ),
+        );
+      } else {
+        // GPS doesn't match region or unavailable — place marker at region center
+        final regionProvider = ref.read(regionRiverpodProvider);
+        final LatLng fallback = regionProvider.isChicago
+            ? const LatLng(41.8781, -87.6298)
+            : const LatLng(6.5244, 3.3792);
+        updated.add(
+          Marker(
+            markerId: const MarkerId('driver'),
+            position: fallback,
+            icon: _vehicleMarkerIcon ?? BitmapDescriptor.defaultMarker,
             anchor: const Offset(0.5, 0.5),
             infoWindow: const InfoWindow(title: 'Your Location'),
           ),
@@ -359,9 +447,24 @@ class _DriverMapScreenState extends ConsumerState<DriverMapScreen> {
       return;
     }
 
-    final lat = _currentPosition?.latitude;
-    final lng = _currentPosition?.longitude;
-    final heading = _currentPosition?.heading;
+    // Use GPS position if available; otherwise fall back to region center
+    // so the backend always receives a location and sets the geohash.
+    double? lat = _currentPosition?.latitude;
+    double? lng = _currentPosition?.longitude;
+    double? heading = _currentPosition?.heading;
+
+    if (lat == null || lng == null) {
+      final regionProvider = ref.read(regionRiverpodProvider);
+      if (regionProvider.isChicago) {
+        lat = 41.8781;
+        lng = -87.6298;
+      } else {
+        lat = 6.5244;
+        lng = 3.3792;
+      }
+      heading = 0;
+      debugPrint('[DriverMap] No GPS — using region center ($lat, $lng) for availability');
+    }
 
     // Toggle online status via AuthProvider
     await authProvider.toggleOnlineStatus(lat: lat, lng: lng, heading: heading);
@@ -426,20 +529,52 @@ class _DriverMapScreenState extends ConsumerState<DriverMapScreen> {
       final position = await Geolocator.getCurrentPosition();
       if (!mounted) return;
 
-      _currentPosition = position;
-      _updateMarkers();
+      // Check if GPS is within the selected region; fall back to region center
+      // so the backend geohash stays correct for matching.
+      final regionProvider = ref.read(regionRiverpodProvider);
+      final gpsRegion = RegionGeofence.regionOf(
+        position.latitude,
+        position.longitude,
+      );
+
+      double lat;
+      double lng;
+      double heading;
+      double speed;
+
+      if (gpsRegion == regionProvider.apiRegionKey) {
+        // GPS matches region — use real GPS
+        _currentPosition = position;
+        _updateMarkers();
+        lat = position.latitude;
+        lng = position.longitude;
+        heading = position.heading;
+        speed = position.speed;
+      } else {
+        // GPS doesn't match region (e.g. emulator) — use region center
+        if (regionProvider.isChicago) {
+          lat = 41.8781;
+          lng = -87.6298;
+        } else {
+          lat = 6.5244;
+          lng = 3.3792;
+        }
+        heading = 0;
+        speed = 0;
+        debugPrint('[DriverMap] Heartbeat: GPS out of region — using center ($lat, $lng)');
+      }
 
       await authProvider.sendHeartbeat(
-        lat: position.latitude,
-        lng: position.longitude,
-        heading: position.heading,
+        lat: lat,
+        lng: lng,
+        heading: heading,
       );
 
       ref.read(rideRiverpodProvider).sendLocationUpdate(
-        latitude: position.latitude,
-        longitude: position.longitude,
-        heading: position.heading,
-        speed: position.speed,
+        latitude: lat,
+        longitude: lng,
+        heading: heading,
+        speed: speed,
       );
     } catch (_) {
       // Silent: heartbeat errors should not disrupt the driver UI.
@@ -621,12 +756,14 @@ class _DriverMapScreenState extends ConsumerState<DriverMapScreen> {
   void _acceptRide() async {
     if (_incomingRideData == null) return;
 
+    final rideData = Map<String, dynamic>.from(_incomingRideData!);
     setState(() {
       _showRideOverlay = false;
+      _incomingRideData = null;
     });
 
     try {
-      final rideId = _incomingRideData!['id']?.toString() ?? '';
+      final rideId = rideData['id']?.toString() ?? '';
       final prefsProvider = ref.read(driverPreferencesRiverpodProvider);
 
       if (rideId.isNotEmpty) {
@@ -646,13 +783,21 @@ class _DriverMapScreenState extends ConsumerState<DriverMapScreen> {
       if (!mounted) return;
 
       if (_currentRequestType == RequestType.scheduled) {
-        Navigator.of(context).push(
-          PageRouteBuilder(
-            opaque: false,
-            pageBuilder: (_, _, _) =>
-                RideRequestDetailScreen(rideData: _incomingRideData!),
-          ),
-        );
+        // Scheduled rides dispatched by cron 5 min before scheduledAt —
+        // driver should proceed to pickup just like an instant ride.
+        final currentRide = ref.read(rideRiverpodProvider).currentRide;
+        if (currentRide != null) {
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (context) => RideAcceptedScreen(ride: currentRide),
+            ),
+          );
+        } else {
+          // Ride accepted but not fetched yet — show confirmation and return
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Scheduled ride accepted! Check your upcoming rides.')),
+          );
+        }
       } else {
         final currentRide = ref.read(rideRiverpodProvider).currentRide;
         if (currentRide != null) {

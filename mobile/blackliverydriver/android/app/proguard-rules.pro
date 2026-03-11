@@ -55,3 +55,6 @@
 # Kotlin coroutines
 -keepclassmembernames class kotlinx.** { volatile <fields>; }
 -dontwarn kotlinx.**
+
+# Play Core (referenced by Flutter deferred components)
+-dontwarn com.google.android.play.core.**

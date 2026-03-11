@@ -2,9 +2,10 @@ import { useState, useEffect, useCallback } from 'react';
 import api from '../api/client';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/Table';
 import Badge from '../components/ui/Badge';
-import { Search, Truck } from 'lucide-react';
+import Button from '../components/ui/Button';
+import { Search, Truck, CheckCircle, XCircle } from 'lucide-react';
 import { toast } from 'react-toastify';
-import { ADMIN_USERS_DRIVERS } from '../api/endpoints';
+import { ADMIN_USERS_DRIVERS, adminVehicleStatus } from '../api/endpoints';
 import { DEBOUNCE_MS } from '../config/constants';
 import { VEHICLE_CATEGORIES } from '../config/regions';
 
@@ -43,6 +44,28 @@ const VehiclesPage = () => {
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
     const [categoryFilter, setCategoryFilter] = useState('');
+    const [updatingVehicles, setUpdatingVehicles] = useState<Set<string>>(new Set());
+
+    const updateVehicleStatus = async (vehicleId: string, isApproved: boolean) => {
+        const action = isApproved ? 'approve' : 'reject';
+        if (!window.confirm(`Are you sure you want to ${action} this vehicle?`)) return;
+        setUpdatingVehicles(prev => new Set(prev).add(vehicleId));
+        try {
+            await api.patch(adminVehicleStatus(vehicleId), {
+                isApproved,
+                ...(!isApproved && { rejectionReason: 'Rejected by admin' }),
+            });
+            setVehicles(prev => prev.map(v =>
+                v.id === vehicleId ? { ...v, status: isApproved ? 'active' : 'inactive' } : v
+            ));
+            toast.success(`Vehicle ${action}d successfully`);
+        } catch (error) {
+            console.error(`Failed to ${action} vehicle`, error);
+            toast.error(`Failed to ${action} vehicle`);
+        } finally {
+            setUpdatingVehicles(prev => { const s = new Set(prev); s.delete(vehicleId); return s; });
+        }
+    };
 
     const fetchVehicles = useCallback(async () => {
         setLoading(true);
@@ -162,12 +185,13 @@ const VehiclesPage = () => {
                                 <TableHead>Owner</TableHead>
                                 <TableHead>Region</TableHead>
                                 <TableHead>Status</TableHead>
+                                <TableHead className="text-right">Actions</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
                             {vehicles.length === 0 ? (
                                 <TableRow>
-                                    <TableCell colSpan={8} className="text-center py-8 text-gray-500">No vehicles found</TableCell>
+                                    <TableCell colSpan={9} className="text-center py-8 text-gray-500">No vehicles found</TableCell>
                                 </TableRow>
                             ) : (
                                 vehicles.map(vehicle => (
@@ -185,6 +209,43 @@ const VehiclesPage = () => {
                                             <Badge variant={vehicle.status === 'active' ? 'success' : vehicle.status === 'pending' ? 'warning' : 'danger'}>
                                                 {vehicle.status}
                                             </Badge>
+                                        </TableCell>
+                                        <TableCell className="text-right">
+                                            <div className="flex justify-end gap-2">
+                                                {vehicle.status === 'pending' && (
+                                                    <>
+                                                        <Button
+                                                            variant="primary"
+                                                            size="sm"
+                                                            title="Approve Vehicle"
+                                                            onClick={() => updateVehicleStatus(vehicle.id, true)}
+                                                            disabled={updatingVehicles.has(vehicle.id)}
+                                                        >
+                                                            <CheckCircle size={16} />
+                                                        </Button>
+                                                        <Button
+                                                            variant="danger"
+                                                            size="sm"
+                                                            title="Reject Vehicle"
+                                                            onClick={() => updateVehicleStatus(vehicle.id, false)}
+                                                            disabled={updatingVehicles.has(vehicle.id)}
+                                                        >
+                                                            <XCircle size={16} />
+                                                        </Button>
+                                                    </>
+                                                )}
+                                                {vehicle.status === 'inactive' && (
+                                                    <Button
+                                                        variant="primary"
+                                                        size="sm"
+                                                        title="Re-approve Vehicle"
+                                                        onClick={() => updateVehicleStatus(vehicle.id, true)}
+                                                        disabled={updatingVehicles.has(vehicle.id)}
+                                                    >
+                                                        <CheckCircle size={16} />
+                                                    </Button>
+                                                )}
+                                            </div>
                                         </TableCell>
                                     </TableRow>
                                 ))

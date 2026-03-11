@@ -27,8 +27,13 @@ class _ArrivingDestinationScreenState extends State<ArrivingDestinationScreen> {
   @override
   void initState() {
     super.initState();
+    // Re-register socket listeners since previous screen's dispose() removed them
+    final bookingState = Provider.of<BookingState>(context, listen: false);
+    bookingState.reRegisterSocketListeners();
     _listenForCompletion();
     _listenToDriverLocation();
+    // Check if status is already 'completed' (e.g. navigated here because status changed)
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkCompleted());
   }
 
   @override
@@ -71,8 +76,13 @@ class _ArrivingDestinationScreenState extends State<ArrivingDestinationScreen> {
     final pickup = bookingState.pickupLocation?.name ?? 'Unknown';
     final dropoff = bookingState.dropoffLocation?.name ?? 'Unknown';
     final driver = bookingState.assignedDriver?.name ?? 'Unknown';
+    final dropoffLat = bookingState.dropoffLocation?.latitude;
+    final dropoffLng = bookingState.dropoffLocation?.longitude;
+    final mapsLink = dropoffLat != null && dropoffLng != null
+        ? '\nhttps://maps.google.com/?q=$dropoffLat,$dropoffLng'
+        : '';
     Share.share(
-      'I\'m on a BlackLivery ride from $pickup to $dropoff with driver $driver. Track my trip!',
+      'I\'m on a BlackLivery ride from $pickup to $dropoff with driver $driver. Track my trip!$mapsLink',
     );
   }
 

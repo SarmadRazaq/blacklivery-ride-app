@@ -27,15 +27,17 @@ class _VerificationScreenState extends ConsumerState<VerificationScreen> {
     'vehicle_photo_back': null,
   };
 
-  final List<String> _carOptions = [
-    'Lincoln Town Car',
-    'Cadillac XTS',
-    'Mercedes S-Class',
-    'BMW 7 Series',
-    'Chevrolet Suburban',
-    'Chrysler 300',
-    'Other',
-  ];
+  static const _carCategoryMap = <String, String>{
+    'Lincoln Town Car': 'sedan',
+    'Cadillac XTS': 'sedan',
+    'Mercedes S-Class': 'first_class',
+    'BMW 7 Series': 'first_class',
+    'Chevrolet Suburban': 'suv',
+    'Chrysler 300': 'sedan',
+    'Other': 'sedan',
+  };
+
+  List<String> get _carOptions => _carCategoryMap.keys.toList();
 
   @override
   void dispose() {
@@ -153,6 +155,7 @@ class _VerificationScreenState extends ConsumerState<VerificationScreen> {
     try {
       await DriverService().saveVerificationDetails(
         vehicleType: _selectedCar,
+        vehicleCategory: _carCategoryMap[_selectedCar] ?? 'sedan',
         liveryPlateNumber: _plateController.text.trim(),
       );
 

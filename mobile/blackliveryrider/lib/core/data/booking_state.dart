@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/ride_service.dart';
@@ -26,6 +27,192 @@ class BookingState extends ChangeNotifier {
     }
   }
 
+  // ── Ride State Persistence ─────────────────────────────────────────
+  static const _rideStateKey = 'active_ride_state';
+
+  /// Persist current ride state so the app can recover after kill/restart.
+  Future<void> _cacheRideState() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (_currentBooking != null && _rideId != null) {
+        final state = <String, dynamic>{
+          'rideId': _rideId,
+          'booking': _currentBooking!.toJson(),
+          'bookingStatus': _bookingStatus,
+          'paymentMethod': _paymentMethod,
+          'driver': _assignedDriver != null
+              ? {
+                  'id': _assignedDriver!.id,
+                  'name': _assignedDriver!.name,
+                  'photoUrl': _assignedDriver!.photoUrl,
+                  'rating': _assignedDriver!.rating,
+                  'carModel': _assignedDriver!.carModel,
+                  'carColor': _assignedDriver!.carColor,
+                  'licensePlate': _assignedDriver!.licensePlate,
+                  'phone': _assignedDriver!.phone,
+                  'latitude': _assignedDriver!.latitude,
+                  'longitude': _assignedDriver!.longitude,
+                }
+              : null,
+          'estimatedDistanceKm': _estimatedDistanceKm,
+          'estimatedDurationMin': _estimatedDurationMin,
+          'cachedAt': DateTime.now().toIso8601String(),
+        };
+        await prefs.setString(_rideStateKey, jsonEncode(state));
+      } else {
+        await prefs.remove(_rideStateKey);
+      }
+    } catch (e) {
+      debugPrint('BookingState: Failed to cache ride state: $e');
+    }
+  }
+
+  /// Clear persisted ride state (on completion, cancellation, or reset).
+  Future<void> _clearCachedRideState() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_rideStateKey);
+    } catch (e) {
+      debugPrint('BookingState: Failed to clear cached ride state: $e');
+    }
+  }
+
+  /// Restore ride from local cache + backend verification.
+  /// Call this on app startup (splash/home screen).
+  /// Returns true if an active ride was restored.
+  Future<bool> restoreActiveRide() async {
+    // 1. Try local cache first (instant recovery)
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final json = prefs.getString(_rideStateKey);
+      if (json != null) {
+        final state = jsonDecode(json) as Map<String, dynamic>;
+        _rideId = state['rideId'] as String?;
+        _bookingStatus = state['bookingStatus'] as String? ?? 'idle';
+        _estimatedDistanceKm =
+            (state['estimatedDistanceKm'] as num?)?.toDouble() ?? 0.0;
+        _estimatedDurationMin =
+            (state['estimatedDurationMin'] as num?)?.toInt() ?? 0;
+        if (state['booking'] != null) {
+          _currentBooking =
+              Booking.fromJson(state['booking'] as Map<String, dynamic>);
+        }
+        if (state['driver'] != null) {
+          _assignedDriver =
+              Driver.fromJson(state['driver'] as Map<String, dynamic>);
+        }
+        notifyListeners();
+        debugPrint('BookingState: Restored ride from cache (rideId=$_rideId)');
+      }
+    } catch (e) {
+      debugPrint('BookingState: Failed to restore from cache: $e');
+    }
+
+    // 2. Verify with backend (may update or clear stale cache)
+    try {
+      final activeRide = await _rideService.getActiveRide();
+      if (activeRide == null) {
+        // No active ride on server — clear local state
+        if (_rideId != null) {
+          debugPrint('BookingState: Server says no active ride — clearing local');
+          resetBookingFlow();
+          await _clearCachedRideState();
+        }
+        return false;
+      }
+
+      // Rebuild local state from server data
+      final status = activeRide['status'] as String? ?? 'finding_driver';
+      _rideId = activeRide['id'] as String?;
+
+      if (activeRide['driver'] != null) {
+        _assignedDriver = Driver.fromJson(
+            activeRide['driver'] as Map<String, dynamic>);
+      } else if (activeRide['driverName'] != null) {
+        _assignedDriver = Driver(
+          id: (activeRide['driverId'] ?? '').toString(),
+          name: (activeRide['driverName'] ?? 'Driver').toString(),
+          photoUrl: (activeRide['driverPhoto'] ?? '').toString(),
+          rating: (activeRide['driverRating'] as num?)?.toDouble() ?? 5.0,
+          totalRides: 0,
+          carModel: (activeRide['vehicleModel'] ?? '').toString(),
+          carColor: (activeRide['vehicleColor'] ?? '').toString(),
+          licensePlate: (activeRide['vehiclePlate'] ?? '').toString(),
+          phone: (activeRide['driverPhone'] ?? '').toString(),
+          latitude: 0.0,
+          longitude: 0.0,
+        );
+      }
+
+      // Rebuild pickup/dropoff from server data
+      final pickup = activeRide['pickupLocation'];
+      if (pickup is Map<String, dynamic>) {
+        _pickupLocation = Location(
+          id: 'pickup',
+          name: pickup['address']?.toString() ?? 'Pickup',
+          address: pickup['address']?.toString() ?? '',
+          latitude: (pickup['lat'] as num?)?.toDouble() ?? 0.0,
+          longitude: (pickup['lng'] as num?)?.toDouble() ?? 0.0,
+        );
+      }
+      final dropoff = activeRide['dropoffLocation'];
+      if (dropoff is Map<String, dynamic>) {
+        _dropoffLocation = Location(
+          id: 'dropoff',
+          name: dropoff['address']?.toString() ?? 'Dropoff',
+          address: dropoff['address']?.toString() ?? '',
+          latitude: (dropoff['lat'] as num?)?.toDouble() ?? 0.0,
+          longitude: (dropoff['lng'] as num?)?.toDouble() ?? 0.0,
+        );
+      }
+
+      // Map ride status to booking status
+      const statusMap = {
+        'finding_driver': 'searching_driver',
+        'pending': 'searching_driver',
+        'accepted': 'driver_assigned',
+        'arrived': 'arriving',
+        'in_progress': 'in_progress',
+      };
+      _bookingStatus = statusMap[status] ?? 'idle';
+
+      // Rebuild booking object
+      _currentBooking = Booking(
+        id: _rideId ?? '',
+        pickup: _pickupLocation ?? Location(id: '', name: '', address: '', latitude: 0, longitude: 0),
+        dropoff: _dropoffLocation ?? Location(id: '', name: '', address: '', latitude: 0, longitude: 0),
+        rideOption: _selectedRideOption ?? RideOption.defaultOption(),
+        driver: _assignedDriver,
+        scheduledTime: DateTime.now(),
+        estimatedPrice: (activeRide['pricing']?['estimatedFare'] as num?)?.toDouble() ?? 0,
+        distanceKm: _estimatedDistanceKm,
+        status: status,
+      );
+
+      // Re-listen for socket updates
+      if (_rideId != null) {
+        _socketService.listenToRideUpdates(_rideId!, (data) {
+          _handleRideUpdate(data);
+        });
+      }
+
+      notifyListeners();
+      await _cacheRideState();
+      debugPrint('BookingState: Restored ride from server (status=$status)');
+      return true;
+    } catch (e) {
+      debugPrint('BookingState: Failed to restore from server: $e');
+      // If we had a cached ride, keep it
+      return _rideId != null;
+    }
+  }
+
+  /// Whether there's an active ride in progress (for startup routing).
+  bool get hasActiveRide =>
+      _rideId != null &&
+      _currentBooking != null &&
+      !_isTerminalStatus(_currentBooking!.status);
+
   bool _isLoading = false;
   bool get isLoading => _isLoading;
 
@@ -48,6 +235,7 @@ class BookingState extends ChangeNotifier {
   Driver? _assignedDriver;
   String? _rideId; // Added _rideId to track current ride ID
   String _paymentMethod = 'wallet'; // wallet, cash, card
+  DateTime? _driverArrivedAt; // Timestamp when driver marked arrived (for wait time)
   String _bookingStatus =
       'idle'; // idle, selecting_ride, confirming, searching_driver, driver_assigned, arriving, in_progress, completed
 
@@ -71,6 +259,7 @@ class BookingState extends ChangeNotifier {
   String get bookingStatus => _bookingStatus;
   String? get rideId => _rideId;
   String get paymentMethod => _paymentMethod;
+  DateTime? get driverArrivedAt => _driverArrivedAt;
   String get bookingType => _bookingType;
   int get hoursBooked => _hoursBooked;
   String? get airportCode => _airportCode;
@@ -491,6 +680,7 @@ class BookingState extends ChangeNotifier {
         _bookingStatus = isScheduled ? 'scheduled' : 'searching_driver';
         _isLoading = false;
         notifyListeners();
+        _cacheRideState(); // Persist for crash recovery
 
         // 4. Listen for Socket Updates (only for immediate rides)
         if (!isScheduled) {
@@ -509,6 +699,17 @@ class BookingState extends ChangeNotifier {
       _isLoading = false;
       notifyListeners();
       rethrow;
+    }
+  }
+
+  /// Re-register socket ride update listeners.
+  /// Call this when navigating to a new screen that needs to receive
+  /// ride status updates after a previous screen called stopListeningToRideUpdates.
+  void reRegisterSocketListeners() {
+    if (_rideId != null) {
+      _socketService.listenToRideUpdates(_rideId!, (data) {
+        _handleRideUpdate(data);
+      });
     }
   }
 
@@ -558,6 +759,7 @@ class BookingState extends ChangeNotifier {
         carModel: (data['vehicleModel'] ?? nested['carModel'] ?? '').toString(),
         carColor: (data['vehicleColor'] ?? nested['carColor'] ?? '').toString(),
         licensePlate: (data['vehiclePlate'] ?? nested['licensePlate'] ?? '').toString(),
+        phone: (data['driverPhone'] ?? nested['phone'] ?? nested['phoneNumber'] ?? '').toString(),
         latitude: (data['driverLocationLat'] as num?)?.toDouble() ??
             (nested['currentLocation']?['lat'] as num?)?.toDouble() ??
             0.0,
@@ -582,14 +784,18 @@ class BookingState extends ChangeNotifier {
       case 'accepted':
       case 'arrived':
         _bookingStatus = 'driver_assigned'; // or 'arriving'
-        if (status == 'arrived') _bookingStatus = 'arriving';
+        if (status == 'arrived') {
+          _bookingStatus = 'arriving';
+          _driverArrivedAt ??= DateTime.now();
+        }
         break;
       case 'in_progress':
         _bookingStatus = 'in_progress';
         break;
       case 'completed':
         _bookingStatus = 'completed';
-        _rideId = null; // Clear ride ID
+        // Keep _rideId and _assignedDriver alive for rating/tip on completed screen.
+        // They will be cleared when resetBookingFlow() is called.
         break;
       case 'cancelled':
         _bookingStatus = 'cancelled';
@@ -606,6 +812,13 @@ class BookingState extends ChangeNotifier {
 
     _isLoading = false;
     notifyListeners();
+
+    // Persist state for crash recovery (clear on terminal statuses)
+    if (_isTerminalStatus(status)) {
+      _clearCachedRideState();
+    } else {
+      _cacheRideState();
+    }
   }
 
   void updateBookingStatus(String status) {
@@ -628,7 +841,7 @@ class BookingState extends ChangeNotifier {
         break;
       case 'completed':
         _bookingStatus = 'completed';
-        _rideId = null; // Clear ride ID
+        // Keep _rideId and _assignedDriver alive for rating/tip on completed screen.
         break;
       case 'cancelled':
         _bookingStatus = 'cancelled';
@@ -641,6 +854,18 @@ class BookingState extends ChangeNotifier {
         return;
     }
     notifyListeners();
+  }
+
+  /// Poll the backend for the latest ride status (fallback for missed socket events).
+  Future<void> refreshRideStatus(String rideId) async {
+    try {
+      final data = await _rideService.getRideDetails(rideId);
+      if (data != null && data['status'] != null) {
+        _handleRideUpdate(data);
+      }
+    } catch (e) {
+      debugPrint('BookingState.refreshRideStatus error: $e');
+    }
   }
 
   Future<void> cancelBooking({String? reason}) async {
@@ -662,6 +887,7 @@ class BookingState extends ChangeNotifier {
     _bookingStatus = 'idle';
     _rideId = null;
     _socketService.stopListeningToRideUpdates(); // Clean up ride listeners
+    _clearCachedRideState();
     notifyListeners();
   }
 
@@ -682,7 +908,9 @@ class BookingState extends ChangeNotifier {
     _airportCode = null;
     _isAirportPickup = true;
     _rideId = null;
+    _driverArrivedAt = null;
     _socketService.stopListeningToRideUpdates(); // Clean up stale ride listeners
+    _clearCachedRideState();
     notifyListeners();
   }
 

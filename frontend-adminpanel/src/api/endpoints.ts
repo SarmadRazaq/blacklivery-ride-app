@@ -14,12 +14,16 @@ export const ADMIN_ANALYTICS_COUNTS = '/v1/admin/analytics/counts';
 export const ADMIN_RIDES = '/v1/admin/rides';
 export const ADMIN_RIDES_ACTIVE = '/v1/admin/rides/active';
 export const adminRideCancel = (rideId: string) => `/v1/admin/rides/${rideId}/cancel`;
+export const adminRideDetail = (rideId: string) => `/v1/admin/rides/${rideId}`;
 
 // ─── Admin Users ─────────────────────────────────────────────────────────────
 export const ADMIN_USERS = '/v1/admin/users';
 export const ADMIN_USERS_DRIVERS = '/v1/admin/users?role=driver';
 export const adminUserStatus = (userId: string) => `/v1/admin/users/${userId}/status`;
 export const adminUserDocuments = (userId: string) => `/v1/admin/users/${userId}/documents`;
+
+// ─── Admin Vehicles ──────────────────────────────────────────────────────────
+export const adminVehicleStatus = (vehicleId: string) => `/v1/admin/vehicles/${vehicleId}/status`;
 
 // ─── Admin Payouts ───────────────────────────────────────────────────────────
 export const ADMIN_PAYOUTS = '/v1/admin/payouts';

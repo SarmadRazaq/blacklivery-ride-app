@@ -279,8 +279,61 @@ export const signupStart = async (req: Request, res: Response): Promise<void> =>
         const normalizedEmail = email.toLowerCase().trim();
         const normalizedPhone = normalizePhone(phoneNumber);
 
-        // Check if email or phone already exists
-        await ensureUniqueUser(normalizedEmail, normalizedPhone);
+        // Check if email or phone already exists in users collection
+        // If user exists but hasn't verified phone, allow re-registration
+        try {
+            await ensureUniqueUser(normalizedEmail, normalizedPhone);
+        } catch (uniqueError: any) {
+            if (uniqueError.message?.includes('already registered')) {
+                // Clean up ALL incomplete user docs that match email OR phone
+                const snapsToClean: FirebaseFirestore.QuerySnapshot[] = [];
+
+                const emailSnap = await db.collection('users')
+                    .where('emailLowercase', '==', normalizedEmail)
+                    .limit(1)
+                    .get();
+                if (!emailSnap.empty) snapsToClean.push(emailSnap);
+
+                const phoneSnap = await db.collection('users')
+                    .where('phoneNumberNormalized', '==', normalizedPhone)
+                    .limit(1)
+                    .get();
+                if (!phoneSnap.empty) snapsToClean.push(phoneSnap);
+
+                const cleanedUids = new Set<string>();
+                let hasFullyVerifiedUser = false;
+
+                for (const snap of snapsToClean) {
+                    const doc = snap.docs[0];
+                    if (!doc || cleanedUids.has(doc.id)) continue;
+                    const userData = doc.data();
+
+                    if (userData.phoneVerified) {
+                        // Fully verified user — cannot overwrite
+                        hasFullyVerifiedUser = true;
+                        break;
+                    }
+
+                    // Incomplete registration — clean up
+                    cleanedUids.add(doc.id);
+                    await db.collection('users').doc(doc.id).delete();
+                    try {
+                        await auth.deleteUser(doc.id);
+                    } catch (deleteErr: any) {
+                        if (deleteErr.code !== 'auth/user-not-found') {
+                            logger.warn({ err: deleteErr }, 'Failed to delete incomplete Firebase Auth user');
+                        }
+                    }
+                    logger.info({ uid: doc.id, email: normalizedEmail }, 'Cleaned up incomplete registration');
+                }
+
+                if (hasFullyVerifiedUser) {
+                    throw uniqueError;
+                }
+            } else {
+                throw uniqueError;
+            }
+        }
 
         // Generate cryptographically secure OTP
         const otp = crypto.randomInt(100000, 999999).toString();
@@ -355,7 +408,8 @@ export const signupResend = async (req: Request, res: Response): Promise<void> =
         const pendingDoc = await db.collection('pending_signups').doc(normalizedEmail).get();
 
         if (!pendingDoc.exists) {
-            res.status(400).json({ error: 'No pending signup found. Please start signup again.' });
+            // No pending signup — tell the client to re-register
+            res.status(410).json({ error: 'Signup expired. Please register again.', code: 'SIGNUP_EXPIRED' });
             return;
         }
 
@@ -420,7 +474,7 @@ export const signupVerify = async (req: Request, res: Response): Promise<void> =
         const normalizedEmail = email.toLowerCase().trim();
         const pendingDoc = await db.collection('pending_signups').doc(normalizedEmail).get();
         if (!pendingDoc.exists) {
-            res.status(400).json({ error: 'No pending signup found. Please start signup again.' });
+            res.status(410).json({ error: 'Signup expired. Please register again.', code: 'SIGNUP_EXPIRED' });
             return;
         }
 
@@ -430,7 +484,7 @@ export const signupVerify = async (req: Request, res: Response): Promise<void> =
 
         if (expiresAt <= new Date()) {
             await pendingDoc.ref.delete();
-            res.status(400).json({ error: 'Verification code expired. Please start signup again.' });
+            res.status(410).json({ error: 'Verification code expired. Please register again.', code: 'SIGNUP_EXPIRED' });
             return;
         }
 

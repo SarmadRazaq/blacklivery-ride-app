@@ -313,8 +313,9 @@ router.get('/earnings', checkRole(['driver']), requireApprovedDriver, wrap(getDr
  *       200:
  *         description: Earnings dashboard data
  */
-import { getEarningsDashboard, getPayouts } from '../controllers/earnings.controller';
+import { getEarningsDashboard, getPayouts, updateEarningsGoal } from '../controllers/earnings.controller';
 router.get('/earnings/dashboard', checkRole(['driver']), requireApprovedDriver, wrap(getEarningsDashboard));
+router.patch('/earnings/goal', checkRole(['driver']), requireApprovedDriver, wrap(updateEarningsGoal));
 router.get('/payouts', checkRole(['driver']), requireApprovedDriver, wrap(getPayouts));
 
 /**

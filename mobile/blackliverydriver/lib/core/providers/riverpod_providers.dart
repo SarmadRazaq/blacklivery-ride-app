@@ -18,7 +18,11 @@ final driverRiverpodProvider = ChangeNotifierProvider<DriverProvider>((ref) {
 });
 
 final rideRiverpodProvider = ChangeNotifierProvider<RideProvider>((ref) {
-  return RideProvider();
+  final rp = RideProvider();
+  rp.onRideCompleted = () {
+    ref.read(earningsRiverpodProvider).fetchDashboard();
+  };
+  return rp;
 });
 
 final rideHistoryRiverpodProvider = ChangeNotifierProvider<RideHistoryProvider>((ref) {

@@ -27,7 +27,7 @@ class ChatService {
   Future<List<dynamic>> getMessages(String rideId) async {
     try {
       final response = await _dio.get('/api/v1/chat/rides/$rideId/messages');
-      return response.data['data'] ?? [];
+      return response.data['messages'] ?? response.data['data'] ?? [];
     } catch (e) {
       debugPrint('ChatService.getMessages error: $e');
       return [];

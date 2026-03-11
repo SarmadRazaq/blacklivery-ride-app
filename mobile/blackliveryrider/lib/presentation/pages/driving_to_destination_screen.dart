@@ -9,6 +9,8 @@ import '../../core/data/booking_state.dart';
 import '../../core/services/socket_service.dart';
 import '../../core/services/location_service.dart';
 import '../../core/services/navigation_service.dart';
+import '../../core/services/places_service.dart';
+import '../../core/network/api_client.dart';
 import '../widgets/vehicle_icon.dart';
 import '../widgets/ride_map_view.dart';
 import 'arriving_destination_screen.dart';
@@ -39,6 +41,8 @@ class _DrivingToDestinationScreenState
   @override
   void initState() {
     super.initState();
+    // Re-register socket listeners since DriverArrivingScreen stopped them on dispose
+    Provider.of<BookingState>(context, listen: false).reRegisterSocketListeners();
     _initEta();
     _fetchRoutePolyline();
     _listenToDriverLocation();
@@ -89,7 +93,20 @@ class _DrivingToDestinationScreenState
   void _startEtaRefreshTimer() {
     _etaRefreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       _refreshEta();
+      _pollRideStatus();
     });
+  }
+
+  /// Poll ride status from backend as fallback in case socket event is missed.
+  Future<void> _pollRideStatus() async {
+    try {
+      final bookingState = Provider.of<BookingState>(context, listen: false);
+      final rideId = bookingState.rideId;
+      if (rideId == null) return;
+      await bookingState.refreshRideStatus(rideId);
+    } catch (e) {
+      debugPrint('DrivingToDestination: Failed to poll ride status: $e');
+    }
   }
 
   Future<void> _refreshEta() async {
@@ -170,8 +187,8 @@ class _DrivingToDestinationScreenState
   void _listenToDriverLocation() {
     _socketService.listenToDriverLocation((data) {
       if (!mounted) return;
-      final lat = (data['latitude'] as num?)?.toDouble();
-      final lng = (data['longitude'] as num?)?.toDouble();
+      final lat = (data['lat'] as num?)?.toDouble() ?? (data['latitude'] as num?)?.toDouble();
+      final lng = (data['lng'] as num?)?.toDouble() ?? (data['longitude'] as num?)?.toDouble();
       final eta = (data['eta'] as num?)?.toInt();
       setState(() {
         if (lat != null && lng != null) {
@@ -226,8 +243,13 @@ class _DrivingToDestinationScreenState
     final pickup = bookingState.pickupLocation?.name ?? 'Unknown';
     final dropoff = bookingState.dropoffLocation?.name ?? 'Unknown';
     final driver = bookingState.assignedDriver?.name ?? 'Unknown';
+    final dropoffLat = bookingState.dropoffLocation?.latitude;
+    final dropoffLng = bookingState.dropoffLocation?.longitude;
+    final mapsLink = dropoffLat != null && dropoffLng != null
+        ? '\nhttps://maps.google.com/?q=$dropoffLat,$dropoffLng'
+        : '';
     Share.share(
-      'I\'m on a BlackLivery ride from $pickup to $dropoff with driver $driver. Track my trip!',
+      'I\'m on a BlackLivery ride from $pickup to $dropoff with driver $driver. Track my trip!$mapsLink',
     );
   }
 
@@ -477,12 +499,15 @@ class _DrivingToDestinationScreenState
                     color: AppColors.inputBorder,
                   ),
                 ),
-                _buildLocationRow(
-                  icon: Icons.add,
-                  iconColor: Colors.white,
-                  title: 'Add stop',
-                  address: '',
-                  isAdd: true,
+                GestureDetector(
+                  onTap: () => _showAddStopSheet(bookingState),
+                  child: _buildLocationRow(
+                    icon: Icons.add,
+                    iconColor: Colors.white,
+                    title: 'Add stop',
+                    address: '',
+                    isAdd: true,
+                  ),
                 ),
                 const SizedBox(height: 4),
                 Padding(
@@ -842,6 +867,116 @@ class _DrivingToDestinationScreenState
         ],
       ),
     );
+  }
+
+  void _showAddStopSheet(BookingState bookingState) {
+    final searchController = TextEditingController();
+    final placesService = PlacesService();
+    List<dynamic> results = [];
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.bgSec,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) => Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(ctx).viewInsets.bottom,
+          ),
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(ctx).size.height * 0.6,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40, height: 4,
+                    decoration: BoxDecoration(
+                      color: AppColors.inputBorder,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                Text('Add a stop', style: AppTextStyles.heading3),
+                const SizedBox(height: 20),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  decoration: BoxDecoration(
+                    color: AppColors.inputBg,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppColors.inputBorder),
+                  ),
+                  child: TextField(
+                    controller: searchController,
+                    style: AppTextStyles.body.copyWith(color: Colors.white),
+                    decoration: InputDecoration(
+                      hintText: 'Search for a location',
+                      hintStyle: AppTextStyles.body.copyWith(color: AppColors.txtInactive),
+                      border: InputBorder.none,
+                      prefixIcon: const Icon(Icons.search, color: AppColors.txtInactive),
+                    ),
+                    onChanged: (value) async {
+                      if (value.length < 3) return;
+                      final locations = await placesService.searchLocations(value);
+                      setSheetState(() => results = locations);
+                    },
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Flexible(
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: results.length,
+                    itemBuilder: (ctx, i) {
+                      final loc = results[i];
+                      return ListTile(
+                        leading: const Icon(Icons.location_on_outlined, color: AppColors.txtInactive),
+                        title: Text(loc.name, style: AppTextStyles.body.copyWith(color: Colors.white)),
+                        subtitle: Text(loc.address, style: AppTextStyles.caption.copyWith(color: AppColors.txtInactive)),
+                        onTap: () => _addStopToRide(bookingState, loc, ctx),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _addStopToRide(BookingState bookingState, dynamic location, BuildContext ctx) async {
+    final rideId = bookingState.rideId;
+    if (rideId == null) return;
+    try {
+      final dio = ApiClient().dio;
+      await dio.post('/api/v1/rides/$rideId/stops', data: {
+        'lat': location.latitude,
+        'lng': location.longitude,
+        'address': location.name,
+      });
+      if (ctx.mounted) Navigator.pop(ctx);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Stop added: ${location.name}')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to add stop')),
+        );
+      }
+    }
   }
 
   Widget _buildLocationRow({

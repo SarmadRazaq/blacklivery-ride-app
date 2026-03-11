@@ -35,6 +35,11 @@ export const createRideSchema = z.object({
         hoursBooked: z.number().min(2).optional(),
         isAirport: z.boolean().optional(),
         airportCode: z.enum(['ORD', 'MDW']).optional(),
+        paymentMethod: z.enum(['cash', 'wallet', 'card']).optional(),
+        scheduledAt: z.string().optional(),
+        isForSomeoneElse: z.boolean().optional(),
+        recipientName: z.string().optional(),
+        recipientPhone: z.string().optional(),
         pricing: z
             .object({
                 paymentReference: z.string().min(6),

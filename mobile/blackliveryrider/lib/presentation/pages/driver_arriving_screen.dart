@@ -33,12 +33,35 @@ class _DriverArrivingScreenState extends State<DriverArrivingScreen> {
   StreamSubscription? _locationSub;
   List<LatLng> _routePoints = [];
   DateTime? _lastRouteFetch;
+  Timer? _waitTimer;
+  int _waitSeconds = 0;
 
   @override
   void initState() {
     super.initState();
     _listenToDriverLocation();
     _startRiderLocationTracking();
+    _startWaitTimerIfArrived();
+  }
+
+  void _startWaitTimerIfArrived() {
+    final bookingState = Provider.of<BookingState>(context, listen: false);
+    if (bookingState.driverArrivedAt != null) {
+      _waitSeconds = DateTime.now().difference(bookingState.driverArrivedAt!).inSeconds;
+    }
+    // Listen for status changes to start timer when driver arrives
+    bookingState.addListener(_onBookingChanged);
+  }
+
+  void _onBookingChanged() {
+    if (!mounted) return;
+    final bookingState = Provider.of<BookingState>(context, listen: false);
+    if (bookingState.driverArrivedAt != null && _waitTimer == null) {
+      _waitSeconds = DateTime.now().difference(bookingState.driverArrivedAt!).inSeconds;
+      _waitTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+        if (mounted) setState(() => _waitSeconds++);
+      });
+    }
   }
 
   /// Emit rider location so the driver can track approach to pickup point.
@@ -61,8 +84,8 @@ class _DriverArrivingScreenState extends State<DriverArrivingScreen> {
     if (rideId != null) {
       _socketService.listenToDriverLocation((data) {
         if (mounted) {
-          final lat = (data['latitude'] as num?)?.toDouble();
-          final lng = (data['longitude'] as num?)?.toDouble();
+          final lat = (data['lat'] as num?)?.toDouble() ?? (data['latitude'] as num?)?.toDouble();
+          final lng = (data['lng'] as num?)?.toDouble() ?? (data['longitude'] as num?)?.toDouble();
           final eta = (data['eta'] as num?)?.toInt();
           if (lat != null && lng != null) {
             setState(() {
@@ -110,6 +133,10 @@ class _DriverArrivingScreenState extends State<DriverArrivingScreen> {
 
   @override
   void dispose() {
+    _waitTimer?.cancel();
+    try {
+      Provider.of<BookingState>(context, listen: false).removeListener(_onBookingChanged);
+    } catch (_) {}
     _locationSub?.cancel();
     _locationService.stopTracking();
     _socketService.stopListeningToRideUpdates();
@@ -215,8 +242,13 @@ class _DriverArrivingScreenState extends State<DriverArrivingScreen> {
     final pickup = bookingState.pickupLocation?.name ?? 'Unknown';
     final dropoff = bookingState.dropoffLocation?.name ?? 'Unknown';
     final driver = bookingState.assignedDriver?.name ?? 'Unknown';
+    final dropoffLat = bookingState.dropoffLocation?.latitude;
+    final dropoffLng = bookingState.dropoffLocation?.longitude;
+    final mapsLink = dropoffLat != null && dropoffLng != null
+        ? '\nhttps://maps.google.com/?q=$dropoffLat,$dropoffLng'
+        : '';
     Share.share(
-      'I\'m on a BlackLivery ride from $pickup to $dropoff with driver $driver. Track my trip!',
+      'I\'m on a BlackLivery ride from $pickup to $dropoff with driver $driver. Track my trip!$mapsLink',
     );
   }
 
@@ -319,6 +351,18 @@ class _DriverArrivingScreenState extends State<DriverArrivingScreen> {
   }
 
   // Removed _startRide (Driver controls this)
+
+  String _formatWaitSubtitle() {
+    final mins = _waitSeconds ~/ 60;
+    final secs = _waitSeconds % 60;
+    final timeStr = '${mins.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')}';
+    // Free waiting: 5 min for standard, 3 min for NG delivery
+    const freeMinutes = 5;
+    if (mins < freeMinutes) {
+      return 'Waiting $timeStr (free for ${freeMinutes - mins} min)';
+    }
+    return 'Paid waiting $timeStr';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -429,7 +473,7 @@ class _DriverArrivingScreenState extends State<DriverArrivingScreen> {
                           const SizedBox(height: 4),
                           Text(
                             isArrived
-                                ? 'Please proceed to your pickup spot'
+                                ? _formatWaitSubtitle()
                                 : _etaMinutes != null
                                     ? '$_etaMinutes min away'
                                     : 'Arriving soon...',

@@ -311,12 +311,17 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
     final pickup = bookingState.pickupLocation?.name ?? 'Pickup';
     final dropoff = bookingState.dropoffLocation?.name ?? 'Dropoff';
     final driver = bookingState.assignedDriver;
+    final dropoffLat = bookingState.dropoffLocation?.latitude;
+    final dropoffLng = bookingState.dropoffLocation?.longitude;
+    final mapsLink = dropoffLat != null && dropoffLng != null
+        ? '\nhttps://maps.google.com/?q=$dropoffLat,$dropoffLng'
+        : '';
 
     final shareText = 'I\'m on a BlackLivery ride!\n'
         'From: $pickup\n'
         'To: $dropoff\n'
         '${driver != null ? 'Driver: ${driver.name} • ${driver.licensePlate}\n' : ''}'
-        'ETA: $_minutesRemaining min';
+        'ETA: $_minutesRemaining min$mapsLink';
 
     Share.share(shareText);
   }
@@ -632,7 +637,7 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
                           ),
                         ),
                         Text(
-                          '${booking?.distanceKm.toStringAsFixed(1) ?? '0'} ${Provider.of<RegionProvider>(context, listen: false).isNigeria ? 'km' : 'mi'}',
+                          '${((booking?.distanceKm ?? 0) > 0 ? booking!.distanceKm : bookingState.estimatedDistance).toStringAsFixed(1)} ${Provider.of<RegionProvider>(context, listen: false).isNigeria ? 'km' : 'mi'}',
                           style: AppTextStyles.body.copyWith(
                             color: AppColors.yellow90,
                           ),

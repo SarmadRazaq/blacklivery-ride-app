@@ -199,7 +199,7 @@ class CronSchedulerService {
             const notOlderThan = new Date(now.getTime() - 30 * 60 * 1000);
 
             const scheduledRides = await db.collection('rides')
-                .where('status', '==', 'requested')
+                .where('status', '==', 'scheduled')
                 .where('scheduledAt', '<=', dispatchWindow)
                 .where('scheduledAt', '>=', notOlderThan)
                 .limit(50)

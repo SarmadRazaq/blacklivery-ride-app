@@ -31,8 +31,11 @@ describe('Sidebar', () => {
 
     it('should render the app name and subtitle from config', () => {
         renderSidebar();
-        expect(screen.getByText(APP_NAME)).toBeInTheDocument();
-        expect(screen.getByText(APP_SUBTITLE)).toBeInTheDocument();
+        // Renders in both mobile and desktop sidebars
+        const names = screen.getAllByText(APP_NAME);
+        expect(names.length).toBeGreaterThanOrEqual(1);
+        const subtitles = screen.getAllByText(APP_SUBTITLE);
+        expect(subtitles.length).toBeGreaterThanOrEqual(1);
     });
 
     it('should render all navigation items', () => {
@@ -53,43 +56,46 @@ describe('Sidebar', () => {
         ];
 
         for (const label of expectedLabels) {
-            expect(screen.getByText(label)).toBeInTheDocument();
+            // Each label appears in both mobile and desktop sidebars
+            expect(screen.getAllByText(label).length).toBeGreaterThanOrEqual(1);
         }
     });
 
     it('should render navigation links with correct hrefs', () => {
         renderSidebar();
 
-        const dashLink = screen.getByText('Dashboard').closest('a');
+        const dashLink = screen.getAllByText('Dashboard')[0].closest('a');
         expect(dashLink).toHaveAttribute('href', '/');
 
-        const ridesLink = screen.getByText('Rides').closest('a');
+        const ridesLink = screen.getAllByText('Rides')[0].closest('a');
         expect(ridesLink).toHaveAttribute('href', '/rides');
 
-        const usersLink = screen.getByText('Users').closest('a');
+        const usersLink = screen.getAllByText('Users')[0].closest('a');
         expect(usersLink).toHaveAttribute('href', '/users');
 
-        const analyticsLink = screen.getByText('Analytics').closest('a');
+        const analyticsLink = screen.getAllByText('Analytics')[0].closest('a');
         expect(analyticsLink).toHaveAttribute('href', '/analytics');
     });
 
     it('should render a Logout button', () => {
         renderSidebar();
-        expect(screen.getByText('Logout')).toBeInTheDocument();
+        expect(screen.getAllByText('Logout').length).toBeGreaterThanOrEqual(1);
     });
 
     it('should call logout when Logout button is clicked', async () => {
         renderSidebar();
         const user = userEvent.setup();
-        await user.click(screen.getByText('Logout'));
+        await user.click(screen.getAllByText('Logout')[0]);
         expect(mockLogout).toHaveBeenCalledOnce();
     });
 
-    it('should have exactly 12 nav links', () => {
+    it('should have exactly 12 nav links per sidebar', () => {
         renderSidebar();
-        // All NavLinks render as <a> tags
-        const nav = screen.getByRole('navigation');
-        const links = nav.querySelectorAll('a');
+        // Both mobile and desktop sidebars have <nav> elements
+        const navs = screen.getAllByRole('navigation');
+        expect(navs.length).toBeGreaterThanOrEqual(1);
+        // Each nav should have 12 links
+        const links = navs[0].querySelectorAll('a');
         expect(links.length).toBe(12);
     });
 });

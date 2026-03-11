@@ -452,6 +452,7 @@ export const updateDriverVerificationDetails = async (req: AuthRequest, res: Res
     try {
         const { uid } = req.user;
         const vehicleType = String(req.body.vehicleType ?? '').trim();
+        const vehicleCategory = String(req.body.vehicleCategory ?? '').trim().toLowerCase() || undefined;
         const liveryPlateNumber = String(req.body.liveryPlateNumber ?? '').trim().toUpperCase();
 
         if (!vehicleType) {
@@ -471,13 +472,14 @@ export const updateDriverVerificationDetails = async (req: AuthRequest, res: Res
                 {
                     userId: uid,
                     vehicleType,
+                    ...(vehicleCategory ? { vehicleCategory } : {}),
                     liveryPlateNumber,
                     updatedAt: new Date(),
                     auditTrail: FieldValue.arrayUnion({
                         at: new Date(),
                         action: 'verification_details_updated',
                         actor: uid,
-                        notes: { vehicleType, liveryPlateNumber }
+                        notes: { vehicleType, vehicleCategory, liveryPlateNumber }
                     })
                 },
                 { merge: true }
@@ -490,6 +492,7 @@ export const updateDriverVerificationDetails = async (req: AuthRequest, res: Res
                 {
                     driverOnboarding: {
                         vehicleType,
+                        ...(vehicleCategory ? { vehicleCategory } : {}),
                         liveryPlateNumber,
                         updatedAt: new Date()
                     },
@@ -798,6 +801,10 @@ export const updateDriverAvailability = async (req: AuthRequest, res: Response):
         // Note: requireApprovedDriver middleware already blocks unapproved drivers
         // from reaching this handler, so no second approval check is needed here.
 
+        if (isOnline && !location) {
+            logger.warn({ uid }, '[availability] Driver going online WITHOUT location — geohash will NOT be set, driver will be invisible to matching');
+        }
+
         const geohash = location ? encodeGeohash(location.lat, location.lng, 7) : null;
         const geohash5 = geohash ? geohash.substring(0, 5) : null;
         const geohash4 = geohash ? geohash.substring(0, 4) : null;
@@ -1021,9 +1028,31 @@ export const getDriverRideHistory = async (req: AuthRequest, res: Response): Pro
 
         const rides = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
+        // Populate rider info for each ride
+        const populatedRides = await Promise.all(rides.map(async (ride: any) => {
+            const rideObj = { ...ride };
+            try {
+                if (ride.riderId) {
+                    const riderSnap = await db.collection('users').doc(ride.riderId).get();
+                    const rd = riderSnap.data() ?? {};
+                    rideObj.rider = {
+                        id: ride.riderId,
+                        displayName: rd.fullName || rd.displayName || 'Rider',
+                        name: rd.fullName || rd.displayName || 'Rider',
+                        photoURL: rd.photoURL || '',
+                        phone: rd.phone || rd.phoneNumber || '',
+                        rating: rd.riderRating ?? 5.0,
+                    };
+                }
+            } catch (err) {
+                logger.warn({ err, rideId: ride.id }, 'Failed to populate rider info for driver ride history');
+            }
+            return rideObj;
+        }));
+
         res.status(200).json({
             success: true,
-            data: rides,
+            data: populatedRides,
             pagination: { total, page, limit, totalPages: Math.ceil(total / limit) }
         });
     } catch (error) {
@@ -1056,7 +1085,28 @@ export const getDriverActiveRide = async (req: AuthRequest, res: Response): Prom
         }
 
         const doc = snapshot.docs[0];
-        res.status(200).json({ success: true, data: { id: doc.id, ...doc.data() } });
+        const rideData: Record<string, any> = { id: doc.id, ...(doc.data() as Record<string, any>) };
+
+        // Populate rider info
+        if (rideData.riderId) {
+            try {
+                const riderDoc = await db.collection('users').doc(rideData.riderId).get();
+                if (riderDoc.exists) {
+                    const riderData = riderDoc.data()!;
+                    rideData.rider = {
+                        id: rideData.riderId,
+                        displayName: riderData.displayName || riderData.name || 'Rider',
+                        phoneNumber: riderData.phoneNumber || riderData.phone || '',
+                        photoURL: riderData.photoURL || '',
+                        rating: riderData.rating ?? 5.0,
+                    };
+                }
+            } catch (e) {
+                logger.warn({ riderId: rideData.riderId }, 'Failed to populate rider info');
+            }
+        }
+
+        res.status(200).json({ success: true, data: rideData });
     } catch (error) {
         logger.error({ err: error }, 'getDriverActiveRide failed');
         res.status(500).json({ error: 'Unable to fetch active ride' });

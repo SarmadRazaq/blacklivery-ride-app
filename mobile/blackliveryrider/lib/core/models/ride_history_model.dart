@@ -48,6 +48,7 @@ class RideHistoryItem {
   final double? timeFare;
   final double? surgeFare;
   final double? surgeMultiplier;
+  final double? tip;
 
   RideHistoryItem({
     required this.id,
@@ -70,6 +71,7 @@ class RideHistoryItem {
     this.timeFare,
     this.surgeFare,
     this.surgeMultiplier,
+    this.tip,
   });
 
   factory RideHistoryItem.fromJson(Map<String, dynamic> json) {
@@ -122,6 +124,7 @@ class RideHistoryItem {
       timeFare: (breakdown?['timeFare'] as num?)?.toDouble(),
       surgeFare: (breakdown?['surgeFare'] as num?)?.toDouble(),
       surgeMultiplier: (pricing?['surgeMultiplier'] as num?)?.toDouble() ?? (breakdown?['surgeMultiplier'] as num?)?.toDouble(),
+      tip: (json['tip'] as num?)?.toDouble(),
     );
   }
 
@@ -154,6 +157,7 @@ class RideHistoryItem {
       'timeFare': timeFare,
       'surgeFare': surgeFare,
       'surgeMultiplier': surgeMultiplier,
+      'tip': tip,
     };
   }
 }

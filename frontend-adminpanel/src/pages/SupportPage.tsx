@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import api from '../api/client';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/Table';
 import Badge from '../components/ui/Badge';
@@ -27,12 +27,16 @@ interface Ticket {
     messages?: Message[];
 }
 
+const POLL_INTERVAL = 5000; // 5 seconds
+
 const SupportPage = () => {
     const [tickets, setTickets] = useState<Ticket[]>([]);
     const [loading, setLoading] = useState(true);
     const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
     const [replyText, setReplyText] = useState('');
     const [sending, setSending] = useState(false);
+    const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
     const fetchTickets = async () => {
         setLoading(true);
@@ -47,9 +51,43 @@ const SupportPage = () => {
         }
     };
 
+    const refreshSelectedTicket = useCallback(async (ticketId: string) => {
+        try {
+            const response = await api.get(SUPPORT_ADMIN_ALL);
+            const allTickets: Ticket[] = response.data || [];
+            setTickets(allTickets);
+            const updated = allTickets.find(t => t.id === ticketId);
+            if (updated) {
+                setSelectedTicket(updated);
+            }
+        } catch (error) {
+            console.error('Failed to refresh ticket', error);
+        }
+    }, []);
+
     useEffect(() => {
         fetchTickets();
     }, []);
+
+    // Poll for new messages while a ticket is open
+    useEffect(() => {
+        if (selectedTicket) {
+            pollingRef.current = setInterval(() => {
+                refreshSelectedTicket(selectedTicket.id);
+            }, POLL_INTERVAL);
+        }
+        return () => {
+            if (pollingRef.current) {
+                clearInterval(pollingRef.current);
+                pollingRef.current = null;
+            }
+        };
+    }, [selectedTicket?.id, refreshSelectedTicket]);
+
+    // Auto-scroll to bottom when messages change
+    useEffect(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, [selectedTicket?.messages?.length]);
 
     const handleReply = async () => {
         if (!selectedTicket || !replyText.trim() || sending) return;
@@ -60,21 +98,10 @@ const SupportPage = () => {
                 content: replyText.trim()
             });
 
-            // Optimistic update
-            const newMessage: Message = {
-                senderId: 'admin',
-                role: 'admin',
-                content: replyText,
-                createdAt: new Date().toISOString()
-            };
-
-            setSelectedTicket({
-                ...selectedTicket,
-                messages: [...(selectedTicket.messages || []), newMessage]
-            });
-
             setReplyText('');
             toast.success('Reply sent');
+            // Refetch to get the server-confirmed message list
+            await refreshSelectedTicket(selectedTicket.id);
         } catch {
             toast.error('Failed to send reply');
         } finally {
@@ -164,7 +191,7 @@ const SupportPage = () => {
                                 <p className="text-sm text-gray-500">Ticket ID: {selectedTicket.id}</p>
                             </div>
                             <button 
-                                onClick={() => setSelectedTicket(null)}
+                                onClick={() => { setSelectedTicket(null); fetchTickets(); }}
                                 className="text-gray-400 hover:text-gray-600"
                             >
                                 <X size={24} />
@@ -193,6 +220,7 @@ const SupportPage = () => {
                                         </div>
                                     </div>
                                 ))}
+                                <div ref={messagesEndRef} />
                             </div>
                         </div>
 
@@ -204,6 +232,7 @@ const SupportPage = () => {
                                     className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                                     value={replyText}
                                     onChange={(e) => setReplyText(e.target.value)}
+                                    onKeyDown={(e) => { if (e.key === 'Enter') handleReply(); }}
                                 />
                                 <Button onClick={handleReply} disabled={sending}>
                                     <Send size={18} />

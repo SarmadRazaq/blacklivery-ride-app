@@ -5,7 +5,7 @@ import { validate } from '../middlewares/validate.middleware';
 import { validateRideStatusTransition } from '../middlewares/rideStatusTransition.middleware';
 import { rideLimiter } from '../middlewares/rateLimit.middleware';
 import { createRideSchema, nearbyDriversSchema, updateRideStatusSchema } from '../schemas/ride.schema';
-import { createRide, getNearbyDrivers, updateRideStatus, getRide, estimateFare, getRideHistory, rateDriver, rateRider, getScheduledRides, addTip, sosAlert } from '../controllers/ride.controller';
+import { createRide, getNearbyDrivers, updateRideStatus, getRide, estimateFare, getRideHistory, rateDriver, rateRider, getScheduledRides, addTip, sosAlert, getRiderActiveRide, addStop } from '../controllers/ride.controller';
 import { checkRole } from '../middlewares/roles.middleware';
 
 const router = Router();
@@ -182,6 +182,20 @@ router.get('/drivers/nearby', verifyToken, validate(nearbyDriversSchema), getNea
  *         description: List of scheduled rides
  */
 router.get('/scheduled', verifyToken, getScheduledRides as any);
+
+/**
+ * @swagger
+ * /rides/active:
+ *   get:
+ *     summary: Get rider's current active ride (for app-restart recovery)
+ *     tags: [Rides]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Active ride or null
+ */
+router.get('/active', verifyToken, checkRole(['rider']), getRiderActiveRide as any);
 
 /**
  * @swagger
@@ -374,6 +388,8 @@ router.post('/:id/tip', verifyToken, checkRole(['rider']), addTip as any);
  *         description: SOS received
  */
 router.post('/:id/sos', verifyToken, checkRole(['driver']), sosAlert as any);
+
+router.post('/:id/stops', verifyToken, checkRole(['rider']), addStop as any);
 
 export default router;
 

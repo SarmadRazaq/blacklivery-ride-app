@@ -58,6 +58,16 @@ class _RideRequestOverlayState extends State<RideRequestOverlay>
     super.dispose();
   }
 
+  String _requestLabel() {
+    if (widget.rideData['isAirport'] == true ||
+        widget.rideData['bookingType'] == 'airport_transfer') {
+      return 'Airport Transfer';
+    }
+    return widget.requestType == RequestType.instant
+        ? 'Instant Request'
+        : 'Scheduled Request';
+  }
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -114,9 +124,7 @@ class _RideRequestOverlayState extends State<RideRequestOverlay>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        widget.requestType == RequestType.instant
-                            ? 'Instant Request'
-                            : 'Scheduled Request',
+                        _requestLabel(),
                         style: const TextStyle(
                           color: AppColors.white,
                           fontSize: 16,
@@ -217,7 +225,9 @@ class _RideRequestOverlayState extends State<RideRequestOverlay>
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: Text(
-                        widget.rideData['paymentMethod'] ?? 'Cash',
+                        ((widget.rideData['paymentMethod'] as String?) ?? 'Cash').isNotEmpty
+                            ? '${((widget.rideData['paymentMethod'] as String?) ?? 'Cash')[0].toUpperCase()}${((widget.rideData['paymentMethod'] as String?) ?? 'Cash').substring(1)}'
+                            : 'Cash',
                         style: const TextStyle(
                           color: AppColors.white,
                           fontSize: 12,

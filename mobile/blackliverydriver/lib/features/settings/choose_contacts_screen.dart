@@ -16,7 +16,8 @@ class ChooseContactsScreen extends ConsumerStatefulWidget {
   ConsumerState<ChooseContactsScreen> createState() => _ChooseContactsScreenState();
 }
 
-class _ChooseContactsScreenState extends ConsumerState<ChooseContactsScreen> {
+class _ChooseContactsScreenState extends ConsumerState<ChooseContactsScreen>
+    with WidgetsBindingObserver {
   List<Contact> _contacts = [];
   List<Contact> _filteredContacts = [];
   final Set<String> _selectedContactIds = {}; // Store selected contact IDs
@@ -24,18 +25,29 @@ class _ChooseContactsScreenState extends ConsumerState<ChooseContactsScreen> {
   bool _permissionDenied = false;
   String _searchQuery = '';
   final TextEditingController _searchController = TextEditingController();
+  final List<EmergencyContact> _manualContacts = []; // Manually entered contacts
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _fetchContacts();
     _searchController.addListener(_onSearchChanged);
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _searchController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Re-check permission when user returns from Settings
+    if (state == AppLifecycleState.resumed && _permissionDenied) {
+      _fetchContacts();
+    }
   }
 
   void _onSearchChanged() {
@@ -47,8 +59,18 @@ class _ChooseContactsScreenState extends ConsumerState<ChooseContactsScreen> {
 
   Future<void> _fetchContacts() async {
     try {
-      // flutter_contacts has its own permission handler
-      final hasPermission = await FlutterContacts.requestPermission();
+      // Check permission status first using permission_handler (works after
+      // returning from Settings). FlutterContacts.requestPermission() may not
+      // re-prompt after a previous denial on Android.
+      var status = await Permission.contacts.status;
+      if (!status.isGranted) {
+        // Only request via system dialog if not permanently denied
+        if (status.isDenied) {
+          status = await Permission.contacts.request();
+        }
+      }
+
+      final hasPermission = status.isGranted;
       debugPrint('Contacts permission granted: $hasPermission');
 
       if (hasPermission) {
@@ -132,7 +154,7 @@ class _ChooseContactsScreenState extends ConsumerState<ChooseContactsScreen> {
   }
 
   Future<void> _addSelectedContacts() async {
-    if (_selectedContactIds.isEmpty) return;
+    if (_selectedContactIds.isEmpty && _manualContacts.isEmpty) return;
 
     final selectedContacts = _contacts
         .where((c) => _selectedContactIds.contains(c.id))
@@ -147,11 +169,8 @@ class _ChooseContactsScreenState extends ConsumerState<ChooseContactsScreen> {
     final authProvider = ref.read(authRiverpodProvider);
     final currentContacts = authProvider.user?.emergencyContacts ?? [];
 
-    // Merge new contacts with existing, avoiding duplicates if possible (by phone?)
-    // Basic merge:
-    final updatedList = [...currentContacts, ...selectedContacts];
+    final updatedList = [...currentContacts, ...selectedContacts, ..._manualContacts];
 
-    // Limit to 3? User requirement says "up to 3".
     if (updatedList.length > 3) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -164,7 +183,7 @@ class _ChooseContactsScreenState extends ConsumerState<ChooseContactsScreen> {
     try {
       await authProvider.updateProfile(emergencyContacts: updatedList);
       if (mounted) {
-        Navigator.pop(context); // Go back to EmergencyContactsScreen
+        Navigator.pop(context);
       }
     } catch (e) {
       if (mounted) {
@@ -173,6 +192,80 @@ class _ChooseContactsScreenState extends ConsumerState<ChooseContactsScreen> {
         ).showSnackBar(SnackBar(content: Text('Failed to add contacts: $e')));
       }
     }
+  }
+
+  void _showManualEntryDialog() {
+    final nameController = TextEditingController();
+    final phoneController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.cardBackground,
+        title: const Text(
+          'Add Contact Manually',
+          style: TextStyle(color: Colors.white, fontSize: 16),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: nameController,
+              style: const TextStyle(color: Colors.white),
+              decoration: InputDecoration(
+                hintText: 'Full name',
+                hintStyle: TextStyle(color: Colors.grey[500]),
+                enabledBorder: UnderlineInputBorder(
+                  borderSide: BorderSide(color: Colors.grey[700]!),
+                ),
+                focusedBorder: const UnderlineInputBorder(
+                  borderSide: BorderSide(color: AppColors.primary),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: phoneController,
+              keyboardType: TextInputType.phone,
+              style: const TextStyle(color: Colors.white),
+              decoration: InputDecoration(
+                hintText: 'Phone number',
+                hintStyle: TextStyle(color: Colors.grey[500]),
+                enabledBorder: UnderlineInputBorder(
+                  borderSide: BorderSide(color: Colors.grey[700]!),
+                ),
+                focusedBorder: const UnderlineInputBorder(
+                  borderSide: BorderSide(color: AppColors.primary),
+                ),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text('Cancel', style: TextStyle(color: Colors.grey[400])),
+          ),
+          TextButton(
+            onPressed: () {
+              final name = nameController.text.trim();
+              final phone = phoneController.text.trim();
+              if (name.isEmpty || phone.isEmpty) return;
+              setState(() {
+                _manualContacts.add(
+                  EmergencyContact(name: name, phoneNumber: phone),
+                );
+              });
+              Navigator.pop(ctx);
+            },
+            child: const Text(
+              'Add',
+              style: TextStyle(color: AppColors.primary),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -189,6 +282,11 @@ class _ChooseContactsScreenState extends ConsumerState<ChooseContactsScreen> {
         elevation: 0,
         leading: const BackButton(color: Colors.white),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.person_add_alt_1, color: Colors.white),
+            tooltip: 'Enter manually',
+            onPressed: _showManualEntryDialog,
+          ),
           IconButton(
             icon: const Icon(Icons.refresh, color: Colors.white),
             onPressed: _fetchContacts,
@@ -227,14 +325,39 @@ class _ChooseContactsScreenState extends ConsumerState<ChooseContactsScreen> {
                           onPressed: _fetchContacts,
                           child: const Text("I've enabled access"),
                         ),
+                        const SizedBox(height: 16),
+                        const Divider(color: Colors.grey, indent: 48, endIndent: 48),
+                        const SizedBox(height: 8),
+                        TextButton.icon(
+                          onPressed: _showManualEntryDialog,
+                          icon: const Icon(Icons.person_add_alt_1, color: AppColors.primary),
+                          label: const Text(
+                            'Or enter contact manually',
+                            style: TextStyle(color: AppColors.primary),
+                          ),
+                        ),
                       ],
                     ),
                   )
                 : _filteredContacts.isEmpty
-                ? const Center(
-                    child: Text(
-                      'No contacts found',
-                      style: TextStyle(color: Colors.grey),
+                ? Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Text(
+                          'No contacts found',
+                          style: TextStyle(color: Colors.grey),
+                        ),
+                        const SizedBox(height: 16),
+                        TextButton.icon(
+                          onPressed: _showManualEntryDialog,
+                          icon: const Icon(Icons.person_add_alt_1, color: AppColors.primary),
+                          label: const Text(
+                            'Enter contact manually',
+                            style: TextStyle(color: AppColors.primary),
+                          ),
+                        ),
+                      ],
                     ),
                   )
                 : ListView.builder(
@@ -277,17 +400,57 @@ class _ChooseContactsScreenState extends ConsumerState<ChooseContactsScreen> {
                     },
                   ),
           ),
+          // Show manually added contacts
+          if (_manualContacts.isNotEmpty) ...[
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16.0),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Manually added',
+                  style: TextStyle(
+                    color: Colors.grey,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ),
+            ..._manualContacts.asMap().entries.map((entry) {
+              final idx = entry.key;
+              final c = entry.value;
+              return ListTile(
+                leading: const CircleAvatar(
+                  backgroundColor: AppColors.primary,
+                  child: Icon(Icons.person, color: Colors.black, size: 20),
+                ),
+                title: Text(
+                  c.name,
+                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500),
+                ),
+                subtitle: Text(
+                  c.phoneNumber,
+                  style: TextStyle(color: Colors.grey[400]),
+                ),
+                trailing: IconButton(
+                  icon: const Icon(Icons.close, color: Colors.grey, size: 20),
+                  onPressed: () => setState(() => _manualContacts.removeAt(idx)),
+                ),
+              );
+            }),
+            const Divider(color: Colors.grey, height: 1, indent: 16, endIndent: 16),
+          ],
           Padding(
             padding: const EdgeInsets.all(24.0),
             child: CustomButton(
               text: 'Add contacts',
-              onPressed: _selectedContactIds.isNotEmpty
+              onPressed: (_selectedContactIds.isNotEmpty || _manualContacts.isNotEmpty)
                   ? _addSelectedContacts
-                  : null, // Disabled if empty
-              backgroundColor: _selectedContactIds.isNotEmpty
+                  : null,
+              backgroundColor: (_selectedContactIds.isNotEmpty || _manualContacts.isNotEmpty)
                   ? AppColors.white
-                  : Colors.grey[800], // Visual feedback
-              textColor: _selectedContactIds.isNotEmpty
+                  : Colors.grey[800],
+              textColor: (_selectedContactIds.isNotEmpty || _manualContacts.isNotEmpty)
                   ? Colors.black
                   : Colors.grey,
             ),

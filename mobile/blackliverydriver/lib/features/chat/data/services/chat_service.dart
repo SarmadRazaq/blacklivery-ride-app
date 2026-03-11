@@ -16,7 +16,8 @@ class ChatService {
       );
 
       if (response.statusCode == 200) {
-        final List<dynamic> data = response.data['data'] ?? [];
+        final List<dynamic> data =
+            response.data['messages'] ?? response.data['data'] ?? [];
         return data
             .map((json) => ChatMessage.fromJson(json, currentDriverId))
             .toList();
@@ -40,7 +41,8 @@ class ChatService {
       );
 
       if (response.statusCode == 200 || response.statusCode == 201) {
-        return ChatMessage.fromJson(response.data['data'], currentDriverId);
+        final msgData = response.data['data'] ?? response.data;
+        return ChatMessage.fromJson(msgData, currentDriverId);
       } else {
         throw Exception('Failed to send message');
       }

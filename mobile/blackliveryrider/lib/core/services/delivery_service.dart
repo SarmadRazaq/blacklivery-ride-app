@@ -25,12 +25,16 @@ class DeliveryService {
           'pickupLocation': {
             'lat': pickupLat,
             'lng': pickupLng,
-            'address': pickupAddress ?? '',
+            'address': (pickupAddress != null && pickupAddress.isNotEmpty)
+                ? pickupAddress
+                : 'Pickup Location',
           },
           'dropoffLocation': {
             'lat': dropoffLat,
             'lng': dropoffLng,
-            'address': dropoffAddress ?? '',
+            'address': (dropoffAddress != null && dropoffAddress.isNotEmpty)
+                ? dropoffAddress
+                : 'Dropoff Location',
           },
           if (vehicleCategory != null) 'vehicleCategory': vehicleCategory,
         },
@@ -65,12 +69,16 @@ class DeliveryService {
           'pickupLocation': {
             'lat': pickupLat,
             'lng': pickupLng,
-            'address': pickupAddress ?? '',
+            'address': (pickupAddress != null && pickupAddress.isNotEmpty)
+                ? pickupAddress
+                : 'Pickup Location',
           },
           'dropoffLocation': {
             'lat': dropoffLat,
             'lng': dropoffLng,
-            'address': dropoffAddress ?? '',
+            'address': (dropoffAddress != null && dropoffAddress.isNotEmpty)
+                ? dropoffAddress
+                : 'Dropoff Location',
           },
           'recipientName': recipientName,
           'recipientPhone': recipientPhone,
@@ -87,7 +95,7 @@ class DeliveryService {
           },
         ),
       );
-      return response.data['data'];
+      return response.data['delivery'] ?? response.data['data'];
     } catch (e) {
       debugPrint('DeliveryService.createDelivery error: $e');
       return null;

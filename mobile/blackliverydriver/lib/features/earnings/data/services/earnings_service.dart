@@ -19,6 +19,17 @@ class EarningsService {
     }
   }
 
+  Future<void> updateEarningsGoal(double goal) async {
+    try {
+      await _apiClient.dio.patch(
+        '/api/v1/driver/earnings/goal',
+        data: {'goal': goal},
+      );
+    } catch (e) {
+      throw Exception('Failed to update earnings goal: $e');
+    }
+  }
+
   Future<List<Map<String, dynamic>>> getBanks() async {
     try {
       final response = await _apiClient.dio.get('/api/v1/payouts/banks');

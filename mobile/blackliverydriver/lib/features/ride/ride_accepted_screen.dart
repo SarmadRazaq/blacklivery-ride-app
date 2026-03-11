@@ -539,10 +539,18 @@ class _RideAcceptedScreenState extends ConsumerState<RideAcceptedScreen> {
                   decoration: BoxDecoration(
                     color: Colors.amber[200],
                     shape: BoxShape.circle,
+                    image: widget.ride.rider?.image != null && widget.ride.rider!.image!.isNotEmpty
+                        ? DecorationImage(
+                            image: NetworkImage(widget.ride.rider!.image!),
+                            fit: BoxFit.cover,
+                          )
+                        : null,
                   ),
-                  child: const Center(
-                    child: Icon(Icons.person, size: 30, color: Colors.brown),
-                  ),
+                  child: widget.ride.rider?.image != null && widget.ride.rider!.image!.isNotEmpty
+                      ? null
+                      : const Center(
+                          child: Icon(Icons.person, size: 30, color: Colors.brown),
+                        ),
                 ),
                 const SizedBox(width: 16),
                 // Info
@@ -686,7 +694,7 @@ class _RideAcceptedScreenState extends ConsumerState<RideAcceptedScreen> {
                       ),
                       const SizedBox(width: 4),
                       Text(
-                        '• ${widget.ride.payment?.gateway ?? 'Cash'}',
+                        '• ${((widget.ride.paymentMethod ?? widget.ride.payment?.gateway ?? 'Cash')[0].toUpperCase() + (widget.ride.paymentMethod ?? widget.ride.payment?.gateway ?? 'Cash').substring(1))}',
                         style: TextStyle(color: Colors.grey[400], fontSize: 14),
                       ),
                     ],
@@ -743,32 +751,78 @@ class _RideAcceptedScreenState extends ConsumerState<RideAcceptedScreen> {
                     textColor: Colors.black,
                     sliderButtonIcon: Icons.chevron_right,
                   )
-                : GestureDetector(
-                    onTap: _navigateToPickup,
-                    child: Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      decoration: BoxDecoration(
-                        color: AppColors.white,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
+                : _rideStatus == RideStatus.navigating
+                    ? Column(
                         children: [
-                          const Icon(Icons.navigation, color: Colors.black),
-                          const SizedBox(width: 8),
-                          Text(
-                            _getButtonText(),
-                            style: const TextStyle(
-                              color: Colors.black,
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
+                          GestureDetector(
+                            onTap: _navigateToPickup,
+                            child: Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              decoration: BoxDecoration(
+                                color: AppColors.white,
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: const Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(Icons.navigation, color: Colors.black),
+                                  SizedBox(width: 8),
+                                  Text(
+                                    'Open Navigation',
+                                    style: TextStyle(
+                                      color: Colors.black,
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
+                          const SizedBox(height: 12),
+                          SlideToAction(
+                            text: 'Slide when arrived',
+                            onSlide: () async {
+                              setState(() {
+                                _rideStatus = RideStatus.arrived;
+                              });
+                              _positionSubscription?.cancel();
+                              _arrivedAtPickup();
+                            },
+                            outerColor: AppColors.inputBackground,
+                            innerColor: AppColors.primary,
+                            textColor: AppColors.white,
+                            sliderButtonIcon: Icons.chevron_right,
+                          ),
                         ],
+                      )
+                    : GestureDetector(
+                        onTap: _navigateToPickup,
+                        child: Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          decoration: BoxDecoration(
+                            color: AppColors.white,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(Icons.navigation, color: Colors.black),
+                              const SizedBox(width: 8),
+                              Text(
+                                _getButtonText(),
+                                style: const TextStyle(
+                                  color: Colors.black,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
           ),
 
           const SizedBox(height: 32),

@@ -301,7 +301,7 @@ class _RideRequestSheetState extends State<RideRequestSheet>
                           ),
                           const SizedBox(width: 4),
                           Text(
-                            '• ${widget.rideData['paymentMethod'] ?? 'Cash'}',
+                            '• ${((widget.rideData['paymentMethod'] as String?) ?? 'Cash').isNotEmpty ? '${((widget.rideData['paymentMethod'] as String?) ?? 'Cash')[0].toUpperCase()}${((widget.rideData['paymentMethod'] as String?) ?? 'Cash').substring(1)}' : 'Cash'}',
                             style: TextStyle(
                               color: Colors.grey[400],
                               fontSize: 14,

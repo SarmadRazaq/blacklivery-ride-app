@@ -22,6 +22,7 @@ class Ride {
   final bool isAirport;
   final RidePricing pricing;
   final RidePayment? payment;
+  final String? paymentMethod;
   final DateTime createdAt;
   final DateTime? completedAt;
   final DateTime? acceptedAt;
@@ -43,6 +44,7 @@ class Ride {
     this.isAirport = false,
     required this.pricing,
     this.payment,
+    this.paymentMethod,
     required this.createdAt,
     this.completedAt,
     this.acceptedAt,
@@ -53,6 +55,12 @@ class Ride {
   });
 
   factory Ride.fromJson(Map<String, dynamic> json) {
+    // Parse pricing, and inject top-level tip field into it
+    final pricingJson = Map<String, dynamic>.from(json['pricing'] ?? {});
+    if (json['tip'] != null) {
+      pricingJson['tips'] = json['tip'];
+    }
+
     return Ride(
       id: json['id'] ?? json['_id'] ?? '',
       riderId: json['riderId'] ?? '',
@@ -64,10 +72,11 @@ class Ride {
       vehicleCategory: json['vehicleCategory'] ?? 'sedan',
       region: json['region'] ?? 'NG',
       isAirport: json['isAirport'] ?? false,
-      pricing: RidePricing.fromJson(json['pricing'] ?? {}),
+      pricing: RidePricing.fromJson(pricingJson),
       payment: json['payment'] != null
           ? RidePayment.fromJson(json['payment'])
           : null,
+      paymentMethod: json['paymentMethod'] as String?,
       createdAt: _parseDate(json['createdAt']) ?? DateTime.now(),
       completedAt: _parseDate(json['completedAt']),
       acceptedAt: _parseDate(json['acceptedAt']),
@@ -93,6 +102,7 @@ class Ride {
     'isAirport': isAirport,
     'pricing': pricing.toJson(),
     'payment': payment?.toJson(),
+    'paymentMethod': paymentMethod,
     'createdAt': createdAt.toIso8601String(),
     'completedAt': completedAt?.toIso8601String(),
     'acceptedAt': acceptedAt?.toIso8601String(),
@@ -101,6 +111,38 @@ class Ride {
     'cancelledAt': cancelledAt?.toIso8601String(),
     'rider': rider?.toJson(),
   };
+
+  Ride copyWith({
+    String? status,
+    DateTime? completedAt,
+    DateTime? startedAt,
+    DateTime? arrivedAt,
+    DateTime? acceptedAt,
+    DateTime? cancelledAt,
+  }) {
+    return Ride(
+      id: id,
+      riderId: riderId,
+      driverId: driverId,
+      status: status ?? this.status,
+      bookingType: bookingType,
+      pickupLocation: pickupLocation,
+      dropoffLocation: dropoffLocation,
+      vehicleCategory: vehicleCategory,
+      region: region,
+      isAirport: isAirport,
+      pricing: pricing,
+      payment: payment,
+      paymentMethod: paymentMethod,
+      createdAt: createdAt,
+      completedAt: completedAt ?? this.completedAt,
+      acceptedAt: acceptedAt ?? this.acceptedAt,
+      arrivedAt: arrivedAt ?? this.arrivedAt,
+      startedAt: startedAt ?? this.startedAt,
+      cancelledAt: cancelledAt ?? this.cancelledAt,
+      rider: rider,
+    );
+  }
 
   // Getters for compatibility with older code if necessary, or refactor usages
   String get pickupAddress => pickupLocation.address;
@@ -235,6 +277,7 @@ class RideRequest {
   final String riderId;
   final String riderName;
   final String riderPhone;
+  final String? riderPhotoUrl;
   final double pickupLat;
   final double pickupLng;
   final String pickupAddress;
@@ -245,6 +288,9 @@ class RideRequest {
   final double distance;
   final int estimatedDuration;
   final String? scheduledTime;
+  final String bookingType;
+  final bool isAirport;
+  final String? paymentMethod;
   final DateTime createdAt;
 
   RideRequest({
@@ -252,6 +298,7 @@ class RideRequest {
     required this.riderId,
     required this.riderName,
     required this.riderPhone,
+    this.riderPhotoUrl,
     required this.pickupLat,
     required this.pickupLng,
     required this.pickupAddress,
@@ -262,6 +309,9 @@ class RideRequest {
     required this.distance,
     required this.estimatedDuration,
     this.scheduledTime,
+    this.bookingType = 'on_demand',
+    this.isAirport = false,
+    this.paymentMethod,
     required this.createdAt,
   });
 
@@ -275,6 +325,7 @@ class RideRequest {
       riderId: json['riderId'] ?? '',
       riderName: json['riderName'] ?? 'Unknown',
       riderPhone: json['riderPhone'] ?? '',
+      riderPhotoUrl: json['riderPhotoUrl'] ?? json['riderAvatar'],
       pickupLat:
           (json['pickupLat'] ?? pickup?['lat'] as num?)?.toDouble() ?? 0.0,
       pickupLng:
@@ -297,7 +348,10 @@ class RideRequest {
           (json['duration'] as num?)?.toInt() ??
           (json['etaSeconds'] as num?)?.toInt() ??
           0,
-      scheduledTime: json['scheduledTime'],
+      scheduledTime: json['scheduledTime'] ?? json['scheduledAt']?.toString(),
+      bookingType: json['bookingType'] ?? 'on_demand',
+      isAirport: json['isAirport'] == true || json['bookingType'] == 'airport_transfer',
+      paymentMethod: json['paymentMethod'],
       createdAt: json['createdAt'] != null
           ? DateTime.parse(json['createdAt'])
           : DateTime.now(),

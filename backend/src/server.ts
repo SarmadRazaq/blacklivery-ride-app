@@ -107,6 +107,20 @@ io.on('connection', (socket) => {
         }
         socket.join(`driver:${driverId}`);
         logger.info({ socketId: socket.id, driverId }, 'Socket joined driver room');
+
+        // Push current active ride state on room join (reconnect recovery)
+        db.collection('rides')
+            .where('driverId', '==', driverId)
+            .where('status', 'in', ['accepted', 'arrived', 'in_progress'])
+            .limit(1)
+            .get()
+            .then(snap => {
+                if (!snap.empty) {
+                    const ride = { id: snap.docs[0].id, ...snap.docs[0].data() };
+                    socket.emit('ride:state_sync', ride);
+                }
+            })
+            .catch(err => logger.debug({ err, driverId }, 'Failed to push ride state on driver join'));
     });
 
     socket.on('join:rider', (riderId: string) => {
@@ -118,6 +132,40 @@ io.on('connection', (socket) => {
         }
         socket.join(`rider:${riderId}`);
         logger.info({ socketId: socket.id, riderId }, 'Socket joined rider room');
+
+        // Push current active ride state on room join (reconnect recovery)
+        db.collection('rides')
+            .where('riderId', '==', riderId)
+            .where('status', 'in', ['finding_driver', 'pending', 'accepted', 'arrived', 'in_progress'])
+            .orderBy('createdAt', 'desc')
+            .limit(1)
+            .get()
+            .then(async snap => {
+                if (!snap.empty) {
+                    const doc = snap.docs[0];
+                    const rideData: Record<string, any> = { id: doc.id, ...doc.data() };
+                    // Enrich with driver info if assigned
+                    if (rideData.driverId) {
+                        try {
+                            const driverDoc = await db.collection('users').doc(rideData.driverId).get();
+                            if (driverDoc.exists) {
+                                const dd = driverDoc.data()!;
+                                const dp = dd.driverProfile ?? {};
+                                const onb = dd.driverOnboarding ?? {};
+                                rideData.driverName = dd.fullName || dd.displayName || 'Driver';
+                                rideData.driverPhoto = dd.photoURL || dp.photoURL || '';
+                                rideData.driverRating = dp.rating ?? dd.rating ?? 5.0;
+                                rideData.driverPhone = dd.phone || dd.phoneNumber || '';
+                                rideData.vehicleModel = dp.vehicleModel || dp.vehicle?.model || onb.vehicleType || '';
+                                rideData.vehicleColor = dp.vehicleColor || dp.vehicle?.color || onb.vehicleColor || '';
+                                rideData.vehiclePlate = dp.licensePlate || dp.vehicle?.plateNumber || onb.liveryPlateNumber || '';
+                            }
+                        } catch (_) { /* best-effort */ }
+                    }
+                    socket.emit('ride:state_sync', rideData);
+                }
+            })
+            .catch(err => logger.debug({ err, riderId }, 'Failed to push ride state on rider join'));
     });
 
     // Driver accepts a ride via socket

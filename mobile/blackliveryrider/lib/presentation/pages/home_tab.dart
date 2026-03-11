@@ -18,6 +18,9 @@ import 'hourly_booking_screen.dart';
 import 'airport_booking_screen.dart';
 import 'delivery_booking_screen.dart';
 import 'account_screen.dart';
+import 'searching_driver_screen.dart';
+import 'driver_arriving_screen.dart';
+import 'driving_to_destination_screen.dart';
 
 import '../../core/utils/region_geofence.dart';
 
@@ -37,6 +40,7 @@ class _HomeTabState extends State<HomeTab> {
   LatLng _currentLocation = _defaultLocation;
   Set<Marker> _markers = {};
   BitmapDescriptor? _carIcon;
+  RegionCode? _lastRegionCode;
 
   // Custom Dark Map Style
   static const String _darkMapStyle = '''[
@@ -238,12 +242,45 @@ class _HomeTabState extends State<HomeTab> {
       bookingState.addListener(_updateMarkersFromState);
     });
 
-    // Initialize booking state (load recent locations, etc.)
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    // Initialize booking state (load recent locations, etc.) + restore active ride
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       final bookingState = Provider.of<BookingState>(context, listen: false);
       bookingState.initialize();
       bookingState.useCurrentLocation(); // Pre-fetch location
+
+      // Try to restore an active ride (e.g. app was killed mid-ride)
+      final restored = await bookingState.restoreActiveRide();
+      if (restored && mounted) {
+        _navigateToActiveRideScreen(bookingState.bookingStatus);
+      }
     });
+
+    // Listen for region changes to re-center the map
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final regionProvider = Provider.of<RegionProvider>(context, listen: false);
+      _lastRegionCode = regionProvider.code;
+      regionProvider.addListener(_onRegionChanged);
+    });
+  }
+
+  /// Navigate to the correct ride screen based on the restored booking status.
+  void _navigateToActiveRideScreen(String status) {
+    Widget? screen;
+    switch (status) {
+      case 'searching_driver':
+        screen = const SearchingDriverScreen();
+        break;
+      case 'driver_assigned':
+      case 'arriving':
+        screen = const DriverArrivingScreen();
+        break;
+      case 'in_progress':
+        screen = const DrivingToDestinationScreen();
+        break;
+    }
+    if (screen != null && mounted) {
+      Navigator.push(context, MaterialPageRoute(builder: (_) => screen!));
+    }
   }
 
   /// Load a custom car icon for driver markers on the map.
@@ -292,6 +329,8 @@ class _HomeTabState extends State<HomeTab> {
   void dispose() {
     final bookingState = Provider.of<BookingState>(context, listen: false);
     bookingState.removeListener(_updateMarkersFromState);
+    final regionProvider = Provider.of<RegionProvider>(context, listen: false);
+    regionProvider.removeListener(_onRegionChanged);
     // Dispose GoogleMapController to free native resources
     if (_mapController.isCompleted) {
       _mapController.future.then((c) => c.dispose());
@@ -302,6 +341,38 @@ class _HomeTabState extends State<HomeTab> {
   void _updateMarkersFromState() {
     final bookingState = Provider.of<BookingState>(context, listen: false);
     _updateDriverMarkers(bookingState.nearbyDrivers);
+  }
+
+  /// Called when RegionProvider notifies — re-center map to new region.
+  void _onRegionChanged() {
+    final regionProvider = Provider.of<RegionProvider>(context, listen: false);
+    if (regionProvider.code == _lastRegionCode) return;
+    _lastRegionCode = regionProvider.code;
+
+    final LatLng regionCenter = regionProvider.isChicago
+        ? const LatLng(41.8781, -87.6298)
+        : const LatLng(6.5244, 3.3792);
+
+    setState(() {
+      _currentLocation = regionCenter;
+      // Update user marker position
+      _markers = _markers.map((m) {
+        if (m.markerId.value == 'user') {
+          return m.copyWith(positionParam: regionCenter);
+        }
+        return m;
+      }).toSet();
+    });
+
+    if (_mapController.isCompleted) {
+      _mapController.future.then((controller) {
+        controller.animateCamera(
+          CameraUpdate.newCameraPosition(
+            CameraPosition(target: regionCenter, zoom: 15),
+          ),
+        );
+      });
+    }
   }
 
   Future<void> _getCurrentLocation() async {

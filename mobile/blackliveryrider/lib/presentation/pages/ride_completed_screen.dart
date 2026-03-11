@@ -27,16 +27,24 @@ class _RideCompletedScreenState extends State<RideCompletedScreen> {
   final TextEditingController _tipController = TextEditingController();
   final TextEditingController _feedbackController = TextEditingController();
 
+  /// Saved rideId so it survives even if bookingState clears.
+  String? _savedRideId;
+  /// Driver info fetched from API (fallback when bookingState.assignedDriver is null).
+  String? _apiDriverName;
+  String? _apiDriverPhoto;
+
   @override
   void initState() {
     super.initState();
+    // Snapshot the rideId immediately before any state clearing can happen.
+    final bookingState = Provider.of<BookingState>(context, listen: false);
+    _savedRideId = widget.rideId ?? bookingState.currentBooking?.id ?? bookingState.rideId;
     _fetchActualFare();
   }
 
-  /// Fetch completed ride details from backend to get the final fare.
+  /// Fetch completed ride details from backend to get the final fare and driver info.
   void _fetchActualFare() async {
-    final bookingState = Provider.of<BookingState>(context, listen: false);
-    final rideId = widget.rideId ?? bookingState.currentBooking?.id ?? bookingState.rideId;
+    final rideId = _savedRideId;
     if (rideId == null || rideId.isEmpty) return;
 
     setState(() => _loadingFare = true);
@@ -47,10 +55,22 @@ class _RideCompletedScreenState extends State<RideCompletedScreen> {
         final breakdown = pricing?['breakdown'] as Map<String, dynamic>?;
         final finalFare = (pricing?['finalFare'] as num?)?.toDouble()
             ?? (details['finalFare'] as num?)?.toDouble();
+
+        // Extract driver info from API response as fallback
+        final driverData = details['driver'] as Map<String, dynamic>?;
+        final driverName = driverData?['name'] as String?;
+        final driverPhoto = (driverData?['photoUrl'] ?? driverData?['photoURL']) as String?;
+
         if (mounted) {
           setState(() {
             if (finalFare != null && finalFare > 0) _actualFare = finalFare;
             _fareBreakdown = breakdown ?? pricing;
+            if (driverName != null && driverName.isNotEmpty) {
+              _apiDriverName = driverName;
+            }
+            if (driverPhoto != null && driverPhoto.isNotEmpty) {
+              _apiDriverPhoto = driverPhoto;
+            }
           });
         }
       }
@@ -71,7 +91,7 @@ class _RideCompletedScreenState extends State<RideCompletedScreen> {
   void _submitRating() async {
     // Submit rating to backend
     final bookingState = Provider.of<BookingState>(context, listen: false);
-    final rideId = bookingState.currentBooking?.id;
+    final rideId = _savedRideId ?? bookingState.currentBooking?.id;
 
     if (rideId != null && rideId.isNotEmpty) {
       try {
@@ -227,7 +247,7 @@ class _RideCompletedScreenState extends State<RideCompletedScreen> {
                     ],
                     _buildSummaryRow(
                       'Distance',
-                      '${booking?.distanceKm.toStringAsFixed(1) ?? '0'} ${Provider.of<RegionProvider>(context, listen: false).isNigeria ? 'km' : 'mi'}',
+                      '${((booking?.distanceKm ?? 0) > 0 ? booking!.distanceKm : bookingState.estimatedDistance).toStringAsFixed(1)} ${Provider.of<RegionProvider>(context, listen: false).isNigeria ? 'km' : 'mi'}',
                     ),
                     const SizedBox(height: 8),
                     _buildSummaryRow('Duration', '${booking?.rideOption.estimatedMinutes ?? 0} min'),
@@ -263,11 +283,11 @@ class _RideCompletedScreenState extends State<RideCompletedScreen> {
                             ),
                           ),
                           child: ClipOval(
-                            child: driver?.photoUrl != null
+                            child: (driver?.photoUrl != null && driver!.photoUrl.isNotEmpty) || (_apiDriverPhoto != null)
                                 ? Image.network(
-                                    driver!.photoUrl,
+                                    driver?.photoUrl.isNotEmpty == true ? driver!.photoUrl : _apiDriverPhoto!,
                                     fit: BoxFit.cover,
-                                    errorBuilder: (_, _, _) => const Icon(
+                                    errorBuilder: (_, __, ___) => const Icon(
                                       Icons.person,
                                       color: Colors.white,
                                       size: 28,
@@ -292,7 +312,7 @@ class _RideCompletedScreenState extends State<RideCompletedScreen> {
                                 ),
                               ),
                               Text(
-                                driver?.name ?? 'Driver',
+                                driver?.name ?? _apiDriverName ?? 'Driver',
                                 style: AppTextStyles.body.copyWith(
                                   color: Colors.white,
                                   fontWeight: FontWeight.w600,

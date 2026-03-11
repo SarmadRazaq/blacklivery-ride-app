@@ -108,12 +108,14 @@ class DriverService {
   Future<void> saveVerificationDetails({
     required String vehicleType,
     required String liveryPlateNumber,
+    String? vehicleCategory,
   }) async {
     try {
       await _apiClient.dio.patch(
         ApiConstants.driverVerificationDetails,
         data: {
           'vehicleType': vehicleType.trim(),
+          if (vehicleCategory != null) 'vehicleCategory': vehicleCategory,
           'liveryPlateNumber': liveryPlateNumber.trim().toUpperCase(),
         },
       );

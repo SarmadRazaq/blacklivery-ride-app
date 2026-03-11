@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/services/notification_service.dart';
 import '../auth/data/services/driver_service.dart';
+import '../ride/driver_map_screen.dart';
+import '../earnings/earnings_screen.dart';
 
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
@@ -61,6 +63,21 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         });
       }
     }
+  }
+
+  void _handleNotificationTap(Map<String, dynamic> item, String id, int index) {
+    _markOneRead(id, index);
+    final metadata = item['metadata'] as Map<String, dynamic>? ?? {};
+    final type = (metadata['type'] ?? '').toString();
+
+    if (type == 'ride:completed') {
+      // Navigate to earnings for completed rides
+      Navigator.push(context, MaterialPageRoute(builder: (_) => const EarningsScreen()));
+    } else if (type.startsWith('ride:') || type == 'ride:offer') {
+      // Navigate to map for active ride events
+      Navigator.push(context, MaterialPageRoute(builder: (_) => const DriverMapScreen()));
+    }
+    // For chat and other types, just mark as read — no navigation needed from history list
   }
 
   Future<void> _markAllRead() async {
@@ -161,7 +178,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                         contentPadding:
                             const EdgeInsets.symmetric(horizontal: 2, vertical: 6),
                         onTap: id.isNotEmpty
-                            ? () => _markOneRead(id, index)
+                            ? () => _handleNotificationTap(item, id, index)
                             : null,
                         leading: Icon(
                           isRead

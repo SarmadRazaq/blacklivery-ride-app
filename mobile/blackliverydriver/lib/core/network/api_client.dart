@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
+import 'package:uuid/uuid.dart';
 import '../constants/api_constants.dart';
 import '../utils/app_alert.dart';
 import 'api_error_message.dart';
@@ -28,6 +29,21 @@ class ApiClient {
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
+        },
+      ),
+    );
+
+    // Idempotency interceptor — auto-adds Idempotency-Key for state-changing methods
+    const uuid = Uuid();
+    _dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          final method = options.method.toUpperCase();
+          if (['POST', 'PUT', 'PATCH'].contains(method) &&
+              options.headers['Idempotency-Key'] == null) {
+            options.headers['Idempotency-Key'] = uuid.v4();
+          }
+          return handler.next(options);
         },
       ),
     );

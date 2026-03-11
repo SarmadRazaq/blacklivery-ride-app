@@ -119,6 +119,12 @@ class SocketService {
       _onChatMessage?.call(Map<String, dynamic>.from(data));
     });
 
+    // State sync on reconnect — backend pushes active ride when driver joins room
+    _socket!.on('ride:state_sync', (data) {
+      debugPrint('SocketService: ride:state_sync received');
+      _safeAddToStream({'type': 'ride_state_sync', 'data': data});
+    });
+
     _socket!.connect();
   }
 

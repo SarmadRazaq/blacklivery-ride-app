@@ -56,4 +56,16 @@ class RideOption {
     // surgeMultiplier is stored for display purposes only.
     return basePrice + (pricePerKm * distanceKm);
   }
+
+  /// Fallback option for ride recovery when original option is unknown.
+  factory RideOption.defaultOption() => RideOption(
+        id: 'sedan',
+        name: 'Sedan',
+        description: '',
+        iconPath: '',
+        basePrice: 0,
+        pricePerKm: 0,
+        estimatedMinutes: 0,
+        capacity: 4,
+      );
 }
