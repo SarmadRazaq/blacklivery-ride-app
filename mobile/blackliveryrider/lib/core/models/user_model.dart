@@ -78,6 +78,22 @@ class User {
       }
     }
 
+    // Parse rider details (rating, totalTrips) for rider accounts
+    if (json['riderDetails'] != null && json['riderDetails'] is Map) {
+      final riderDetails = json['riderDetails'] as Map<String, dynamic>;
+      rating ??= (riderDetails['rating'] is num)
+          ? (riderDetails['rating'] as num).toDouble()
+          : null;
+      totalTrips ??= riderDetails['totalTrips'] as int?
+          ?? riderDetails['totalRatings'] as int?;
+    }
+
+    // Fallback: top-level fields
+    rating ??= (json['riderRating'] is num)
+        ? (json['riderRating'] as num).toDouble()
+        : (json['rating'] is num ? (json['rating'] as num).toDouble() : null);
+    totalTrips ??= json['totalTrips'] as int?;
+
     return User(
       id: json['id'] ?? json['_id'] ?? json['uid'] ?? '',
       email: json['email'] ?? '',

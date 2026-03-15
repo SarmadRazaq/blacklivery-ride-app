@@ -160,7 +160,14 @@ class AuthService {
         data: {'idToken': idToken, 'role': 'rider'},
       );
 
-      // 6. Fetch and return user profile
+      // 6. Record login session for login history / active sessions
+      try {
+        await dio.post('/api/v1/auth/login', data: {'email': googleUser.email});
+      } catch (_) {
+        debugPrint('=== AuthService.signInWithGoogle: Failed to record login session ===');
+      }
+
+      // 7. Fetch and return user profile
       try {
         final user = await getProfile();
         return _validateRiderRole(user);
@@ -216,6 +223,13 @@ class AuthService {
         '/api/v1/auth/google', // Backend treats this endpoint as general OAuth token exchanger
         data: {'idToken': idToken, 'role': 'rider'},
       );
+
+      // Record login session for login history / active sessions
+      try {
+        await dio.post('/api/v1/auth/login', data: {'email': userCredential.user!.email ?? ''});
+      } catch (_) {
+        debugPrint('=== AuthService.signInWithApple: Failed to record login session ===');
+      }
 
       // Fetch/Create profile
       try {

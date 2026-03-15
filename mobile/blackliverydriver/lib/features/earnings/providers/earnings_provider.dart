@@ -34,7 +34,7 @@ class EarningsProvider with ChangeNotifier {
     'todayEarnings': _dashboard?.today.amount ?? 0.0,
     'todayTrips': _dashboard?.today.trips ?? 0,
     'rating': 5.0, // Default or fetch
-    'ridesCount': _dashboard?.today.trips ?? 0,
+    'ridesCount': _dashboard?.month.trips ?? 0,
   };
 
   // Backward compatibility getters

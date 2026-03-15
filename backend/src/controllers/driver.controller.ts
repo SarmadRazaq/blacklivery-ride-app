@@ -1008,9 +1008,9 @@ export const getDriverRideHistory = async (req: AuthRequest, res: Response): Pro
                 .orderBy('scheduledTime', 'asc') // Ensure scheduledTime exists on these
                 .orderBy('createdAt', 'asc'); // Fallback sort
         } else {
-            // "History" = Completed, Cancelled
+            // "History" = Completed, Delivery Delivered, Cancelled
             query = query
-                .where('status', 'in', ['completed', 'cancelled'])
+                .where('status', 'in', ['completed', 'delivery_delivered', 'cancelled'])
                 .orderBy('createdAt', 'desc');
         }
 

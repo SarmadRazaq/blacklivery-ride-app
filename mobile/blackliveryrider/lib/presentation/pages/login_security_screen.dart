@@ -51,6 +51,18 @@ class _LoginSecurityScreenState extends State<LoginSecurityScreen> {
   Future<void> _toggleBiometrics(bool value) async {
     try {
       if (value) {
+        // Check if device supports any auth method before prompting
+        final isSupported = await _biometricService.isDeviceSupported();
+        if (!isSupported) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Your device does not support biometric authentication. Please set up a screen lock (PIN, pattern, or password) in your device settings.'),
+              ),
+            );
+          }
+          return;
+        }
         final success = await _biometricService.authenticate();
         if (!success) return;
       }

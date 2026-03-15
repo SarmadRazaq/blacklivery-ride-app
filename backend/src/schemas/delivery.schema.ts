@@ -24,6 +24,7 @@ export const createDeliverySchema = z.object({
         recipientName: z.string().min(1).max(100).optional(),
         recipientPhone: z.string().min(7).max(20).optional(),
         notes: z.string().max(500).optional(),
+        paymentMethod: z.enum(['wallet', 'card', 'cash']).optional(),
         region: z.enum(['nigeria', 'chicago', 'NG', 'US-CHI']).optional(),
         extraStops: z.array(locationSchema).max(3).optional(),
         isReturnTrip: z.boolean().optional(),

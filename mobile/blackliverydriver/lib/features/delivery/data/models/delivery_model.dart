@@ -165,18 +165,27 @@ class DeliveryDetails {
     return DeliveryDetails(
       packageType: PackageType.fromString(json['packageType'] ?? 'parcel'),
       packageValue: (json['packageValue'] as num?)?.toDouble(),
-      weightKg: (json['weightKg'] as num?)?.toDouble(),
+      weightKg: (json['weightKg'] as num?)?.toDouble()
+          ?? (json['packageDetails'] is Map ? (json['packageDetails']['weight'] as num?)?.toDouble() : null),
       serviceType: DeliveryServiceType.fromString(json['serviceType']),
       requiresReturn: json['requiresReturn'] ?? false,
       extraStops: json['extraStops'] ?? 0,
       dropoffContact: json['dropoffContact'] != null
           ? DeliveryContact.fromJson(json['dropoffContact'])
-          : null,
+          : (json['recipientName'] != null || json['recipientPhone'] != null)
+              ? DeliveryContact(
+                  name: json['recipientName'] ?? '',
+                  phone: json['recipientPhone'] ?? '',
+                  instructions: json['notes'],
+                )
+              : null,
       pickupContact: json['pickupContact'] != null
           ? DeliveryContact.fromJson(json['pickupContact'])
           : null,
       proofRequired: ProofRequirement.fromString(json['proofRequired']),
-      description: json['description'] ?? json['packageDescription'],
+      description: json['description']
+          ?? json['packageDescription']
+          ?? (json['packageDetails'] is Map ? json['packageDetails']['description'] : null),
     );
   }
 

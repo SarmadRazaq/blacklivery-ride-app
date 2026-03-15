@@ -39,7 +39,10 @@ class DeliveryService {
           if (vehicleCategory != null) 'vehicleCategory': vehicleCategory,
         },
       );
-      return response.data['data'];
+      final body = response.data;
+      // Backend may wrap in {data: ...} or return fields at top level
+      if (body is Map && body.containsKey('data')) return body['data'];
+      return body;
     } catch (e) {
       debugPrint('DeliveryService.getDeliveryQuote error: $e');
       return null;
@@ -61,6 +64,7 @@ class DeliveryService {
     double? weight,
     String? notes,
     String? vehicleCategory,
+    String paymentMethod = 'wallet',
   }) async {
     try {
       final response = await _dio.post(
@@ -83,9 +87,12 @@ class DeliveryService {
           'recipientName': recipientName,
           'recipientPhone': recipientPhone,
           'packageDetails': {
-            'description': packageDescription ?? 'Package',
+            'description': (packageDescription != null && packageDescription.isNotEmpty)
+                ? packageDescription
+                : 'Package',
             if (weight != null) 'weight': weight,
           },
+          'paymentMethod': paymentMethod,
           if (notes != null) 'notes': notes,
           if (vehicleCategory != null) 'vehicleCategory': vehicleCategory,
         },
@@ -107,7 +114,10 @@ class DeliveryService {
   Future<Map<String, dynamic>?> getDeliveryDetails(String deliveryId) async {
     try {
       final response = await _dio.get('/api/v1/deliveries/$deliveryId');
-      return response.data['data'];
+      // Backend may return { data: {...} } or { id, status, ... } directly
+      final body = response.data;
+      if (body is Map && body.containsKey('data')) return body['data'];
+      return body;
     } catch (e) {
       debugPrint('DeliveryService.getDeliveryDetails error: $e');
       return null;

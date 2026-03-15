@@ -17,6 +17,26 @@ class RideProvider with ChangeNotifier {
   final NavigationService _navService = NavigationService();
   final SocketService _socketService = SocketService();
 
+  /// Recursively converts all nested maps from socket.io's Map<dynamic, dynamic>
+  /// to Map<String, dynamic> so Dart model fromJson factories work correctly.
+  static Map<String, dynamic> _deepConvertMap(dynamic data) {
+    if (data is Map) {
+      return data.map<String, dynamic>(
+        (key, value) => MapEntry(key.toString(), _deepConvertValue(value)),
+      );
+    }
+    return <String, dynamic>{};
+  }
+
+  static dynamic _deepConvertValue(dynamic value) {
+    if (value is Map) {
+      return _deepConvertMap(value);
+    } else if (value is List) {
+      return value.map(_deepConvertValue).toList();
+    }
+    return value;
+  }
+
   /// Called when a ride is completed or cancelled — allows external refresh triggers.
   VoidCallback? onRideCompleted;
 
@@ -49,13 +69,16 @@ class RideProvider with ChangeNotifier {
     if (currentStatus == null || currentStatus.isEmpty) return true;
     if (currentStatus == nextStatus) return true;
 
-    const terminal = {'completed', 'cancelled'};
+    const terminal = {'completed', 'cancelled', 'delivery_delivered'};
     if (terminal.contains(currentStatus)) return false;
 
     const allowed = <String, Set<String>>{
-      'accepted': {'arrived', 'in_progress', 'cancelled'},
-      'arrived': {'in_progress', 'cancelled'},
+      'accepted': {'arrived', 'in_progress', 'delivery_en_route_pickup', 'cancelled'},
+      'arrived': {'in_progress', 'delivery_en_route_pickup', 'delivery_picked_up', 'cancelled'},
       'in_progress': {'completed', 'cancelled'},
+      'delivery_en_route_pickup': {'delivery_picked_up', 'cancelled'},
+      'delivery_picked_up': {'delivery_en_route_dropoff', 'cancelled'},
+      'delivery_en_route_dropoff': {'delivery_delivered', 'cancelled'},
     };
 
     final allowedNext = allowed[currentStatus];
@@ -243,23 +266,23 @@ class RideProvider with ChangeNotifier {
 
         // Ensure it looks like a request (has ID)
         if (requestData['id'] != null || requestData['_id'] != null) {
+          // Deep-convert the map: socket.io returns Map<dynamic, dynamic>
+          // for nested objects, but fromJson expects Map<String, dynamic>.
+          // Map<String, dynamic>.from() only converts the top level.
+          final safeData = _deepConvertMap(requestData);
           if (isDelivery) {
             // Parse as delivery-specific request
-            _pendingDeliveryRequest = DeliveryRequest.fromJson(
-              Map<String, dynamic>.from(requestData),
-            );
+            _pendingDeliveryRequest = DeliveryRequest.fromJson(safeData);
             _pendingRideRequest = null;
           } else {
             // Parse as regular ride request
-            _pendingRideRequest = RideRequest.fromJson(
-              Map<String, dynamic>.from(requestData),
-            );
+            _pendingRideRequest = RideRequest.fromJson(safeData);
             _pendingDeliveryRequest = null;
           }
           notifyListeners();
         }
-      } catch (e) {
-        debugPrint("Error parsing ride request: $e");
+      } catch (e, stack) {
+        debugPrint("Error parsing ride request: $e\n$stack");
       }
     });
 
@@ -493,7 +516,7 @@ class RideProvider with ChangeNotifier {
     try {
       await _rideService.updateRideStatus(_currentRide!.id, status, reason: reason);
       await checkForActiveRide(); // Refresh (also updates cache)
-      if (status == 'completed' || status == 'cancelled') {
+      if (status == 'completed' || status == 'cancelled' || status == 'delivery_delivered') {
         await clearCachedRide();
         onRideCompleted?.call();
       }

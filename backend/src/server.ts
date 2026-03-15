@@ -35,6 +35,7 @@ import { rideService } from './services/RideService';
 import { db, rtdb, auth } from './config/firebase';
 import { logger } from './utils/logger';
 import { cronService } from './services/CronSchedulerService';
+import { encodeGeohash } from './utils/geohash';
 
 const PORT = process.env.PORT || 5000;
 
@@ -60,6 +61,10 @@ socketService.attachServer(io);
 // Avoids querying Firestore on every location_update socket event
 const activeRideCache = new Map<string, { riderId: string; expiresAt: number }>();
 const RIDE_CACHE_TTL_MS = 30_000; // 30 seconds
+
+// Throttle Firestore geohash writes — at most once per 15 seconds per driver
+const locationThrottle = new Map<string, number>();
+const LOCATION_FIRESTORE_THROTTLE_MS = 15_000;
 
 // Socket.IO authentication middleware — verify Firebase ID token before connection
 io.use(async (socket, next) => {
@@ -226,6 +231,21 @@ io.on('connection', (socket) => {
                 data.heading,
                 data.speed
             );
+
+            // Update Firestore with geohash + lastKnownLocation so findNearbyDrivers works.
+            // Throttled to avoid a Firestore write on every high-frequency location event.
+            const nowMs = Date.now();
+            const lastWrite = locationThrottle.get(driverId) ?? 0;
+            if (nowMs - lastWrite >= LOCATION_FIRESTORE_THROTTLE_MS) {
+                locationThrottle.set(driverId, nowMs);
+                const geohash = encodeGeohash(data.latitude, data.longitude, 7);
+                db.collection('users').doc(driverId).update({
+                    'driverStatus.lastKnownLocation': { lat: data.latitude, lng: data.longitude },
+                    'driverStatus.geohash5': geohash.substring(0, 5),
+                    'driverStatus.geohash4': geohash.substring(0, 4),
+                    'driverStatus.lastHeartbeat': new Date(),
+                }).catch(err => logger.debug({ err, driverId }, 'Firestore location update failed'));
+            }
 
             // Broadcast to admin room for LiveMap + to rider rooms tracking this driver
             const locationPayload = {

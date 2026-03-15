@@ -63,6 +63,16 @@ class _DeliveryTripScreenState extends ConsumerState<DeliveryTripScreen> {
     _loadMapAssets();
     _setupRoute();
     _startLocationStream();
+    _markEnRouteDropoff();
+  }
+
+  /// Notify backend that driver is en route to dropoff.
+  void _markEnRouteDropoff() async {
+    try {
+      await ref.read(rideRiverpodProvider).updateStatus('delivery_en_route_dropoff');
+    } catch (e) {
+      debugPrint('Failed to mark en route to dropoff: $e');
+    }
   }
 
   @override
@@ -79,7 +89,7 @@ class _DeliveryTripScreenState extends ConsumerState<DeliveryTripScreen> {
     try {
       _driverIcon = await BitmapDescriptor.asset(
         const ImageConfiguration(size: Size(48, 48)),
-        'assets/images/car move.png',
+        'assets/images/car-move.png',
       );
       if (mounted) setState(() {});
     } catch (e) {
@@ -223,9 +233,9 @@ class _DeliveryTripScreenState extends ConsumerState<DeliveryTripScreen> {
       }
     }
 
-    // Mark ride as completed
+    // Mark delivery as delivered
     try {
-      await ref.read(rideRiverpodProvider).updateStatus('completed');
+      await ref.read(rideRiverpodProvider).updateStatus('delivery_delivered');
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

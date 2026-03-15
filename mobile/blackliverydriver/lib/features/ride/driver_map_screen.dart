@@ -8,6 +8,7 @@ import '../../core/providers/region_provider.dart';
 import '../../core/utils/region_geofence.dart';
 import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
 import '../../core/theme/app_theme.dart';
+import '../../core/responsive/breakpoints.dart';
 import 'ride_request_overlay.dart';
 import 'ride_accepted_screen.dart';
 import '../history/bookings_screen.dart';
@@ -874,34 +875,120 @@ class _DriverMapScreenState extends ConsumerState<DriverMapScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      key: _scaffoldKey,
-      drawer: _buildDrawer(),
-      body: Stack(
-        children: [
-          // Main Content Area — IndexedStack preserves tab state
-          Positioned.fill(
-            bottom: 60, // Leave space for bottom nav
-            child: IndexedStack(
-              index: _currentNavIndex,
-              children: [
-                _buildHomeBody(),
-                const BookingsScreen(),
-                const EarningsScreen(),
-                const SettingsScreen(),
-              ],
-            ),
-          ),
+    // LayoutBuilder reads parent constraints — adapts correctly in split-screen
+    // and multi-window without relying on MediaQuery.of(context).size.
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isDesktop =
+            Breakpoints.fromWidth(constraints.maxWidth) == ScreenSize.desktop;
 
-          // Bottom Navigation
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            child: _buildBottomNavigation(),
-          ),
-        ],
+        // Content area: map + overlays + optional bottom nav.
+        final contentBody = Stack(
+          children: [
+            // IndexedStack preserves each tab's state and scroll position.
+            // On desktop the nav rail is outside this stack, so no bottom gap.
+            Positioned.fill(
+              bottom: isDesktop ? 0 : 60,
+              child: IndexedStack(
+                index: _currentNavIndex,
+                children: [
+                  _buildHomeBody(),
+                  const BookingsScreen(),
+                  const EarningsScreen(),
+                  const SettingsScreen(),
+                ],
+              ),
+            ),
+            if (!isDesktop)
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: _buildBottomNavigation(),
+              ),
+          ],
+        );
+
+        return Scaffold(
+          key: _scaffoldKey,
+          drawer: _buildDrawer(),
+          body: isDesktop
+              ? Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // Sidebar rail — only rendered on desktop (≥ 1200 dp).
+                    _buildNavigationRail(),
+                    VerticalDivider(
+                      width: 1,
+                      thickness: 1,
+                      color: Colors.white.withValues(alpha: 0.06),
+                    ),
+                    // Expanded prevents map content from overflowing the rail.
+                    Expanded(child: contentBody),
+                  ],
+                )
+              : contentBody,
+        );
+      },
+    );
+  }
+
+  /// Extended [NavigationRail] shown on desktop (≥ 1200 dp) as a left sidebar.
+  Widget _buildNavigationRail() {
+    final scheduledCount =
+        ref.watch(rideRiverpodProvider).scheduledRidesCount;
+    return NavigationRail(
+      selectedIndex: _currentNavIndex,
+      onDestinationSelected: _handleBottomNavTap,
+      extended: true,
+      minExtendedWidth: 200,
+      backgroundColor: AppColors.background,
+      useIndicator: true,
+      indicatorColor: AppColors.primary.withValues(alpha: 0.15),
+      selectedIconTheme: const IconThemeData(color: AppColors.white),
+      unselectedIconTheme: const IconThemeData(color: AppColors.grey),
+      selectedLabelTextStyle: const TextStyle(
+        color: AppColors.white,
+        fontSize: 12,
+        fontWeight: FontWeight.w600,
       ),
+      unselectedLabelTextStyle: const TextStyle(
+        color: AppColors.grey,
+        fontSize: 12,
+      ),
+      destinations: [
+        const NavigationRailDestination(
+          icon: Icon(Icons.home_rounded),
+          selectedIcon: Icon(Icons.home_rounded),
+          label: Text('Home'),
+        ),
+        NavigationRailDestination(
+          icon: Badge(
+            isLabelVisible: scheduledCount > 0,
+            label: Text(
+              '$scheduledCount',
+              style: const TextStyle(
+                fontSize: 9,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            backgroundColor: AppColors.primary,
+            child: const Icon(Icons.list_alt_rounded),
+          ),
+          selectedIcon: const Icon(Icons.list_alt_rounded),
+          label: const Text('Rides'),
+        ),
+        const NavigationRailDestination(
+          icon: Icon(Icons.account_balance_wallet_rounded),
+          selectedIcon: Icon(Icons.account_balance_wallet_rounded),
+          label: Text('Earnings'),
+        ),
+        const NavigationRailDestination(
+          icon: Icon(Icons.settings_rounded),
+          selectedIcon: Icon(Icons.settings_rounded),
+          label: Text('Settings'),
+        ),
+      ],
     );
   }
 

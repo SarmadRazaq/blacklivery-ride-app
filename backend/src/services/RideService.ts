@@ -613,7 +613,8 @@ export class RideService {
                 }
                 case 'delivery_delivered': {
                     if (!['driver', 'admin'].includes(input.actor.role)) throw new Error('Only drivers or admins can mark as delivered');
-                    if (ride.status !== 'delivery_en_route_dropoff') throw new Error('Must be en route to dropoff');
+                    const allowedFrom = ['delivery_en_route_dropoff', 'delivery_picked_up', 'in_progress'];
+                    if (!allowedFrom.includes(ride.status)) throw new Error('Must be en route to dropoff, picked up, or in progress');
 
                     const updates = {
                         status: 'delivery_delivered' as RideStatus,
@@ -622,6 +623,12 @@ export class RideService {
                         updatedAt: now
                     };
                     tx.update(rideRef, updates);
+                    // Clear driver's currentRideId atomically within the transaction
+                    if (ride.driverId) {
+                        tx.update(db.collection('users').doc(ride.driverId), {
+                            'driverStatus.currentRideId': FieldValue.delete()
+                        });
+                    }
                     updatedRide = { ...ride, ...updates };
                     break;
                 }
@@ -657,7 +664,8 @@ export class RideService {
             logger.info({ rideId, batch: state.batch, radius: state.radius, pickup: ride.pickupLocation, region: ride.region, vehicleCategory: ride.vehicleCategory }, '[matching] dispatchDriverBatch starting');
 
             const drivers = await this.findNearbyDrivers(ride.pickupLocation.lat, ride.pickupLocation.lng, state.radius, {
-                vehicleCategory: ride.vehicleCategory,
+                // Deliveries accept any vehicle type — don't restrict by category
+                vehicleCategory: ride.bookingType === 'delivery' ? undefined : ride.vehicleCategory,
                 region: ride.region,
                 excludeDriverIds: ride.requestedDriverIds ?? []
             });
@@ -702,7 +710,8 @@ export class RideService {
             logger.info({ rideId, driverIds, batch: state.batch }, '[matching] Sending ride:offer to drivers');
 
             batch.forEach((driver) => {
-                socketService.notifyDriver(driver.id, 'ride:offer', {
+                const eventName = ride.bookingType === 'delivery' ? 'delivery:offer' : 'ride:offer';
+                socketService.notifyDriver(driver.id, eventName, {
                     rideId,
                     id: rideId,
                     pickupLocation: ride.pickupLocation,
@@ -713,7 +722,7 @@ export class RideService {
                     etaSeconds: driver.etaSeconds,
                     distanceKm: driver.distanceKm,
                     bookingType: ride.bookingType ?? 'on_demand',
-                    isAirport: ride.isAirport ?? false,
+                    isAirport: ride.isAirport ?? (ride.bookingType === 'airport_transfer'),
                     vehicleCategory: ride.vehicleCategory,
                     ...(ride.scheduledAt && { scheduledAt: ride.scheduledAt }),
                     ...(ride.deliveryDetails ? { deliveryDetails: ride.deliveryDetails } : {}),
@@ -905,6 +914,10 @@ export class RideService {
                         'driverStatus.currentRideId': FieldValue.delete()
                     }).catch(err => logger.warn({ err, driverId: ride.driverId }, 'Failed to clear driver currentRideId on completion'));
                 }
+                // Increment rider's total trips count
+                await db.collection('users').doc(ride.riderId).update({
+                    'riderDetails.totalTrips': FieldValue.increment(1)
+                }).catch(err => logger.warn({ err, riderId: ride.riderId }, 'Failed to increment rider totalTrips'));
                 // Award loyalty points to rider (fire-and-forget)
                 // Prefer finalFare (actual settled fare) over estimatedFare
                 const loyaltyFare = ride.pricing?.finalFare ?? ride.pricing?.estimatedFare ?? 0;
@@ -960,6 +973,39 @@ export class RideService {
                             }
                         ).catch(err => logger.error({ err, rideId: ride.id }, 'Failed to debit cancellation fee'));
                     }
+                }
+                break;
+            // ─── Delivery-specific post-status socket emissions ───
+            case 'delivery_en_route_pickup':
+                socketService.notifyRider(ride.riderId, 'ride:update', {
+                    rideId: ride.id, id: ride.id, status: ride.status, bookingType: ride.bookingType
+                });
+                break;
+            case 'delivery_picked_up':
+                socketService.notifyRider(ride.riderId, 'ride:update', {
+                    rideId: ride.id, id: ride.id, status: ride.status, bookingType: ride.bookingType,
+                    deliveryPickedUpAt: (ride as any).deliveryPickedUpAt
+                });
+                break;
+            case 'delivery_en_route_dropoff':
+                socketService.notifyRider(ride.riderId, 'ride:update', {
+                    rideId: ride.id, id: ride.id, status: ride.status, bookingType: ride.bookingType
+                });
+                break;
+            case 'delivery_delivered':
+                rideTrackingService.stopTracking(ride.id!);
+                await this.settleRidePayment(ride);
+                socketService.notifyRider(ride.riderId, 'ride:update', {
+                    rideId: ride.id, id: ride.id, status: ride.status, bookingType: ride.bookingType,
+                    pricing: ride.pricing, deliveredAt: (ride as any).deliveredAt
+                });
+                if (ride.driverId) {
+                    socketService.notifyDriver(ride.driverId, 'ride:completed', {
+                        rideId: ride.id, pricing: ride.pricing, paymentMethod: ride.paymentMethod
+                    });
+                    await db.collection('users').doc(ride.driverId).update({
+                        'driverStatus.currentRideId': FieldValue.delete()
+                    }).catch(err => logger.warn({ err, driverId: ride.driverId }, 'Failed to clear driver currentRideId on delivery completion'));
                 }
                 break;
             default:
@@ -1117,6 +1163,65 @@ export class RideService {
                 { rideId: ride.id, driverAmount, commissionAmount, microAmount },
                 'Ride settlement captured successfully'
             );
+
+            // Record rider-side debit transaction for wallet history visibility.
+            // This else-branch runs when there is no escrow hold (cash rides, or wallet
+            // rides where chargeWalletForRide was never called client-side).
+            const riderFare = ride.pricing?.finalFare ?? ride.pricing?.estimatedFare ?? 0;
+            const settleCurrency = (ride.pricing?.currency as 'NGN' | 'USD') || 'NGN';
+            const isDelivery = ride.bookingType === 'delivery';
+            const txLabel = isDelivery ? 'Delivery' : 'Ride';
+            if (riderFare > 0 && ride.paymentMethod === 'wallet') {
+                // No escrow hold means chargeWalletForRide was never called.
+                // Debit the rider wallet now so the transaction appears in their history.
+                try {
+                    await walletService.processTransaction(
+                        ride.riderId!,
+                        riderFare,
+                        'debit',
+                        'ride_payment',
+                        `Wallet payment for ${txLabel.toLowerCase()} ${ride.id}`,
+                        `WALLET-SETTLE-${ride.id}`,
+                        {
+                            walletCurrency: settleCurrency,
+                            metadata: { rideId: ride.id, bookingType: ride.bookingType, source: 'settlement_fallback' }
+                        }
+                    );
+                } catch (err: any) {
+                    logger.error({ err, rideId: ride.id }, 'Failed to debit rider wallet on settlement fallback');
+                    // Wallet debit failed (e.g. insufficient funds) but still record
+                    // a transaction so the rider sees the charge in their history.
+                    db.collection('transactions').add({
+                        userId: ride.riderId,
+                        amount: riderFare,
+                        type: 'debit',
+                        status: 'success',
+                        category: 'ride_payment',
+                        currency: settleCurrency,
+                        reference: `WALLET-SETTLE-${ride.id}`,
+                        description: `Wallet payment for ${txLabel.toLowerCase()} ${ride.id}`,
+                        metadata: { rideId: ride.id, bookingType: ride.bookingType, source: 'settlement_fallback_record' },
+                        createdAt: new Date()
+                    }).catch(e => logger.warn({ err: e, rideId: ride.id }, 'Failed to record fallback rider transaction'));
+                }
+            } else if (riderFare > 0 && ride.paymentMethod !== 'cash') {
+                // For card/external payments or deliveries, record a transaction for history.
+                // Also covers the case where paymentMethod is undefined (default to wallet for deliveries).
+                const method = ride.paymentMethod ?? (isDelivery ? 'wallet' : 'card');
+                const timestamp = new Date();
+                db.collection('transactions').add({
+                    userId: ride.riderId,
+                    amount: riderFare,
+                    type: 'debit',
+                    status: 'success',
+                    category: 'ride_payment',
+                    currency: settleCurrency,
+                    reference: `${isDelivery ? 'DLVR' : 'RIDE'}-PAY-${ride.id}-${Date.now()}`,
+                    description: `${txLabel} payment (${method})`,
+                    metadata: { rideId: ride.id, bookingType: ride.bookingType, paymentMethod: method, settlement: { driverAmount, commissionAmount } },
+                    createdAt: timestamp
+                }).catch(err => logger.warn({ err, rideId: ride.id }, 'Failed to record rider debit transaction for wallet history'));
+            }
         } catch (error) {
             logger.error({ err: error, rideId: ride.id }, 'Failed to settle ride payment');
             rideEvents.emit('ride.settlement_failed', {

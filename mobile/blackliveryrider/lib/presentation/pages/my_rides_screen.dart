@@ -6,6 +6,7 @@ import '../../core/utils/currency_utils.dart';
 import '../../core/models/ride_history_model.dart';
 import '../../core/models/location_model.dart';
 import '../../core/data/booking_state.dart';
+import '../../core/providers/auth_provider.dart';
 import '../../core/services/ride_history_service.dart';
 import '../../core/services/ride_service.dart';
 import '../../core/services/delivery_service.dart';
@@ -423,11 +424,58 @@ class _MyRidesScreenState extends State<MyRidesScreen> {
   }
 
   Widget _buildDeliveryCard(Map<String, dynamic> delivery) {
-    final status = (delivery['status'] ?? delivery['deliveryStatus'] ?? 'pending') as String;
-    final dropoffAddr = delivery['dropoffAddress'] as String? ?? '';
-    final fare = (delivery['estimatedFare'] ?? delivery['fare'] ?? 0) as num;
-    final currency = delivery['currency'] as String? ?? 'NGN';
-    final createdAt = delivery['createdAt'] as String?;
+    // Safely extract status — always a string
+    final rawStatus = delivery['status'] ?? delivery['deliveryStatus'] ?? 'pending';
+    final status = rawStatus is String ? rawStatus : rawStatus.toString();
+
+    // Address may be top-level string or nested inside location object
+    String dropoffAddr = '';
+    if (delivery['dropoffAddress'] is String) {
+      dropoffAddr = delivery['dropoffAddress'] as String;
+    } else if (delivery['dropoffLocation'] is Map) {
+      final loc = delivery['dropoffLocation'] as Map;
+      dropoffAddr = loc['address'] is String ? loc['address'] as String : '';
+    }
+
+    // Fare may be top-level or nested inside pricing object
+    num fare = 0;
+    if (delivery['estimatedFare'] is num) {
+      fare = delivery['estimatedFare'] as num;
+    } else if (delivery['fare'] is num) {
+      fare = delivery['fare'] as num;
+    } else if (delivery['pricing'] is Map) {
+      final pricing = delivery['pricing'] as Map;
+      fare = pricing['estimatedFare'] is num ? pricing['estimatedFare'] as num : 0;
+    }
+
+    // Determine currency from the delivery's own region (most reliable),
+    // then fall back to stored pricing currency, then user's profile region.
+    final deliveryRegion = delivery['region'];
+    final userRegion = context.read<AuthProvider>().user?.region;
+    String currency;
+    if (deliveryRegion == 'US-CHI' || deliveryRegion == 'chicago') {
+      currency = 'USD';
+    } else if (deliveryRegion == 'NG' || deliveryRegion == 'nigeria') {
+      currency = 'NGN';
+    } else if (delivery['currency'] is String) {
+      currency = delivery['currency'] as String;
+    } else if (delivery['pricing'] is Map && (delivery['pricing'] as Map)['currency'] is String) {
+      currency = (delivery['pricing'] as Map)['currency'] as String;
+    } else {
+      currency = (userRegion == 'US-CHI' || userRegion == 'chicago') ? 'USD' : 'NGN';
+    }
+
+    // createdAt may be an ISO string or a Firestore Timestamp map {_seconds, _nanoseconds}
+    String? createdAt;
+    final rawCreatedAt = delivery['createdAt'];
+    if (rawCreatedAt is String) {
+      createdAt = rawCreatedAt;
+    } else if (rawCreatedAt is Map) {
+      final seconds = rawCreatedAt['_seconds'] ?? rawCreatedAt['seconds'];
+      if (seconds is int) {
+        createdAt = DateTime.fromMillisecondsSinceEpoch(seconds * 1000).toIso8601String();
+      }
+    }
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
@@ -681,33 +729,40 @@ class _MyRidesScreenState extends State<MyRidesScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Row(
-                children: [
-                  Icon(
-                    Icons.calendar_today,
-                    color: AppColors.yellow90,
-                    size: 14,
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    _formatDate(ride.date),
-                    style: AppTextStyles.caption.copyWith(
-                      color: AppColors.txtInactive,
-                      fontSize: 11,
+              Flexible(
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.calendar_today,
+                      color: AppColors.yellow90,
+                      size: 14,
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  Text(
-                    CurrencyUtils.format(ride.price),
-                    style: AppTextStyles.body.copyWith(
-                      color: Colors.white,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
+                    const SizedBox(width: 6),
+                    Flexible(
+                      child: Text(
+                        _formatDate(ride.date),
+                        style: AppTextStyles.caption.copyWith(
+                          color: AppColors.txtInactive,
+                          fontSize: 11,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
-                  ),
-                ],
+                    const SizedBox(width: 12),
+                    Text(
+                      CurrencyUtils.format(ride.price),
+                      style: AppTextStyles.body.copyWith(
+                        color: Colors.white,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
               ),
+              const SizedBox(width: 8),
               Row(
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   GestureDetector(
                     onTap: () => _cancelScheduledRide(ride),
@@ -754,34 +809,6 @@ class _MyRidesScreenState extends State<MyRidesScreen> {
                         'Manage trip',
                         style: AppTextStyles.caption.copyWith(
                           color: Colors.white,
-                          fontSize: 10,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  GestureDetector(
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => ModifyRideScreen(ride: ride),
-                        ),
-                      );
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppColors.yellow90.withOpacity(0.2),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Text(
-                        'Customize',
-                        style: AppTextStyles.caption.copyWith(
-                          color: AppColors.yellow90,
                           fontSize: 10,
                         ),
                       ),

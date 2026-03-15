@@ -79,7 +79,7 @@ class _RideAcceptedScreenState extends ConsumerState<RideAcceptedScreen> {
     try {
       _driverIcon = await BitmapDescriptor.asset(
         const ImageConfiguration(size: Size(48, 48)),
-        'assets/images/car move.png',
+        'assets/images/car-move.png',
       );
       if (mounted) setState(() {});
     } catch (e) {

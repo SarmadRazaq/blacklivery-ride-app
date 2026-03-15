@@ -168,6 +168,9 @@ class _RideHistoryScreenState extends ConsumerState<RideHistoryScreen> {
 
   List<Ride> _filteredRides(List<Ride> rides) {
     if (_selectedFilter == 'all') return rides;
+    if (_selectedFilter == 'completed') {
+      return rides.where((r) => r.status == 'completed' || r.status == 'delivery_delivered').toList();
+    }
     return rides.where((r) => r.status == _selectedFilter).toList();
   }
 
@@ -186,9 +189,11 @@ class _RideHistoryScreenState extends ConsumerState<RideHistoryScreen> {
               Text(
                 ride.status == 'completed'
                     ? 'Ride Completed'
-                    : ride.status == 'cancelled'
-                        ? 'Ride Cancelled'
-                        : 'Ride ${ride.status[0].toUpperCase()}${ride.status.substring(1)}',
+                    : ride.status == 'delivery_delivered'
+                        ? 'Delivery Completed'
+                        : ride.status == 'cancelled'
+                            ? 'Ride Cancelled'
+                            : 'Ride ${ride.status[0].toUpperCase()}${ride.status.substring(1)}',
                 style: TextStyle(
                   color: ride.status == 'cancelled' ? Colors.red[300] : Colors.white,
                   fontWeight: FontWeight.w500,
@@ -196,12 +201,14 @@ class _RideHistoryScreenState extends ConsumerState<RideHistoryScreen> {
                 ),
               ),
               Icon(
-                ride.status == 'completed'
-                    ? Icons.check
-                    : ride.status == 'cancelled'
-                        ? Icons.close
-                        : Icons.hourglass_empty,
-                color: ride.status == 'completed'
+                ride.status == 'delivery_delivered'
+                    ? Icons.local_shipping
+                    : ride.status == 'completed'
+                        ? Icons.check
+                        : ride.status == 'cancelled'
+                            ? Icons.close
+                            : Icons.hourglass_empty,
+                color: (ride.status == 'completed' || ride.status == 'delivery_delivered')
                     ? const Color(0xFFC7A062)
                     : ride.status == 'cancelled'
                         ? Colors.red[300]

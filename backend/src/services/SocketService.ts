@@ -14,6 +14,10 @@ const PUSH_EVENTS: Record<string, { title: string; getBody: (data: any) => strin
         title: 'New Ride Request',
         getBody: (data) => `New ride request nearby (${data.distanceKm}km)`
     },
+    'delivery:offer': {
+        title: 'New Delivery Request',
+        getBody: (data) => `New delivery request nearby (${data.distanceKm}km)`
+    },
     'ride:accepted': {
         title: 'Driver Found',
         getBody: () => 'Your driver is on the way!'

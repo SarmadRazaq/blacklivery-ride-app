@@ -7,6 +7,7 @@ import '../../core/theme/app_spacing.dart';
 import '../../core/utils/currency_utils.dart';
 import '../../core/data/booking_state.dart';
 import '../../core/services/delivery_service.dart';
+import '../../core/services/socket_service.dart';
 import '../widgets/custom_button.dart';
 import '../widgets/ride_map_view.dart';
 
@@ -667,6 +668,7 @@ class DeliveryTrackingScreen extends StatefulWidget {
 
 class _DeliveryTrackingScreenState extends State<DeliveryTrackingScreen> {
   final DeliveryService _deliveryService = DeliveryService();
+  final SocketService _socketService = SocketService();
   Map<String, dynamic>? _delivery;
   bool _isLoading = true;
   bool _deliveredNotified = false;
@@ -676,7 +678,50 @@ class _DeliveryTrackingScreenState extends State<DeliveryTrackingScreen> {
     super.initState();
     _delivery = widget.deliveryData;
     _isLoading = false;
+    _initAndListen();
     _pollStatus();
+  }
+
+  Future<void> _initAndListen() async {
+    await _socketService.initSocket();
+    _listenToSocket();
+  }
+
+  @override
+  void dispose() {
+    _socketService.stopListeningToRideUpdates();
+    super.dispose();
+  }
+
+  void _listenToSocket() {
+    _socketService.listenToRideUpdates(widget.deliveryId, (data) {
+      if (!mounted) return;
+      final status = data['status'] as String?;
+      debugPrint('DeliveryTracking: socket update — status=$status');
+      setState(() {
+        // Merge socket data into current delivery state
+        _delivery = {...?_delivery, ...data};
+      });
+
+      final normalized = _normalizeDeliveryStatus(status);
+      if (normalized == 'delivered' && !_deliveredNotified) {
+        _deliveredNotified = true;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.white, size: 20),
+                SizedBox(width: 10),
+                Text('Package delivered successfully!'),
+              ],
+            ),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 5),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    });
   }
 
   void _pollStatus() {
@@ -690,7 +735,8 @@ class _DeliveryTrackingScreenState extends State<DeliveryTrackingScreen> {
         setState(() => _delivery = details);
 
         // Show delivered notification once
-        if (status == 'delivered' && !_deliveredNotified) {
+        final normalized = _normalizeDeliveryStatus(status);
+        if (normalized == 'delivered' && !_deliveredNotified) {
           _deliveredNotified = true;
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -709,7 +755,8 @@ class _DeliveryTrackingScreenState extends State<DeliveryTrackingScreen> {
         }
 
         // Stop polling once delivery reaches a terminal state
-        if (status == 'delivered' || status == 'cancelled' || status == 'failed') {
+        final normalizedStatus = _normalizeDeliveryStatus(status);
+        if (normalizedStatus == 'delivered' || status == 'cancelled' || status == 'failed') {
           return; // Don't continue polling
         }
       }
@@ -718,7 +765,7 @@ class _DeliveryTrackingScreenState extends State<DeliveryTrackingScreen> {
   }
 
   String _statusLabel(String? status) {
-    switch (status) {
+    switch (_normalizeDeliveryStatus(status)) {
       case 'pending':
         return 'Finding a driver...';
       case 'accepted':
@@ -737,7 +784,7 @@ class _DeliveryTrackingScreenState extends State<DeliveryTrackingScreen> {
   }
 
   IconData _statusIcon(String? status) {
-    switch (status) {
+    switch (_normalizeDeliveryStatus(status)) {
       case 'pending':
         return Icons.hourglass_top;
       case 'accepted':
@@ -752,6 +799,35 @@ class _DeliveryTrackingScreenState extends State<DeliveryTrackingScreen> {
         return Icons.cancel;
       default:
         return Icons.pending;
+    }
+  }
+
+  /// Maps backend delivery statuses to timeline step names.
+  String _normalizeDeliveryStatus(String? status) {
+    switch (status) {
+      case 'finding_driver':
+      case 'requested':
+      case 'pending':
+        return 'pending';
+      case 'accepted':
+      case 'arrived':
+      case 'delivery_en_route_pickup':
+        return 'accepted';
+      case 'delivery_picked_up':
+        return 'picked_up';
+      case 'in_progress':
+      case 'in_transit':
+      case 'delivery_en_route_dropoff':
+        return 'in_transit';
+      case 'delivery_delivered':
+      case 'delivered':
+      case 'completed':
+        return 'delivered';
+      case 'cancelled':
+      case 'failed':
+        return status!;
+      default:
+        return status ?? 'pending';
     }
   }
 
@@ -787,7 +863,8 @@ class _DeliveryTrackingScreenState extends State<DeliveryTrackingScreen> {
   @override
   Widget build(BuildContext context) {
     final status = _delivery?['status'] as String?;
-    final isActive = status != 'delivered' && status != 'cancelled' && status != 'failed';
+    final normalized = _normalizeDeliveryStatus(status);
+    final isActive = normalized != 'delivered' && status != 'cancelled' && status != 'failed';
 
     return Scaffold(
       backgroundColor: AppColors.bgPri,
@@ -864,7 +941,7 @@ class _DeliveryTrackingScreenState extends State<DeliveryTrackingScreen> {
                         const Spacer(),
 
                         // Delivery receipt when completed
-                        if (status == 'delivered') ...[
+                        if (normalized == 'delivered') ...[
                           _buildDeliveryReceipt(),
                           const SizedBox(height: AppSpacing.md),
                           CustomButton.gradient(
@@ -886,11 +963,26 @@ class _DeliveryTrackingScreenState extends State<DeliveryTrackingScreen> {
   }
 
   Widget _buildDeliveryReceipt() {
-    final fare = (_delivery?['estimatedFare'] ?? _delivery?['fare'] as num?)?.toDouble();
-    final distance = (_delivery?['distanceKm'] as num?)?.toDouble();
-    final duration = (_delivery?['durationMinutes'] as num?)?.toInt();
-    final recipient = _delivery?['recipientName'] ?? '';
+    // Fare is nested inside pricing object from the backend
+    final pricing = _delivery?['pricing'] as Map<String, dynamic>?;
+    final fare = (pricing?['finalFare'] as num?)?.toDouble()
+        ?? (pricing?['estimatedFare'] as num?)?.toDouble()
+        ?? (_delivery?['estimatedFare'] as num?)?.toDouble()
+        ?? (_delivery?['fare'] as num?)?.toDouble();
+
+    // Distance/duration may be at top level
+    final distance = (_delivery?['distanceKm'] as num?)?.toDouble()
+        ?? (_delivery?['distance'] as num?)?.toDouble();
+    final duration = (_delivery?['durationMinutes'] as num?)?.toInt()
+        ?? (_delivery?['duration'] as num?)?.toInt();
+
+    // Recipient is inside deliveryDetails
+    final deliveryDetails = _delivery?['deliveryDetails'] as Map<String, dynamic>?;
+    final recipient = deliveryDetails?['recipientName'] as String?
+        ?? _delivery?['recipientName'] as String? ?? '';
     final dropoff = _delivery?['dropoffLocation']?['address'] ?? '';
+    final paymentMethod = _delivery?['paymentMethod'] as String? ?? 'wallet';
+    final currency = pricing?['currency'] as String?;
 
     return Container(
       padding: const EdgeInsets.all(AppSpacing.cardPadding),
@@ -917,10 +1009,11 @@ class _DeliveryTrackingScreenState extends State<DeliveryTrackingScreen> {
             ],
           ),
           const SizedBox(height: 12),
-          if (recipient.isNotEmpty) _buildReceiptRow('Recipient', '$recipient'),
+          if (recipient.isNotEmpty) _buildReceiptRow('Recipient', recipient),
           if (dropoff.isNotEmpty) _buildReceiptRow('Delivered to', dropoff),
           if (distance != null) _buildReceiptRow('Distance', '${distance.toStringAsFixed(1)} km'),
           if (duration != null) _buildReceiptRow('Duration', '$duration min'),
+          _buildReceiptRow('Payment', paymentMethod == 'wallet' ? 'Wallet' : paymentMethod == 'card' ? 'Card' : paymentMethod[0].toUpperCase() + paymentMethod.substring(1)),
           const Divider(color: AppColors.divider, height: 16),
           if (fare != null)
             Row(
@@ -934,7 +1027,7 @@ class _DeliveryTrackingScreenState extends State<DeliveryTrackingScreen> {
                   ),
                 ),
                 Text(
-                  CurrencyUtils.format(fare),
+                  CurrencyUtils.format(fare, currency: currency),
                   style: AppTextStyles.bodySmall.copyWith(
                     color: AppColors.yellow90,
                     fontWeight: FontWeight.w600,
@@ -980,7 +1073,8 @@ class _DeliveryTrackingScreenState extends State<DeliveryTrackingScreen> {
   Widget _buildTimeline(String? currentStatus) {
     final steps = ['pending', 'accepted', 'picked_up', 'in_transit', 'delivered'];
     final labels = ['Placed', 'Driver Assigned', 'Picked Up', 'In Transit', 'Delivered'];
-    final activeIndex = steps.indexOf(currentStatus ?? 'pending');
+    final normalized = _normalizeDeliveryStatus(currentStatus);
+    final activeIndex = steps.indexOf(normalized);
 
     return Column(
       children: List.generate(steps.length, (i) {

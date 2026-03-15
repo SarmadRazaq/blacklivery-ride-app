@@ -651,52 +651,87 @@ class _HomeTabState extends State<HomeTab> {
 
                     const SizedBox(height: 12),
 
-                    // Booking type shortcuts
-                    Row(
-                      children: [
-                        _buildBookingTypeChip(
-                          icon: Icons.access_time,
-                          label: 'Hourly',
-                          onTap: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const HourlyBookingScreen(),
+                    // Booking type shortcuts — context-aware based on selected service
+                    if (_selectedServiceIndex == 0) ...[
+                      // Ride mode shortcuts
+                      Row(
+                        children: [
+                          _buildBookingTypeChip(
+                            icon: Icons.access_time,
+                            label: 'Hourly',
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const HourlyBookingScreen(),
+                              ),
                             ),
                           ),
-                        ),
-                        const SizedBox(width: 8),
-                        _buildBookingTypeChip(
-                          icon: Icons.flight,
-                          label: 'Airport',
-                          onTap: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const AirportBookingScreen(),
+                          const SizedBox(width: 8),
+                          _buildBookingTypeChip(
+                            icon: Icons.flight,
+                            label: 'Airport',
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const AirportBookingScreen(),
+                              ),
                             ),
                           ),
-                        ),
-                        const SizedBox(width: 8),
-                        _buildBookingTypeChip(
-                          icon: Icons.local_shipping,
-                          label: 'Delivery',
-                          onTap: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const WhereToScreen(returnOnConfirm: true),
+                          const SizedBox(width: 8),
+                          _buildBookingTypeChip(
+                            icon: Icons.local_shipping,
+                            label: 'Delivery',
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const WhereToScreen(returnOnConfirm: true),
+                              ),
+                            ).then((confirmed) {
+                              if (confirmed == true && mounted) {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => const DeliveryBookingScreen(),
+                                  ),
+                                );
+                              }
+                            }),
+                          ),
+                        ],
+                      ),
+                    ] else ...[
+                      // Send Parcel mode — delivery package type shortcuts
+                      SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          children: [
+                            _buildBookingTypeChip(
+                              icon: Icons.description,
+                              label: 'Document',
+                              onTap: _onSearchTap,
                             ),
-                          ).then((confirmed) {
-                            if (confirmed == true && mounted) {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => const DeliveryBookingScreen(),
-                                ),
-                              );
-                            }
-                          }),
+                            const SizedBox(width: 8),
+                            _buildBookingTypeChip(
+                              icon: Icons.inventory_2,
+                              label: 'Small',
+                              onTap: _onSearchTap,
+                            ),
+                            const SizedBox(width: 8),
+                            _buildBookingTypeChip(
+                              icon: Icons.all_inbox,
+                              label: 'Medium',
+                              onTap: _onSearchTap,
+                            ),
+                            const SizedBox(width: 8),
+                            _buildBookingTypeChip(
+                              icon: Icons.widgets,
+                              label: 'Large',
+                              onTap: _onSearchTap,
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
 
                     const SizedBox(height: 14),
 

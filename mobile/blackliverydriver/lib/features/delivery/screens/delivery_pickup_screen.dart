@@ -84,7 +84,7 @@ class _DeliveryPickupScreenState extends ConsumerState<DeliveryPickupScreen> {
     try {
       _driverIcon = await BitmapDescriptor.asset(
         const ImageConfiguration(size: Size(48, 48)),
-        'assets/images/car move.png',
+        'assets/images/car-move.png',
       );
       if (mounted) setState(() {});
     } catch (e) {
@@ -235,7 +235,7 @@ class _DeliveryPickupScreenState extends ConsumerState<DeliveryPickupScreen> {
     _waitingTimer?.cancel();
 
     try {
-      await ref.read(rideRiverpodProvider).updateStatus('in_progress');
+      await ref.read(rideRiverpodProvider).updateStatus('delivery_picked_up');
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

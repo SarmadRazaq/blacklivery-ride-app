@@ -9,6 +9,7 @@ import { socketService } from '../services/SocketService';
 import { db } from '../config/firebase';
 import { b2bPricingService } from '../services/pricing/B2BPricingService';
 import { logger } from '../utils/logger';
+import { walletService } from '../services/WalletService';
 
 const deliveryRequestSchema = z.object({
     pickup: z.object({ lat: z.number(), lng: z.number(), address: z.string().min(3) }),
@@ -62,7 +63,7 @@ export const createDelivery = async (req: AuthRequest, res: Response): Promise<v
     try {
         // Body already validated by createDeliverySchema middleware (pickupLocation/dropoffLocation/packageDetails)
         const { pickupLocation, dropoffLocation, vehicleCategory, serviceType, region, city,
-                packageDetails, recipientName, recipientPhone, notes, scheduledAt, extraStops, isReturnTrip } = req.body;
+                packageDetails, recipientName, recipientPhone, notes, scheduledAt, extraStops, isReturnTrip, paymentMethod } = req.body;
 
         const routeData = await googleMapsService.getDistanceAndDuration(
             { lat: pickupLocation.lat, lng: pickupLocation.lng },
@@ -77,7 +78,18 @@ export const createDelivery = async (req: AuthRequest, res: Response): Promise<v
             durationMinutes *= 2;
         }
 
-        const resolvedRegion = region === 'chicago' || region === 'US-CHI' ? 'US-CHI' : 'NG';
+        // Auto-detect region from pickup coordinates when rider doesn't send it
+        let resolvedRegion: string;
+        if (region === 'chicago' || region === 'US-CHI') {
+            resolvedRegion = 'US-CHI';
+        } else if (region === 'nigeria' || region === 'NG') {
+            resolvedRegion = 'NG';
+        } else {
+            // Infer from pickup coordinates — US bounding box
+            const isUS = pickupLocation.lat >= 24.5 && pickupLocation.lat <= 49.5
+                      && pickupLocation.lng >= -125.0 && pickupLocation.lng <= -66.5;
+            resolvedRegion = isUS ? 'US-CHI' : 'NG';
+        }
 
         const mockRide = {
             vehicleCategory: vehicleCategory ?? 'motorbike',
@@ -110,7 +122,9 @@ export const createDelivery = async (req: AuthRequest, res: Response): Promise<v
         const requestData = {
             pickupLocation,
             dropoffLocation,
-            vehicleCategory: vehicleCategory ?? 'motorbike',
+            // If rider didn't specify a category, leave undefined so findNearbyDrivers
+            // skips the category filter and matches any available driver.
+            vehicleCategory: vehicleCategory ?? undefined,
             region: resolvedRegion,
             city,
             bookingType: 'delivery',
@@ -125,6 +139,7 @@ export const createDelivery = async (req: AuthRequest, res: Response): Promise<v
             },
             ...(extraStops && { extraStops }),
             ...(scheduledAt && { scheduledAt }),
+            paymentMethod: paymentMethod ?? 'wallet',
             pricing: {
                 estimatedFare: estimatedFare.totalFare,
                 currency: resolvedRegion === 'NG' ? 'NGN' : 'USD',
@@ -134,6 +149,33 @@ export const createDelivery = async (req: AuthRequest, res: Response): Promise<v
 
         const delivery = await rideService.createRideRequest(req.user.uid, requestData as any);
         await rideService.startDriverMatching(delivery.id!);
+
+        // Charge rider's wallet upfront and create escrow hold so that:
+        // 1. The transaction appears immediately in the rider's wallet history
+        // 2. Settlement can capture the escrow when delivery completes
+        const resolvedPaymentMethod = paymentMethod ?? 'wallet';
+        if (resolvedPaymentMethod === 'wallet' && estimatedFare.totalFare > 0) {
+            const currency = (resolvedRegion === 'NG' ? 'NGN' : 'USD') as 'NGN' | 'USD';
+            const reference = `WALLET-RIDE-${delivery.id}-${Date.now()}`;
+            try {
+                await walletService.chargeWalletForRide({
+                    riderId: req.user.uid,
+                    rideId: delivery.id!,
+                    amount: estimatedFare.totalFare,
+                    currency,
+                    reference,
+                });
+                await db.collection('rides').doc(delivery.id!).update({
+                    'payment.holdReference': reference,
+                    'payment.paymentMethod': 'wallet',
+                    'payment.status': 'held',
+                });
+            } catch (err: any) {
+                // Log but don't block delivery creation — settlement fallback will handle it
+                logger.warn({ err, rideId: delivery.id, riderId: req.user.uid },
+                    'Wallet charge failed during delivery creation — settlement fallback will apply');
+            }
+        }
 
         await ensureDeliveryNotification(req.user.uid, { rideId: delivery.id });
         socketService.notifyRider(req.user.uid, 'delivery:created', { rideId: delivery.id });
@@ -167,9 +209,21 @@ export const getDeliveryQuote = async (req: AuthRequest, res: Response): Promise
             durationMinutes *= 2;
         }
 
+        // Auto-detect region from pickup coordinates when rider doesn't send it
+        let quoteRegion: string;
+        if (region === 'chicago' || region === 'US-CHI') {
+            quoteRegion = 'US-CHI';
+        } else if (region === 'nigeria' || region === 'NG') {
+            quoteRegion = 'NG';
+        } else {
+            const isUS = pickupLocation.lat >= 24.5 && pickupLocation.lat <= 49.5
+                      && pickupLocation.lng >= -125.0 && pickupLocation.lng <= -66.5;
+            quoteRegion = isUS ? 'US-CHI' : 'NG';
+        }
+
         const mockRide = {
             vehicleCategory: vehicleCategory ?? 'motorbike',
-            region: region === 'chicago' ? 'US-CHI' : (region === 'US-CHI' ? 'US-CHI' : 'NG'),
+            region: quoteRegion,
             bookingType: 'delivery',
             pickupLocation,
             dropoffLocation,
@@ -304,10 +358,9 @@ export const uploadProofOfDelivery = async (req: AuthRequest, res: Response): Pr
             proof.signatureUrl = url;
         }
 
-        const deliveryCompletionStatuses = ['in_progress', 'delivery_en_route_dropoff', 'delivery_picked_up', 'delivery_delivered'];
+        // Save proof data and timeline entry (do NOT change status here)
         await rideSnapshot.ref.update({
             proofOfDelivery: proof,
-            status: deliveryCompletionStatuses.includes(ride?.status) ? 'completed' : ride?.status,
             deliveryTimeline: admin.firestore.FieldValue.arrayUnion({
                 at: new Date(),
                 event: 'proof_uploaded',
@@ -316,6 +369,31 @@ export const uploadProofOfDelivery = async (req: AuthRequest, res: Response): Pr
             }),
             updatedAt: new Date()
         });
+
+        // Transition via state machine so handlePostStatusChange runs
+        // (clears currentRideId, settles payment, emits socket events, etc.)
+        const completableStatuses = ['in_progress', 'delivery_en_route_dropoff', 'delivery_picked_up', 'delivery_delivered'];
+        if (completableStatuses.includes(ride?.status)) {
+            try {
+                if (ride?.status !== 'delivery_delivered') {
+                    // Go through delivery_delivered first (proper terminal status)
+                    await rideService.transitionRideStatus({
+                        rideId,
+                        status: 'delivery_delivered' as any,
+                        actor: { uid: req.user.uid, role: req.user.role as 'rider' | 'driver' | 'admin' },
+                    });
+                }
+                // If already delivery_delivered, handlePostStatusChange already ran
+            } catch (transitionErr) {
+                logger.warn({ err: transitionErr, rideId, fromStatus: ride?.status }, 'State transition after proof upload failed — clearing driver manually');
+                // Fallback: at minimum clear driver's currentRideId
+                if (ride?.driverId) {
+                    await db.collection('users').doc(ride.driverId).update({
+                        'driverStatus.currentRideId': admin.firestore.FieldValue.delete()
+                    }).catch(() => {});
+                }
+            }
+        }
 
         socketService.notifyRider(ride?.riderId, 'delivery:proof_uploaded', { rideId });
 
@@ -347,7 +425,7 @@ export const getDelivery = async (req: AuthRequest, res: Response): Promise<void
             return;
         }
 
-        res.status(200).json({ id: rideSnap.id, ...ride });
+        res.status(200).json({ data: { id: rideSnap.id, ...ride } });
     } catch (error) {
         logger.error({ err: error }, 'getDelivery failed');
         res.status(500).json({ message: 'Failed to fetch delivery' });

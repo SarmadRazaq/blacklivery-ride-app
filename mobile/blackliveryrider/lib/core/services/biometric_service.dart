@@ -55,6 +55,17 @@ class BiometricService {
   /// Trigger biometric authentication prompt
   Future<bool> authenticate({String reason = 'Authenticate to login'}) async {
     try {
+      final canAuth = await canAuthenticate();
+      if (!canAuth) {
+        // Fall back to device credentials if biometrics not available
+        return await _localAuth.authenticate(
+          localizedReason: reason,
+          options: const AuthenticationOptions(
+            stickyAuth: true,
+            biometricOnly: false,
+          ),
+        );
+      }
       return await _localAuth.authenticate(
         localizedReason: reason,
         options: const AuthenticationOptions(

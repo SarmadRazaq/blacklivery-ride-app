@@ -23,6 +23,7 @@ class _RideCompletedScreenState extends State<RideCompletedScreen> {
   int _rating = 5;
   double? _actualFare;
   bool _loadingFare = false;
+  bool _isSubmitting = false;
   Map<String, dynamic>? _fareBreakdown;
   final TextEditingController _tipController = TextEditingController();
   final TextEditingController _feedbackController = TextEditingController();
@@ -89,51 +90,57 @@ class _RideCompletedScreenState extends State<RideCompletedScreen> {
   }
 
   void _submitRating() async {
+    if (_isSubmitting) return;
+    setState(() => _isSubmitting = true);
     // Submit rating to backend
     final bookingState = Provider.of<BookingState>(context, listen: false);
     final rideId = _savedRideId ?? bookingState.currentBooking?.id;
 
-    if (rideId != null && rideId.isNotEmpty) {
-      try {
-        final rideService = RideService();
-        await rideService.rateDriver(
-          rideId: rideId,
-          rating: _rating,
-          comment: _feedbackController.text.trim().isNotEmpty
-              ? _feedbackController.text.trim()
-              : null,
-        );
+    try {
+      if (rideId != null && rideId.isNotEmpty) {
+        try {
+          final rideService = RideService();
+          await rideService.rateDriver(
+            rideId: rideId,
+            rating: _rating,
+            comment: _feedbackController.text.trim().isNotEmpty
+                ? _feedbackController.text.trim()
+                : null,
+          );
 
-        // Submit tip if entered
-        final tipText = _tipController.text.replaceAll(RegExp(r'[^0-9.]'), '');
-        final tipAmount = double.tryParse(tipText) ?? 0;
-        if (tipAmount > 0) {
-          try {
-            await rideService.addTip(rideId: rideId, amount: tipAmount);
-          } catch (e) {
-            debugPrint('Failed to submit tip: $e');
+          // Submit tip if entered
+          final tipText = _tipController.text.replaceAll(RegExp(r'[^0-9.]'), '');
+          final tipAmount = double.tryParse(tipText) ?? 0;
+          if (tipAmount > 0) {
+            try {
+              await rideService.addTip(rideId: rideId, amount: tipAmount);
+            } catch (e) {
+              debugPrint('Failed to submit tip: $e');
+            }
           }
+        } catch (e) {
+          debugPrint('Failed to submit rating: $e');
         }
-      } catch (e) {
-        debugPrint('Failed to submit rating: $e');
       }
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Thank you for your feedback!')),
+      );
+
+      // Reset booking state
+      bookingState.resetBookingFlow();
+
+      // Navigate to home
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (context) => const HomeScreen()),
+        (route) => false,
+      );
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
     }
-
-    if (!mounted) return;
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Thank you for your feedback!')),
-    );
-
-    // Reset booking state
-    bookingState.resetBookingFlow();
-
-    // Navigate to home
-    Navigator.pushAndRemoveUntil(
-      context,
-      MaterialPageRoute(builder: (context) => const HomeScreen()),
-      (route) => false,
-    );
   }
 
   @override
@@ -445,7 +452,11 @@ class _RideCompletedScreenState extends State<RideCompletedScreen> {
 
               const SizedBox(height: 32),
 
-              CustomButton.main(text: 'Submit & Done', onTap: _submitRating),
+              CustomButton.main(
+                text: 'Submit & Done',
+                onTap: _isSubmitting ? null : _submitRating,
+                isLoading: _isSubmitting,
+              ),
 
               const SizedBox(height: 16),
 

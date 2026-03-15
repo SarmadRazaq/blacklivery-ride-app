@@ -274,7 +274,12 @@ class _ConfirmRideScreenState extends State<ConfirmRideScreen> {
                   child: Text('Cancel', style: AppTextStyles.body.copyWith(color: Colors.white70)),
                 ),
                 ElevatedButton(
-                  style: ElevatedButton.styleFrom(backgroundColor: AppColors.yellow90),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.yellow90,
+                    minimumSize: const Size(0, 40),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
                   onPressed: () {
                     Navigator.pop(ctx);
                     Navigator.push(context, MaterialPageRoute(builder: (_) => const AddFundsScreen()));

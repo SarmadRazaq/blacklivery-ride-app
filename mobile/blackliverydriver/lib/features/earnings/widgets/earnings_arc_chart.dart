@@ -126,6 +126,7 @@ class EarningsArcChart extends StatelessWidget {
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.white,
                             foregroundColor: Colors.black,
+                            minimumSize: const Size(80, 44),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(8),
                             ),
@@ -141,6 +142,7 @@ class EarningsArcChart extends StatelessWidget {
                           onPressed: () {},
                           style: OutlinedButton.styleFrom(
                             foregroundColor: Colors.white,
+                            minimumSize: const Size(80, 44),
                             side: const BorderSide(color: Colors.grey),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(8),

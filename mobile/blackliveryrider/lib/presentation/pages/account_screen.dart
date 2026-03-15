@@ -201,10 +201,7 @@ class _AccountScreenState extends State<AccountScreen> {
                                 ),
                                 const SizedBox(width: 4),
                                 Text(
-                                  user?.role == 'driver'
-                                      ? (user?.rating?.toStringAsFixed(1) ??
-                                            '5.0')
-                                      : '5.0',
+                                  user?.rating?.toStringAsFixed(1) ?? '5.0',
                                   style: AppTextStyles.caption.copyWith(
                                     color: AppColors.txtInactive,
                                   ),

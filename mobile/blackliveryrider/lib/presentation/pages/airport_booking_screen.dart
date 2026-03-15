@@ -114,6 +114,7 @@ class _AirportBookingScreenState extends State<AirportBookingScreen> {
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppColors.yellow90,
                         foregroundColor: AppColors.bgPri,
+                        minimumSize: const Size(0, 52),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(30),
                         ),

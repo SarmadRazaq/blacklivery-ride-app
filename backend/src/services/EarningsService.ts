@@ -45,7 +45,7 @@ export class EarningsService {
         // For now, query all rides this year.
         const ridesSnap = await db.collection('rides')
             .where('driverId', '==', driverId)
-            .where('status', '==', 'completed')
+            .where('status', 'in', ['completed', 'delivery_delivered'])
             .where('completedAt', '>=', startOfYear)
             .get();
 
