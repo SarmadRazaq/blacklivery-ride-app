@@ -4,7 +4,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import Badge from '../components/ui/Badge';
 import { Wallet, ArrowDownCircle, ArrowUpCircle, RefreshCw, ChevronDown, ChevronUp } from 'lucide-react';
 import { toast } from 'react-toastify';
-import { ADMIN_PAYOUTS, ADMIN_ANALYTICS_EARNINGS, approvePayout as approvePayoutEndpoint } from '../api/endpoints';
+import { ADMIN_PAYOUTS, ADMIN_ANALYTICS_EARNINGS, approvePayout as approvePayoutEndpoint, retryPayout as retryPayoutEndpoint } from '../api/endpoints';
 import { DEFAULT_PAGE_SIZE } from '../config/constants';
 import { DEFAULT_CURRENCY } from '../config/regions';
 
@@ -14,7 +14,7 @@ interface PayoutRecord {
     driverInfo?: { name: string; phone: string; email: string; id?: string };
     amount: number;
     currency?: string;
-    status: 'pending' | 'approved' | 'completed' | 'failed';
+    status: 'pending' | 'approved' | 'processing' | 'completed' | 'failed' | 'rejected';
     method?: string;
     bankCode?: string;
     accountNumber?: string;
@@ -77,7 +77,9 @@ const PayoutsPage = () => {
             setPagination(payoutsRes.data?.pagination || { total: 0, totalPages: 1 });
 
             // Compute summary from payout data + earnings
-            const pending = payoutData.filter((p: PayoutRecord) => p.status === 'pending').length;
+            const pending = payoutData
+                .filter((p: PayoutRecord) => p.status === 'pending')
+                .reduce((sum: number, p: PayoutRecord) => sum + asNumber(p.amount), 0);
             const failed = payoutData.filter((p: PayoutRecord) => p.status === 'failed').length;
 
             setSummary({
@@ -94,19 +96,37 @@ const PayoutsPage = () => {
         }
     }, [page, statusFilter]);
 
-    const approvePayout = async (payoutId: string) => {
+    const approvePayout = async (payoutId: string, amount: number, currency?: string) => {
+        const confirmed = window.confirm(
+            `Approve payout of ${formatMoney(amount, currency)} for payout ID ${payoutId.substring(0, 8)}…?\n\nThis action cannot be undone.`
+        );
+        if (!confirmed) return;
         try {
             await api.post(approvePayoutEndpoint(payoutId), { approved: true });
             toast.success('Payout approved');
-            // Reset to page 1 so a shrinking list doesn't leave user on an empty page
             if (page !== 1) {
-                setPage(1); // will re-trigger fetchPayouts via useEffect
+                setPage(1);
             } else {
                 fetchPayouts();
             }
         } catch (error) {
             console.error('Failed to approve payout', error);
             toast.error('Failed to approve payout');
+        }
+    };
+
+    const retryPayout = async (payoutId: string, amount: number, currency?: string) => {
+        const confirmed = window.confirm(
+            `Retry failed payout of ${formatMoney(amount, currency)} for payout ID ${payoutId.substring(0, 8)}…?`
+        );
+        if (!confirmed) return;
+        try {
+            await api.post(retryPayoutEndpoint(payoutId));
+            toast.success('Payout retry initiated');
+            fetchPayouts();
+        } catch (error) {
+            console.error('Failed to retry payout', error);
+            toast.error('Failed to retry payout');
         }
     };
 
@@ -127,8 +147,10 @@ const PayoutsPage = () => {
                         <option value="">All Status</option>
                         <option value="pending">Pending</option>
                         <option value="approved">Approved</option>
+                        <option value="processing">Processing</option>
                         <option value="completed">Completed</option>
                         <option value="failed">Failed</option>
+                        <option value="rejected">Rejected</option>
                     </select>
                     <button
                         onClick={fetchPayouts}
@@ -158,9 +180,9 @@ const PayoutsPage = () => {
                 <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200">
                     <div className="flex items-center gap-2 mb-2">
                         <ArrowDownCircle size={20} className="text-yellow-500" />
-                        <p className="text-sm text-gray-500">Pending</p>
+                        <p className="text-sm text-gray-500">Pending Payouts</p>
                     </div>
-                    <p className="text-2xl font-bold text-yellow-600">{summary.pending}</p>
+                    <p className="text-2xl font-bold text-yellow-600">{formatMoney(summary.pending)}</p>
                 </div>
                 <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200">
                     <p className="text-sm text-gray-500 mb-2">Failed</p>
@@ -210,23 +232,33 @@ const PayoutsPage = () => {
                                             <TableCell>
                                                 <Badge variant={
                                                     payout.status === 'completed' ? 'success' :
-                                                        payout.status === 'approved' ? 'info' :
+                                                        payout.status === 'approved' || payout.status === 'processing' ? 'info' :
                                                             payout.status === 'pending' ? 'warning' :
-                                                                payout.status === 'failed' ? 'danger' : 'default'
+                                                                payout.status === 'failed' || payout.status === 'rejected' ? 'danger' : 'default'
                                                 }>
                                                     {payout.status}
                                                 </Badge>
                                             </TableCell>
                                             <TableCell>{formatDate(payout.createdAt)}</TableCell>
                                             <TableCell className="text-right">
-                                                {payout.status === 'pending' && (
-                                                    <button
-                                                        onClick={() => approvePayout(payout.id)}
-                                                        className="px-3 py-1 text-sm bg-green-50 text-green-700 rounded-md hover:bg-green-100 border border-green-200"
-                                                    >
-                                                        Approve
-                                                    </button>
-                                                )}
+                                                <div className="flex justify-end gap-2">
+                                                    {payout.status === 'pending' && (
+                                                        <button
+                                                            onClick={() => approvePayout(payout.id, payout.amount, payout.currency)}
+                                                            className="px-3 py-1 text-sm bg-green-50 text-green-700 rounded-md hover:bg-green-100 border border-green-200"
+                                                        >
+                                                            Approve
+                                                        </button>
+                                                    )}
+                                                    {payout.status === 'failed' && (
+                                                        <button
+                                                            onClick={() => retryPayout(payout.id, payout.amount, payout.currency)}
+                                                            className="px-3 py-1 text-sm bg-blue-50 text-blue-700 rounded-md hover:bg-blue-100 border border-blue-200"
+                                                        >
+                                                            Retry
+                                                        </button>
+                                                    )}
+                                                </div>
                                             </TableCell>
                                         </TableRow>
                                         {expandedRows.has(payout.id) && (

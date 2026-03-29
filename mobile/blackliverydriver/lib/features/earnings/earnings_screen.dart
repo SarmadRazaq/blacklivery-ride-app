@@ -11,6 +11,7 @@ import 'widgets/weekly_bar_chart.dart';
 import 'widgets/monthly_bar_chart.dart';
 import 'data/models/earnings_dashboard.dart';
 import '../history/ride_history_screen.dart';
+import 'transaction_history_screen.dart';
 
 class EarningsScreen extends ConsumerStatefulWidget {
   const EarningsScreen({super.key});
@@ -442,6 +443,36 @@ class _EarningsScreenState extends ConsumerState<EarningsScreen> {
                           child: const Text(
                             'Request Payout / Update Bank',
                             style: TextStyle(color: Colors.grey),
+                          ),
+                        ),
+                      ),
+
+                      const SizedBox(height: 8),
+
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton(
+                          onPressed: () {
+                            provider.loadTransactionHistory();
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) =>
+                                    const TransactionHistoryScreen(),
+                              ),
+                            );
+                          },
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.white,
+                            side: const BorderSide(color: Color(0xFF2C2C2C)),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(30),
+                            ),
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                          ),
+                          child: const Text(
+                            'View Transaction History',
+                            style: TextStyle(fontSize: 15),
                           ),
                         ),
                       ),

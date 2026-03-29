@@ -4,6 +4,22 @@ import { pricingConfigService } from '../PricingConfigService';
 
 export class ChicagoPricingStrategy implements IPricingStrategy {
 
+    // Zone surcharges applied on top of base fare (flat $, not multiplier)
+    // Zones: loop/downtown are premium; outer neighborhoods are standard
+    private readonly ZONE_SURCHARGES: Record<string, number> = {
+        'loop': 5,          // Downtown Loop — high demand, premium zone
+        'river_north': 5,
+        'gold_coast': 5,
+        'magnificent_mile': 5,
+        'hyde_park': 3,     // University of Chicago area
+        'wicker_park': 3,
+        'lincoln_park': 3,
+        'wrigleyville': 3,
+        'pilsen': 0,
+        'south_side': 0,
+        'north_side': 0,
+    };
+
     private readonly DEFAULTS = {
         RATES: {
             'business_sedan': { base: 35, perMile: 3.00, perMin: 0.50, minFare: 55 },
@@ -62,8 +78,13 @@ export class ChicagoPricingStrategy implements IPricingStrategy {
         if ((ride.addOns as any)?.afterHours) {
             addOnsFare += config?.addOns?.afterHoursFee ?? 10;
         }
-        
-        let totalFare = baseFare + distanceFare + timeFare + surgeFare + addOnsFare;
+
+        // Zone-based surcharge (E7 — Loop vs Hyde Park etc.)
+        const zoneSurcharge = ride.zone
+            ? (this.ZONE_SURCHARGES[ride.zone.toLowerCase().replace(/\s+/g, '_')] ?? 0)
+            : 0;
+
+        let totalFare = baseFare + distanceFare + timeFare + surgeFare + addOnsFare + zoneSurcharge;
         if (totalFare < rateConfig.minFare) {
             totalFare = rateConfig.minFare;
         }
@@ -75,7 +96,7 @@ export class ChicagoPricingStrategy implements IPricingStrategy {
             surgeFare,
             waitTimeFare: 0,
             addOnsFare,
-            otherFees: 0,
+            otherFees: zoneSurcharge,
             totalFare,
             currency: 'USD',
             surgeMultiplier
@@ -142,10 +163,7 @@ export class ChicagoPricingStrategy implements IPricingStrategy {
             return Math.round(airportFare * 0.5);
         }
 
-        if (minutesSinceBooking < 60) {
-            return 0;
-        }
-
+        // $25 flat once driver has accepted (G1 pre-accept free check handled in getCancellationFee)
         return 25;
     }
 

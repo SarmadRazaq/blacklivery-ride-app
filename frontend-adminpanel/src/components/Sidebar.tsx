@@ -15,7 +15,10 @@ import {
     Wallet,
     Star,
     Menu,
-    X
+    X,
+    Map,
+    UserCheck,
+    CreditCard,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import clsx from 'clsx';
@@ -42,6 +45,9 @@ const Sidebar = () => {
         { to: '/analytics', icon: BarChart3, label: 'Analytics' },
         { to: '/payouts', icon: Wallet, label: 'Payouts' },
         { to: '/support', icon: Headphones, label: 'Support' },
+        { to: '/live-map', icon: Map, label: 'Live Map' },
+        { to: '/driver-approvals', icon: UserCheck, label: 'Driver Approvals' },
+        { to: '/subscriptions', icon: CreditCard, label: 'Subscriptions' },
     ];
 
     const sidebarContent = (

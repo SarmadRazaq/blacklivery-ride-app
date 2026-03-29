@@ -12,6 +12,7 @@ import '../../core/services/navigation_service.dart';
 import '../../core/providers/region_provider.dart';
 import '../widgets/custom_button.dart';
 
+import 'add_funds_screen.dart';
 import 'ride_completed_screen.dart';
 import 'ride_chat_screen.dart';
 import 'emergency_alert_screen.dart';
@@ -391,10 +392,17 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
           final regionKey = isChicago ? 'US-CHI' : 'NG';
           final gatewayId = isChicago ? 'stripe' : 'paystack';
 
+          final bookingType = bookingState.bookingType;
+          final paymentPurpose = bookingType == 'airport_transfer'
+              ? 'airport_payment'
+              : bookingType == 'delivery'
+                  ? 'delivery_payment'
+                  : 'ride_payment';
+
           final paymentData = await PaymentService().initiatePayment(
             amount: amount,
             rideId: rideId,
-            purpose: 'ride',
+            purpose: paymentPurpose,
             region: regionKey,
             gateway: gatewayId,
             sdkMode: true,
@@ -450,28 +458,63 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
         debugPrint('Payment initiation error: $e');
         if (!mounted) return;
         setState(() => _isInitiatingPayment = false);
+        // Show error and stop — don't navigate to completed without successful payment initiation.
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Payment could not be initiated: ${e.toString().replaceAll('Exception: ', '')}'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+        return;
       }
     }
 
     // Wallet payment: instant debit from rider's on-platform balance — no WebView needed
     if (paymentMethod == 'wallet' && rideId != null && amount > 0) {
-      // Pre-flight balance check — warn user but don't block ride completion
+      // Pre-flight balance check — block if insufficient funds so rider can top up first.
       try {
         final balance = await WalletService().getBalance();
-        if (balance < amount && mounted) {
+        if (balance < amount) {
+          if (!mounted) return;
           final shortfall = amount - balance;
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
+          final shouldTopUp = await showDialog<bool>(
+            context: context,
+            barrierDismissible: false,
+            builder: (ctx) => AlertDialog(
+              backgroundColor: AppColors.bgSec,
+              title: Text('Insufficient Balance', style: AppTextStyles.heading3),
               content: Text(
-                'Low wallet balance. Please top up ${CurrencyUtils.format(shortfall)} to cover this ride.',
+                'Your wallet balance is too low by ${CurrencyUtils.format(shortfall)}. '
+                'Please top up before completing this ride.',
+                style: AppTextStyles.body.copyWith(color: AppColors.txtInactive),
               ),
-              backgroundColor: Colors.orange,
-              duration: const Duration(seconds: 4),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: Text('Cancel', style: AppTextStyles.body),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, true),
+                  child: Text(
+                    'Top Up',
+                    style: AppTextStyles.body.copyWith(color: AppColors.yellow90),
+                  ),
+                ),
+              ],
             ),
           );
+          if (shouldTopUp == true && mounted) {
+            await Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const AddFundsScreen()),
+            );
+          }
+          return;
         }
       } catch (e) {
         debugPrint('Balance pre-check failed: $e');
+        // Proceed — the backend will enforce the balance check and return an error.
       }
 
       setState(() => _isInitiatingPayment = true);
@@ -484,14 +527,26 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
         debugPrint('Wallet charge error: $e');
         if (!mounted) return;
         setState(() => _isInitiatingPayment = false);
-        // Show error but still proceed — driver has completed the ride.
-        // The backend will retry settlement via webhook / manual reconciliation.
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Wallet payment failed: ${e.toString().replaceAll('Exception: ', '')}'),
-            backgroundColor: Colors.red,
+        // Show blocking dialog — do not navigate to completed until payment succeeds.
+        await showDialog<void>(
+          context: context,
+          barrierDismissible: false,
+          builder: (ctx) => AlertDialog(
+            backgroundColor: AppColors.bgSec,
+            title: Text('Payment Failed', style: AppTextStyles.heading3),
+            content: Text(
+              e.toString().replaceAll('Exception: ', ''),
+              style: AppTextStyles.body.copyWith(color: AppColors.txtInactive),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: Text('OK', style: AppTextStyles.body),
+              ),
+            ],
           ),
         );
+        return;
       }
       if (mounted) setState(() => _isInitiatingPayment = false);
     }

@@ -27,6 +27,8 @@ import {
     signupVerify,
     googleSignIn,
     requestPasswordReset,
+    requestPhonePasswordReset,
+    verifyPhonePasswordReset,
     submitDriverOnboarding,
     getActiveSessions,
     revokeSession,
@@ -396,6 +398,8 @@ router.post('/google', wrap(googleSignIn));
  *         description: Password reset email sent
  */
 router.post('/password/reset', wrap(requestPasswordReset));
+router.post('/password/reset/phone', wrap(requestPhonePasswordReset));
+router.post('/password/reset/phone/verify', wrap(verifyPhonePasswordReset));
 
 /**
  * @swagger

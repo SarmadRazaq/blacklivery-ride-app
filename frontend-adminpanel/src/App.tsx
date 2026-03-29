@@ -23,6 +23,9 @@ const VehiclesPage = React.lazy(() => import('./pages/VehiclesPage'));
 const AnalyticsPage = React.lazy(() => import('./pages/AnalyticsPage'));
 const PayoutsPage = React.lazy(() => import('./pages/PayoutsPage'));
 const DeliveriesPage = React.lazy(() => import('./pages/DeliveriesPage'));
+const LiveMapPage = React.lazy(() => import('./pages/LiveMapPage'));
+const DriverApprovalsPage = React.lazy(() => import('./pages/DriverApprovalsPage'));
+const SubscriptionsPage = React.lazy(() => import('./pages/SubscriptionsPage'));
 
 // Protected Route Component — requires admin role
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
@@ -72,6 +75,9 @@ function App() {
                                     <Route path="analytics" element={<AnalyticsPage />} />
                                     <Route path="payouts" element={<PayoutsPage />} />
                                     <Route path="support" element={<SupportPage />} />
+                                    <Route path="live-map" element={<LiveMapPage />} />
+                                    <Route path="driver-approvals" element={<DriverApprovalsPage />} />
+                                    <Route path="subscriptions" element={<SubscriptionsPage />} />
                                 </Route>
 
                                 {/* Catch-all: redirect unknown routes to dashboard */}

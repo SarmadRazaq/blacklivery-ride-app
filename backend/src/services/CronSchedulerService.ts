@@ -4,6 +4,7 @@ import { db } from '../config/firebase';
 import { FieldValue } from 'firebase-admin/firestore';
 import { incentiveService } from './driver/IncentiveService';
 import { surgeService } from './pricing/SurgeService';
+import { walletService } from './WalletService';
 
 /**
  * Internal cron scheduler - runs background tasks without HTTP endpoints.
@@ -59,6 +60,27 @@ class CronSchedulerService {
         this.tasks.push(
             cron.schedule('0 0 * * *', () => this.runDailySettlement(), {
                 name: 'daily-settlement'
+            })
+        );
+
+        // Check for no-show riders every minute (Nigeria 5-min rule)
+        this.tasks.push(
+            cron.schedule('* * * * *', () => this.checkNoShowRides(), {
+                name: 'no-show-check'
+            })
+        );
+
+        // Renew driver subscriptions daily at 3:00 AM
+        this.tasks.push(
+            cron.schedule('0 3 * * *', () => this.renewSubscriptions(), {
+                name: 'subscription-renewal'
+            })
+        );
+
+        // Recalculate B2B delivery tiers on the 1st of each month at 1:00 AM
+        this.tasks.push(
+            cron.schedule('0 1 1 * *', () => this.recalculateB2BTiers(), {
+                name: 'b2b-tier-recalculation'
             })
         );
 
@@ -378,6 +400,219 @@ class CronSchedulerService {
         });
         const data = await res.json() as any;
         if (data.error) throw new Error(`Stripe transfer error: ${data.error.message}`);
+    }
+
+    /**
+     * Enforce the Nigeria 5-minute no-show rule.
+     * When a driver has been in `arrived` status for >5 minutes without the ride
+     * starting, auto-cancel and charge the rider the per-class no-show fee.
+     */
+    private async checkNoShowRides(): Promise<void> {
+        try {
+            const now = new Date();
+            // 5-minute window — only applies to Nigeria (NG) rides
+            const noShowCutoff = new Date(now.getTime() - 5 * 60 * 1000);
+
+            const staleArrived = await db.collection('rides')
+                .where('status', '==', 'arrived')
+                .where('region', '==', 'NG')
+                .where('arrivedAt', '<', noShowCutoff)
+                .get();
+
+            if (staleArrived.empty) return;
+
+            // No-show fees by vehicle class (₦)
+            const NO_SHOW_FEES: Record<string, number> = {
+                sedan: 2000,
+                suv: 3000,
+                xl: 4000,
+                motorbike: 2000 // delivery fallback
+            };
+
+            let cancelled = 0;
+            for (const doc of staleArrived.docs) {
+                try {
+                    const ride = doc.data();
+                    const vehicleClass = (ride.vehicleCategory ?? ride.vehicleClass ?? 'sedan').toLowerCase();
+                    const noShowFee = NO_SHOW_FEES[vehicleClass] ?? 2000;
+
+                    await doc.ref.update({
+                        status: 'cancelled',
+                        cancellationReason: 'system_no_show',
+                        cancelledBy: 'system',
+                        noShowFee,
+                        updatedAt: now
+                    });
+
+                    // Charge no-show fee to the rider's wallet
+                    if (ride.riderId) {
+                        const feeRef = `NO-SHOW-${doc.id}`;
+                        walletService.processTransaction(
+                            ride.riderId,
+                            noShowFee,
+                            'debit',
+                            'cancellation_fee',
+                            `No-show fee — driver waited more than 5 minutes`,
+                            feeRef,
+                            { walletCurrency: 'NGN', metadata: { rideId: doc.id, reason: 'no_show' } }
+                        ).catch(err => logger.error({ err, rideId: doc.id }, '[cron] Failed to charge no-show fee'));
+                    }
+
+                    cancelled++;
+                } catch (err) {
+                    logger.error({ err, rideId: doc.id }, '[cron] Failed to process no-show ride');
+                }
+            }
+
+            if (cancelled > 0) {
+                logger.info({ cancelled }, '[cron] No-show rides cancelled');
+            }
+        } catch (error) {
+            logger.error({ err: error }, '[cron] No-show check failed');
+        }
+    }
+
+    /**
+     * Renew active driver subscriptions that are expiring within 24 hours.
+     * Charges ₦30,000 from the driver's wallet.
+     * On failure, marks the subscription expired (commission reverts to 25%).
+     */
+    private async renewSubscriptions(): Promise<void> {
+        try {
+            const now = new Date();
+            const renewalWindow = new Date(now.getTime() + 24 * 60 * 60 * 1000); // within 24h
+
+            const driversSnap = await db.collection('users')
+                .where('role', '==', 'driver')
+                .where('subscription.status', '==', 'active')
+                .get();
+
+            let renewed = 0, expired = 0, skipped = 0;
+
+            for (const doc of driversSnap.docs) {
+                const driver = doc.data();
+                const sub = driver.subscription;
+                if (!sub) { skipped++; continue; }
+
+                // Parse expiry
+                const expiresAt: Date | null = sub.expiresAt?.toDate
+                    ? sub.expiresAt.toDate()
+                    : sub.expiresAt ? new Date(sub.expiresAt) : null;
+
+                if (!expiresAt || expiresAt > renewalWindow) {
+                    skipped++;
+                    continue; // Not due yet
+                }
+
+                const currency = driver.region === 'US-CHI' ? 'USD' : 'NGN';
+                const subscriptionFee = currency === 'NGN' ? 30000 : 300; // ₦30,000 or $300 USD
+
+                try {
+                    await walletService.processTransaction(
+                        doc.id,
+                        subscriptionFee,
+                        'debit',
+                        'subscription_fee',
+                        `Monthly subscription renewal — BlackLivery Pro`,
+                        `SUB-RENEW-${doc.id}-${now.getFullYear()}-${now.getMonth() + 1}`,
+                        { walletCurrency: currency }
+                    );
+
+                    // Extend expiry by 30 days
+                    const newExpiry = new Date(Math.max(expiresAt.getTime(), now.getTime()) + 30 * 24 * 60 * 60 * 1000);
+                    await doc.ref.update({
+                        'subscription.expiresAt': newExpiry,
+                        'subscription.renewedAt': now,
+                        'subscription.status': 'active'
+                    });
+                    renewed++;
+                } catch (chargeError) {
+                    // Insufficient funds or wallet error — expire the subscription
+                    await doc.ref.update({
+                        'subscription.status': 'expired',
+                        'subscription.expiredAt': now,
+                        'subscription.expiredReason': 'insufficient_funds'
+                    });
+                    expired++;
+                    logger.warn({ driverId: doc.id }, '[cron] Subscription expired — insufficient funds for renewal');
+                }
+            }
+
+            logger.info({ renewed, expired, skipped }, '[cron] Subscription renewal completed');
+        } catch (error) {
+            logger.error({ err: error }, '[cron] Subscription renewal failed');
+        }
+    }
+
+    /**
+     * Recalculate B2B delivery tiers for business accounts based on monthly delivery count.
+     * Tiers: 0–200 → none, 200–500 → 10% discount, 500–2000 → 15%, 2000+ → custom.
+     */
+    private async recalculateB2BTiers(): Promise<void> {
+        try {
+            const now = new Date();
+            const startOfMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+            const endOfMonth   = new Date(now.getFullYear(), now.getMonth(), 1);
+
+            // Find all business accounts
+            const bizSnap = await db.collection('users')
+                .where('role', '==', 'rider')
+                .where('accountType', '==', 'business')
+                .get();
+
+            let updated = 0;
+            for (const doc of bizSnap.docs) {
+                try {
+                    // Count completed deliveries in the previous calendar month
+                    const deliveriesSnap = await db.collection('rides')
+                        .where('riderId', '==', doc.id)
+                        .where('bookingType', '==', 'delivery')
+                        .where('status', 'in', ['completed', 'delivery_delivered'])
+                        .where('completedAt', '>=', startOfMonth)
+                        .where('completedAt', '<', endOfMonth)
+                        .get();
+
+                    const count = deliveriesSnap.size;
+
+                    let tier: string;
+                    let discountRate: number;
+                    let commissionRate: number;
+
+                    if (count >= 2000) {
+                        tier = 'enterprise';
+                        discountRate = 0.15;
+                        commissionRate = 0.15;
+                    } else if (count >= 500) {
+                        tier = 'premium';
+                        discountRate = 0.15;
+                        commissionRate = 0.18;
+                    } else if (count >= 200) {
+                        tier = 'growth';
+                        discountRate = 0.10;
+                        commissionRate = 0.20;
+                    } else {
+                        tier = 'standard';
+                        discountRate = 0;
+                        commissionRate = 0.25;
+                    }
+
+                    await doc.ref.update({
+                        'b2b.tier': tier,
+                        'b2b.discountRate': discountRate,
+                        'b2b.commissionRate': commissionRate,
+                        'b2b.lastMonthDeliveries': count,
+                        'b2b.recalculatedAt': now
+                    });
+                    updated++;
+                } catch (err) {
+                    logger.error({ err, userId: doc.id }, '[cron] Failed to recalculate B2B tier');
+                }
+            }
+
+            logger.info({ updated, month: startOfMonth.toISOString().slice(0, 7) }, '[cron] B2B tier recalculation completed');
+        } catch (error) {
+            logger.error({ err: error }, '[cron] B2B tier recalculation failed');
+        }
     }
 
     private async runDailySettlement(): Promise<void> {

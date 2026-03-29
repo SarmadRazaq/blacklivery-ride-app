@@ -422,8 +422,58 @@ class _WalletScreenState extends State<WalletScreen> {
     );
   }
 
+  IconData _serviceIcon(String? serviceType) {
+    switch (serviceType) {
+      case 'ride':
+        return Icons.directions_car;
+      case 'delivery':
+        return Icons.local_shipping;
+      case 'airport':
+        return Icons.flight;
+      case 'topup':
+        return Icons.account_balance_wallet;
+      case 'payout':
+        return Icons.payments;
+      case 'refund':
+        return Icons.replay;
+      default:
+        return Icons.receipt_long;
+    }
+  }
+
+  String _serviceLabel(String? serviceType) {
+    switch (serviceType) {
+      case 'ride':
+        return 'Ride';
+      case 'delivery':
+        return 'Delivery';
+      case 'airport':
+        return 'Airport';
+      case 'topup':
+        return 'Top-up';
+      case 'payout':
+        return 'Payout';
+      case 'refund':
+        return 'Refund';
+      default:
+        return '';
+    }
+  }
+
   Widget _buildTransactionItem(WalletTransaction transaction) {
     final isCredit = transaction.type == 'credit';
+    final label = _serviceLabel(transaction.serviceType);
+    final isPending = transaction.isPending;
+    final isFailed = transaction.isFailed;
+
+    // Dim colour for pending/failed
+    final iconColor = isFailed
+        ? Colors.redAccent
+        : isPending
+            ? Colors.orange
+            : isCredit
+                ? AppColors.success
+                : AppColors.txtInactive;
 
     return GestureDetector(
       onTap: () => _showTransactionDetails(transaction),
@@ -433,10 +483,30 @@ class _WalletScreenState extends State<WalletScreen> {
         decoration: BoxDecoration(
           color: AppColors.inputBg,
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: AppColors.inputBorder),
+          border: Border.all(
+            color: isFailed
+                ? Colors.redAccent.withOpacity(0.4)
+                : isPending
+                    ? Colors.orange.withOpacity(0.4)
+                    : AppColors.inputBorder,
+          ),
         ),
         child: Row(
           children: [
+            Container(
+              width: 36,
+              height: 36,
+              margin: const EdgeInsets.only(right: 10),
+              decoration: BoxDecoration(
+                color: iconColor.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(
+                _serviceIcon(transaction.serviceType),
+                color: iconColor,
+                size: 18,
+              ),
+            ),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -444,7 +514,7 @@ class _WalletScreenState extends State<WalletScreen> {
                   Text(
                     transaction.description,
                     style: AppTextStyles.body.copyWith(
-                      color: Colors.white,
+                      color: isFailed ? Colors.redAccent : Colors.white,
                       fontSize: 12,
                       fontWeight: FontWeight.w500,
                     ),
@@ -452,12 +522,77 @@ class _WalletScreenState extends State<WalletScreen> {
                     overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 4),
-                  Text(
-                    _formatDate(transaction.date),
-                    style: AppTextStyles.caption.copyWith(
-                      color: isCredit ? AppColors.success : AppColors.txtInactive,
-                      fontSize: 10,
-                    ),
+                  Row(
+                    children: [
+                      if (isFailed) ...[
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 5, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: Colors.redAccent.withOpacity(0.15),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            'Failed',
+                            style: AppTextStyles.caption.copyWith(
+                              color: Colors.redAccent,
+                              fontSize: 9,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                      ] else if (isPending) ...[
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 5, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: Colors.orange.withOpacity(0.15),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            'Pending',
+                            style: AppTextStyles.caption.copyWith(
+                              color: Colors.orange,
+                              fontSize: 9,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                      ] else if (label.isNotEmpty) ...[
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 5, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: AppColors.yellow90.withOpacity(0.15),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            label,
+                            style: AppTextStyles.caption.copyWith(
+                              color: AppColors.yellow90,
+                              fontSize: 9,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                      ],
+                      Text(
+                        _formatDate(transaction.date),
+                        style: AppTextStyles.caption.copyWith(
+                          color: isFailed
+                              ? Colors.redAccent.withOpacity(0.7)
+                              : isPending
+                                  ? Colors.orange.withOpacity(0.7)
+                                  : isCredit
+                                      ? AppColors.success
+                                      : AppColors.txtInactive,
+                          fontSize: 10,
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -477,7 +612,13 @@ class _WalletScreenState extends State<WalletScreen> {
                 return '${isCredit ? '+' : ''}${CurrencyUtils.format(displayAmount, currency: displayCurrency)}';
               }(),
               style: AppTextStyles.body.copyWith(
-                color: isCredit ? AppColors.success : Colors.white,
+                color: isFailed
+                    ? Colors.redAccent
+                    : isPending
+                        ? Colors.orange
+                        : isCredit
+                            ? AppColors.success
+                            : Colors.white,
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
               ),
@@ -557,6 +698,26 @@ class _WalletScreenState extends State<WalletScreen> {
                 isCredit ? 'Credit' : 'Debit',
                 valueColor: isCredit ? AppColors.success : Colors.redAccent,
               ),
+              _buildDetailRow(
+                'Status',
+                transaction.status == 'success'
+                    ? 'Successful'
+                    : transaction.status == 'pending'
+                        ? 'Pending'
+                        : 'Failed',
+                valueColor: transaction.status == 'success'
+                    ? AppColors.success
+                    : transaction.status == 'pending'
+                        ? Colors.orange
+                        : Colors.redAccent,
+              ),
+              if (transaction.serviceType != null && transaction.serviceType!.isNotEmpty)
+                _buildDetailRow(
+                  'Service',
+                  _serviceLabel(transaction.serviceType) .isNotEmpty
+                      ? _serviceLabel(transaction.serviceType)
+                      : transaction.serviceType!,
+                ),
               _buildDetailRow(
                 'Amount',
                 '${isCredit ? '+' : '-'}${CurrencyUtils.format(displayAmount, currency: displayCurrency)}',

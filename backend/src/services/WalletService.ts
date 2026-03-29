@@ -8,6 +8,8 @@ type PaymentGateway = 'paystack' | 'flutterwave' | 'stripe' | 'monnify' | 'walle
 type WalletEntryType = 'credit' | 'debit';
 type WalletCategory =
     | 'ride_payment'
+    | 'delivery_payment'
+    | 'airport_payment'
     | 'driver_payout'
     | 'wallet_topup'
     | 'card_setup'
@@ -35,7 +37,7 @@ interface ProcessTransactionOptions {
     transaction?: FirebaseFirestore.Transaction;
 }
 
-type EscrowPurpose = 'ride_payment' | 'delivery_payment';
+type EscrowPurpose = 'ride_payment' | 'delivery_payment' | 'airport_payment';
 
 interface EscrowHoldInput {
     reference: string;
@@ -388,8 +390,6 @@ export class WalletService {
     async releaseEscrowHold(reference: string, reason?: string, metadata?: Record<string, unknown>): Promise<void> {
         if (!reference) return;
 
-        const platformWalletPromise = this.ensurePlatformWallet('NGN'); // Pre-fetch; overridden inside tx
-
         await db.runTransaction(async (transaction) => {
             const holdRef = this.walletHoldsCollection.doc(reference);
             const holdSnap = await transaction.get(holdRef);
@@ -403,6 +403,8 @@ export class WalletService {
             }
 
             const platformWallet = await this.ensurePlatformWallet(hold.currency);
+
+            // Debit platform escrow back to external processor pool
             await this.processTransaction(
                 platformWallet.userId,
                 hold.amount,
@@ -423,6 +425,42 @@ export class WalletService {
                 releaseReason: reason ?? 'refunded',
                 updatedAt: new Date()
             });
+
+            // Return funds to rider depending on how they originally paid
+            if (hold.gateway === 'wallet' && hold.riderId) {
+                // Wallet payment: credit money back to the rider's on-platform wallet
+                await this.processTransaction(
+                    hold.riderId,
+                    hold.amount,
+                    'credit',
+                    'refund',
+                    reason ?? `Refund for cancelled ride ${hold.rideId ?? reference}`,
+                    `REFUND-${reference}`,
+                    {
+                        counterpartyWalletId: platformWallet.id!,
+                        walletCurrency: hold.currency,
+                        metadata: { ...hold.metadata, ...metadata, releaseReason: reason, originalReference: reference },
+                        transaction
+                    }
+                );
+            } else if (hold.gateway !== 'wallet' && hold.riderId) {
+                // Card/bank payment: queue a refund_requests document for gateway processing.
+                // The cron job / admin panel will pick this up and call the provider refund API.
+                const refundRef = db.collection('refund_requests').doc(`ESCROW-${reference}`);
+                transaction.set(refundRef, {
+                    userId: hold.riderId,
+                    rideId: hold.rideId ?? null,
+                    amount: hold.amount,
+                    currency: hold.currency,
+                    gateway: hold.gateway,
+                    originalReference: reference,
+                    reason: reason ?? 'ride_cancelled',
+                    status: 'pending',
+                    source: 'escrow_release',
+                    metadata: { ...hold.metadata, ...metadata },
+                    createdAt: new Date()
+                }, { merge: false });
+            }
         });
     }
 
@@ -445,8 +483,10 @@ export class WalletService {
         amount: number;
         currency: 'NGN' | 'USD';
         reference: string;
+        purpose?: EscrowPurpose;
     }): Promise<void> {
         const platformWallet = await this.ensurePlatformWallet(input.currency);
+        const purpose: EscrowPurpose = input.purpose ?? 'ride_payment';
 
         await db.runTransaction(async (transaction) => {
             // Idempotency: skip silently if already processed
@@ -462,13 +502,13 @@ export class WalletService {
                 input.riderId,
                 input.amount,
                 'debit',
-                'ride_payment',
+                purpose as WalletCategory,
                 `Wallet payment for ride ${input.rideId}`,
                 input.reference,
                 {
                     counterpartyWalletId: platformWallet.id!,
                     walletCurrency: input.currency,
-                    metadata: { rideId: input.rideId, purpose: 'ride_payment' },
+                    metadata: { rideId: input.rideId, purpose },
                     transaction,
                 }
             );
@@ -480,7 +520,7 @@ export class WalletService {
                 currency: input.currency,
                 riderId: input.riderId,
                 rideId: input.rideId,
-                purpose: 'ride_payment' as EscrowPurpose,
+                purpose,
                 gateway: 'wallet' as PaymentGateway,
                 status: 'held',
                 platformWalletId: platformWallet.id,

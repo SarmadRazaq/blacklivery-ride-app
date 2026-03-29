@@ -481,7 +481,27 @@ export const getPaymentHistory = async (req: AuthRequest, res: Response) => {
             .limit(limit)
             .get();
 
-        const transactions = snapshot.docs.map((doc: any) => ({ id: doc.id, ...doc.data() }));
+        const transactions = snapshot.docs.map((doc: any) => {
+            const data = doc.data();
+            const purpose = data.metadata?.purpose ?? data.category;
+            let serviceType: string;
+            if (purpose === 'delivery_payment' || purpose === 'delivery') {
+                serviceType = 'delivery';
+            } else if (purpose === 'airport_payment' || purpose === 'airport') {
+                serviceType = 'airport';
+            } else if (purpose === 'ride_payment' || purpose === 'ride' || data.category === 'ride_payment') {
+                serviceType = 'ride';
+            } else if (data.category === 'wallet_topup' || data.category === 'card_setup') {
+                serviceType = 'topup';
+            } else if (data.category === 'driver_payout' || data.category === 'payout') {
+                serviceType = 'payout';
+            } else if (data.category === 'refund') {
+                serviceType = 'refund';
+            } else {
+                serviceType = data.category ?? 'other';
+            }
+            return { id: doc.id, ...data, serviceType };
+        });
 
         res.status(200).json({
             success: true,
@@ -1003,6 +1023,11 @@ export const chargeRideWithWallet = async (req: AuthRequest, res: Response) => {
         }
 
         const reference = `WALLET-RIDE-${rideId}-${Date.now()}`;
+        const rideServiceType = ride.serviceType ?? ride.type ?? 'ride';
+        const escrowPurpose: 'ride_payment' | 'delivery_payment' | 'airport_payment' =
+            rideServiceType === 'delivery' ? 'delivery_payment' :
+            rideServiceType === 'airport' || rideServiceType === 'airport_transfer' ? 'airport_payment' :
+            'ride_payment';
 
         await walletService.chargeWalletForRide({
             riderId: uid,
@@ -1010,6 +1035,7 @@ export const chargeRideWithWallet = async (req: AuthRequest, res: Response) => {
             amount,
             currency: rideCurrency,
             reference,
+            purpose: escrowPurpose,
         });
 
         // Record holdReference on ride doc (same pattern as card initiatePayment)

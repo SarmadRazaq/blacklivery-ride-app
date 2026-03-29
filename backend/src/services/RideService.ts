@@ -1072,11 +1072,13 @@ export class RideService {
                 commissionRate = Math.max(0, commissionRate - discount);
             }
 
+            // Default micro-deduction for NG is ₦75/trip (insurance); USD regions have none
+            const defaultMicroFlatFee = (ride.region === 'NG') ? 75 : 0;
             const microDeductions =
                 subscriptionActive && config.subscription?.waiveMicroFees
                     ? { flatFee: 0, percentage: 0 }
                     : {
-                        flatFee: config.microDeductions?.flatFee ?? 0,
+                        flatFee: config.microDeductions?.flatFee ?? defaultMicroFlatFee,
                         percentage: config.microDeductions?.percentage ?? 0
                     };
 
@@ -1275,6 +1277,9 @@ export class RideService {
 
     private getCancellationFee(ride: IRide, cancelledBy: 'driver' | 'rider' | 'admin'): number {
         if (cancelledBy === 'rider') {
+            // No fee if driver hasn't accepted yet (still searching or unassigned)
+            const driverAccepted = ride.driverId && !['requested', 'finding_driver'].includes(ride.status);
+            if (!driverAccepted) return 0;
             const minutesSinceBooking = (Date.now() - new Date(ride.createdAt).getTime()) / 60000;
             return pricingService.calculateCancellationFee(ride, minutesSinceBooking);
         }
@@ -1307,6 +1312,7 @@ export class RideService {
         vehicleCategory: string;
         region: string;
         bookingType?: string;
+        zone?: string;
     }): Promise<{
         estimatedFare: number;
         currency: string;
@@ -1329,6 +1335,7 @@ export class RideService {
             vehicleCategory: requestData.vehicleCategory,
             region: requestData.region,
             bookingType: requestData.bookingType ?? 'on_demand',
+            zone: requestData.zone,
             createdAt: new Date()
         } as IRide;
 
@@ -1527,11 +1534,39 @@ export class RideService {
 
         const ratings = ridesSnap.docs.map(doc => doc.data().driverRating as number);
         const avgRating = ratings.reduce((a, b) => a + b, 0) / ratings.length;
+        const roundedRating = Math.round(avgRating * 10) / 10;
 
-        await db.collection('users').doc(driverId).update({
-            'driverDetails.rating': Math.round(avgRating * 10) / 10,
-            'driverDetails.totalRatings': ratings.length
-        });
+        const driverRef = db.collection('users').doc(driverId);
+        const driverSnap = await driverRef.get();
+        const driverData = driverSnap.data();
+        const region = driverData?.region ?? driverData?.driverDetails?.region ?? 'NG';
+
+        const ratingPolicy = this.getDriverRatingPolicy(region);
+
+        const update: Record<string, any> = {
+            'driverDetails.rating': roundedRating,
+            'driverDetails.totalRatings': ratings.length,
+        };
+
+        // H7: Flag drivers with ratings below the neutral minimum for review
+        // Nigeria: < 4.5 flagged; Chicago: < 4.7 flagged
+        if (ratings.length >= 5 && roundedRating < ratingPolicy.neutralMin) {
+            // Only flag if they have enough ratings to be statistically meaningful
+            const alreadyFlagged = driverData?.driverStatus?.ratingFlag === 'low_rating';
+            if (!alreadyFlagged) {
+                update['driverStatus.ratingFlag'] = 'low_rating';
+                update['driverStatus.ratingFlaggedAt'] = new Date();
+                update['driverStatus.ratingFlagReason'] = `Rating ${roundedRating} below minimum ${ratingPolicy.neutralMin} (${region})`;
+                logger.warn({ driverId, avgRating: roundedRating, threshold: ratingPolicy.neutralMin, region }, 'Driver flagged for low rating');
+            }
+        } else if (driverData?.driverStatus?.ratingFlag === 'low_rating' && roundedRating >= ratingPolicy.neutralMin) {
+            // Clear flag if rating has recovered
+            update['driverStatus.ratingFlag'] = null;
+            update['driverStatus.ratingFlaggedAt'] = null;
+            update['driverStatus.ratingFlagReason'] = null;
+        }
+
+        await driverRef.update(update);
     }
 
     /**

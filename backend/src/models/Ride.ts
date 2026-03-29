@@ -39,6 +39,7 @@ export interface IRide {
     vehicleCategory: string;
     region: RegionCode;
     city?: 'lagos' | 'abuja' | 'chicago';
+    zone?: string; // Chicago zone identifier (e.g., 'loop', 'hyde_park', 'wicker_park')
     paymentMethod?: 'wallet' | 'cash' | 'card';
 
     // Airport Transfer

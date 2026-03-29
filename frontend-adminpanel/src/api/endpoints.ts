@@ -28,6 +28,7 @@ export const adminVehicleStatus = (vehicleId: string) => `/v1/admin/vehicles/${v
 // ─── Admin Payouts ───────────────────────────────────────────────────────────
 export const ADMIN_PAYOUTS = '/v1/admin/payouts';
 export const approvePayout = (payoutId: string) => `/v1/payouts/${payoutId}/approve`;
+export const retryPayout = (payoutId: string) => `/v1/payouts/${payoutId}/retry`;
 
 // ─── Admin Disputes ──────────────────────────────────────────────────────────
 export const ADMIN_DISPUTES = '/v1/admin/disputes';
@@ -50,3 +51,14 @@ export const ADMIN_PRICING_NIGERIA = '/v1/admin/pricing/nigeria';
 export const ADMIN_PRICING_CHICAGO = '/v1/admin/pricing/chicago';
 export const ADMIN_PRICING_DELIVERY = '/v1/admin/pricing/nigeria_delivery';
 export const ADMIN_PRICING_HISTORY = '/v1/admin/history/pricing';
+
+// ─── Admin Driver Approvals ───────────────────────────────────────────────────
+export const ADMIN_DRIVERS_PENDING = '/v1/admin/users?role=driver&onboardingStatus=pending_review';
+export const adminDriverDocuments = (userId: string) => `/v1/admin/users/${userId}/documents`;
+
+// ─── Admin Live Operations ────────────────────────────────────────────────────
+export const ADMIN_ACTIVE_RIDES = '/v1/admin/rides/active';
+
+// ─── Admin Subscriptions ─────────────────────────────────────────────────────
+export const ADMIN_SUBSCRIPTIONS = '/v1/admin/users?role=driver&hasSubscription=true';
+export const adminUserSubscription = (userId: string) => `/v1/admin/users/${userId}/subscription`;

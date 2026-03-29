@@ -16,6 +16,7 @@ class EarningsProvider with ChangeNotifier {
   // New properties for Payouts/Ratings
   List<Map<String, dynamic>> _banks = [];
   List<dynamic> _payoutHistory = [];
+  List<dynamic> _transactionHistory = [];
   Map<String, dynamic> _ratingData = {};
 
   EarningsDashboard? get dashboard => _dashboard;
@@ -25,6 +26,7 @@ class EarningsProvider with ChangeNotifier {
 
   List<Map<String, dynamic>> get banks => _banks;
   List<dynamic> get payoutHistory => _payoutHistory;
+  List<dynamic> get transactionHistory => _transactionHistory;
   Map<String, dynamic> get ratingData => _ratingData;
 
   // Existing alias
@@ -158,6 +160,19 @@ class EarningsProvider with ChangeNotifier {
       _payoutHistory = await _earningsService.getPayoutHistory();
     } catch (e) {
       debugPrint('Error loading payout history: $e');
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> loadTransactionHistory() async {
+    _isLoading = true;
+    notifyListeners();
+    try {
+      _transactionHistory = await _earningsService.getTransactionHistory();
+    } catch (e) {
+      debugPrint('Error loading transaction history: $e');
     } finally {
       _isLoading = false;
       notifyListeners();

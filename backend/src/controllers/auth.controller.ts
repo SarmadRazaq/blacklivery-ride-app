@@ -1246,6 +1246,129 @@ export const requestPasswordReset = async (req: Request, res: Response): Promise
     }
 };
 
+/**
+ * A8 — Request password reset via phone OTP (for phone-registered users)
+ * POST /auth/password/reset/phone
+ */
+export const requestPhonePasswordReset = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { phoneNumber } = req.body;
+        if (!phoneNumber) {
+            res.status(400).json({ error: 'Phone number is required' });
+            return;
+        }
+
+        // Ensure a user with this phone exists
+        let userRecord: admin.auth.UserRecord;
+        try {
+            userRecord = await auth.getUserByPhoneNumber(phoneNumber);
+        } catch {
+            // Don't reveal whether phone exists — respond generically
+            res.status(200).json({ message: 'If this number is registered, an OTP has been sent.' });
+            return;
+        }
+
+        // Rate-limit: 60 s between requests
+        const resetRef = db.collection('password_reset_phone').doc(userRecord.uid);
+        const existing = await resetRef.get();
+        if (existing.exists) {
+            const lastSent = existing.data()?.lastSentAt?.toDate?.() ?? new Date(0);
+            if (Date.now() - lastSent.getTime() < 60000) {
+                res.status(429).json({ error: 'Please wait before requesting a new code' });
+                return;
+            }
+        }
+
+        const otp = crypto.randomInt(100000, 999999).toString();
+        await resetRef.set({
+            code: otp,
+            uid: userRecord.uid,
+            attempts: 0,
+            expiresAt: new Date(Date.now() + 10 * 60 * 1000), // 10 min
+            lastSentAt: new Date()
+        });
+
+        const smsResult = await smsService.sendOtp(phoneNumber, otp);
+        if (!smsResult.success) {
+            logger.warn({ phoneNumber, error: smsResult.error }, 'Phone password reset OTP SMS send failed');
+        }
+
+        if (process.env.NODE_ENV !== 'production') {
+            logger.debug({ phoneNumber, otp }, 'DEV ONLY - Phone password reset OTP');
+        }
+
+        const masked = '***' + phoneNumber.slice(-4);
+        res.status(200).json({ message: 'OTP sent', phone: masked });
+    } catch (error) {
+        logger.error({ err: error }, 'requestPhonePasswordReset failed');
+        res.status(500).json({ error: 'Unable to send password reset OTP' });
+    }
+};
+
+/**
+ * A8 — Verify phone OTP and set new password
+ * POST /auth/password/reset/phone/verify
+ */
+export const verifyPhonePasswordReset = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { phoneNumber, otp, newPassword } = req.body;
+        if (!phoneNumber || !otp || !newPassword) {
+            res.status(400).json({ error: 'phoneNumber, otp, and newPassword are required' });
+            return;
+        }
+        if (newPassword.length < 8) {
+            res.status(400).json({ error: 'Password must be at least 8 characters' });
+            return;
+        }
+
+        let userRecord: admin.auth.UserRecord;
+        try {
+            userRecord = await auth.getUserByPhoneNumber(phoneNumber);
+        } catch {
+            res.status(400).json({ error: 'Invalid phone number' });
+            return;
+        }
+
+        const resetRef = db.collection('password_reset_phone').doc(userRecord.uid);
+        const doc = await resetRef.get();
+
+        if (!doc.exists) {
+            res.status(400).json({ error: 'No reset request found. Please request a new OTP.' });
+            return;
+        }
+
+        const data = doc.data()!;
+
+        if (new Date() > data.expiresAt.toDate()) {
+            await resetRef.delete();
+            res.status(400).json({ error: 'OTP has expired. Please request a new one.' });
+            return;
+        }
+
+        if ((data.attempts ?? 0) >= 5) {
+            await resetRef.delete();
+            res.status(400).json({ error: 'Too many failed attempts. Please request a new OTP.' });
+            return;
+        }
+
+        if (data.code !== String(otp)) {
+            await resetRef.update({ attempts: (data.attempts ?? 0) + 1 });
+            res.status(400).json({ error: 'Invalid OTP' });
+            return;
+        }
+
+        // OTP valid — update password
+        await auth.updateUser(userRecord.uid, { password: newPassword });
+        await resetRef.delete();
+
+        logger.info({ uid: userRecord.uid }, 'Password reset via phone OTP successful');
+        res.status(200).json({ message: 'Password updated successfully' });
+    } catch (error) {
+        logger.error({ err: error }, 'verifyPhonePasswordReset failed');
+        res.status(500).json({ error: 'Unable to reset password' });
+    }
+};
+
 export const getProfile = async (req: AuthRequest, res: Response): Promise<void> => {
     const { uid } = req.user;
 

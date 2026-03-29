@@ -63,19 +63,25 @@ export class EarningsService {
         // We will return Yearly breakdown for the "month" chart data.
         const monthlyBreakdown = this.generateMonthlyBreakdown(rides, startOfYear);
 
-        // Fetch Payout Info
-        const lastPayoutSnap = await db.collection('payouts')
+        // Fetch all payouts this year to correctly compute total paid out
+        const allPayoutsSnap = await db.collection('payouts')
             .where('driverId', '==', driverId)
+            .where('status', '==', 'completed')
+            .where('createdAt', '>=', startOfYear)
             .orderBy('createdAt', 'desc')
-            .limit(1)
             .get();
 
-        const lastPayout = lastPayoutSnap.empty ? null : lastPayoutSnap.docs[0].data();
+        const allPayouts = allPayoutsSnap.docs.map(d => d.data());
+        const lastPayout = allPayouts.length > 0 ? allPayouts[0] : null;
+        const totalPaidOut = allPayouts.reduce((sum, p) => sum + (p.amount || 0), 0);
 
         // Calculate Next Payout (Assuming weekly on Wednesday)
         const nextPayoutDate = new Date();
         nextPayoutDate.setDate(now.getDate() + (3 + 7 - now.getDay()) % 7); // Wednesday
         if (nextPayoutDate <= now) nextPayoutDate.setDate(nextPayoutDate.getDate() + 7);
+
+        const inAppEarnings = yearStats.amount * config.inAppRatio;
+        const pendingPayoutAmount = Math.max(0, inAppEarnings - totalPaidOut);
 
         return {
             today: {
@@ -94,14 +100,14 @@ export class EarningsService {
                 monthlyBreakdown: monthlyBreakdown
             },
             payouts: {
-                inApp: yearStats.amount * config.inAppRatio,
+                inApp: inAppEarnings,
                 cash: yearStats.amount * (1 - config.inAppRatio),
                 lastPayout: lastPayout ? {
                     amount: lastPayout.amount,
                     date: lastPayout.createdAt
                 } : null,
                 nextPayout: {
-                    amount: (yearStats.amount * config.inAppRatio) - (lastPayout?.amount || 0), // Rough estimate logic
+                    amount: pendingPayoutAmount,
                     date: nextPayoutDate
                 }
             }
@@ -113,16 +119,15 @@ export class EarningsService {
     }
 
     async getPayoutHistory(driverId: string) {
-        const payoutsSnap = await db.collection('payouts')
-            .where('driverId', '==', driverId)
+        const payoutsSnap = await db.collection('payout_requests')
+            .where('userId', '==', driverId)
             .orderBy('createdAt', 'desc')
             .get();
 
         return payoutsSnap.docs.map(doc => ({
             id: doc.id,
             ...doc.data(),
-            // Convert Firestore Timestamp to Date/String if needed, but client handles it usually or we sanitize here
-            createdAt: doc.data().createdAt.toDate ? doc.data().createdAt.toDate() : doc.data().createdAt
+            createdAt: doc.data().createdAt?.toDate ? doc.data().createdAt.toDate() : doc.data().createdAt
         }));
     }
 

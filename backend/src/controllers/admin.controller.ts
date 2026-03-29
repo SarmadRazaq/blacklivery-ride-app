@@ -725,6 +725,30 @@ export const resolveDispute = async (req: AuthRequest, res: Response): Promise<v
                     'Dispute refund',
                     `DISPUTE-${id}`
                 );
+
+                // Also deduct the driver's share from their wallet if a ride is linked
+                const disputeData = disputeSnapshot.data()!;
+                if (disputeData.rideId) {
+                    try {
+                        const rideDoc = await db.collection('rides').doc(disputeData.rideId).get();
+                        const rideData = rideDoc.data();
+                        if (rideData?.driverId && rideData.driverId !== refundUserId) {
+                            // Driver received 75% of the fare; deduct proportional share
+                            const driverShare = Math.round(refundAmount * 0.75 * 100) / 100;
+                            await walletService.processTransaction(
+                                rideData.driverId,
+                                driverShare,
+                                'debit',
+                                'refund',
+                                `Refund adjustment for dispute ${id}`,
+                                `DISPUTE-DRIVER-${id}`
+                            );
+                            logger.info({ disputeId: id, driverId: rideData.driverId, driverShare }, 'Driver wallet adjusted for refund');
+                        }
+                    } catch (driverErr) {
+                        logger.warn({ err: driverErr, disputeId: id }, 'Failed to adjust driver wallet for refund — rider refund succeeded');
+                    }
+                }
             } catch (refundError) {
                 // Dispute is resolved but refund failed — mark it for manual attention
                 await disputeRef.update({

@@ -91,6 +91,12 @@ export const createDelivery = async (req: AuthRequest, res: Response): Promise<v
             resolvedRegion = isUS ? 'US-CHI' : 'NG';
         }
 
+        // Delivery is Nigeria-only per product requirements
+        if (resolvedRegion === 'US-CHI') {
+            res.status(400).json({ error: 'Delivery is not available in Chicago. Please use ride-hailing for transportation.' });
+            return;
+        }
+
         const mockRide = {
             vehicleCategory: vehicleCategory ?? 'motorbike',
             region: resolvedRegion,

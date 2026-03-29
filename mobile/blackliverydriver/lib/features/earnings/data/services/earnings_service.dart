@@ -108,6 +108,20 @@ class EarningsService {
     }
   }
 
+  Future<List<dynamic>> getTransactionHistory({int page = 1, int limit = 20}) async {
+    try {
+      final response = await _apiClient.dio.get(
+        '/api/v1/payments/wallet/transactions',
+        queryParameters: {'page': page, 'limit': limit},
+      );
+      final data = response.data['data'];
+      if (data is List) return data;
+      return [];
+    } catch (e) {
+      return [];
+    }
+  }
+
   Future<Map<String, dynamic>> getRatingDistribution() async {
     try {
       final response = await _apiClient.dio.get('/api/v1/driver/ratings');

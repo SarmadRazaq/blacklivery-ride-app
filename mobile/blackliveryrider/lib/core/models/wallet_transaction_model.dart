@@ -4,8 +4,10 @@ class WalletTransaction {
   final DateTime date;
   final double amount;
   final String type; // 'credit' or 'debit'
+  final String status; // 'pending' | 'success' | 'failed'
   final String currency;
   final String? reference;
+  final String? serviceType; // 'ride' | 'delivery' | 'airport' | 'topup' | 'payout' | 'refund' | 'other'
 
   WalletTransaction({
     required this.id,
@@ -13,9 +15,14 @@ class WalletTransaction {
     required this.date,
     required this.amount,
     required this.type,
-    this.currency = 'USD',
+    this.status = 'success',
+    this.currency = 'NGN',
     this.reference,
+    this.serviceType,
   });
+
+  bool get isPending => status == 'pending';
+  bool get isFailed => status == 'failed';
 
   factory WalletTransaction.fromJson(Map<String, dynamic> json) {
     // Backend sends 'createdAt' (Firestore timestamp or ISO string), fallback to 'date'
@@ -38,8 +45,10 @@ class WalletTransaction {
       date: parsedDate,
       amount: (json['amount'] as num?)?.toDouble() ?? 0.0,
       type: json['type'] ?? 'debit',
-      currency: json['currency'] ?? 'USD',
+      status: json['status'] ?? 'success',
+      currency: json['currency'] ?? 'NGN',
       reference: json['reference'] ?? json['ref'] ?? json['transactionRef'],
+      serviceType: json['serviceType'] as String?,
     );
   }
 
@@ -50,8 +59,10 @@ class WalletTransaction {
       'date': date.toIso8601String(),
       'amount': amount,
       'type': type,
+      'status': status,
       'currency': currency,
       if (reference != null) 'reference': reference,
+      if (serviceType != null) 'serviceType': serviceType,
     };
   }
 }
