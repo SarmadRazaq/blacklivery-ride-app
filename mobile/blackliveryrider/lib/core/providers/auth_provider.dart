@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:dio/dio.dart';
 import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
 import 'dart:io';
 import '../services/auth_service.dart';
@@ -41,6 +42,14 @@ class AuthProvider extends ChangeNotifier {
           }
         } catch (e) {
           debugPrint('Failed to load profile: $e');
+          if (e is DioException) {
+            final status = e.response?.statusCode;
+            if (status == 401 || status == 403) {
+              debugPrint('Backend rejected token; signing out stale Firebase session');
+              await firebase_auth.FirebaseAuth.instance.signOut();
+              _user = null;
+            }
+          }
           // Profile doesn't exist in backend, but Firebase session is valid
           // Could auto-create profile here if needed
         }

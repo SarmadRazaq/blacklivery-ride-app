@@ -62,7 +62,7 @@ export const phoneSignupSchema = z.object({
 
 export const googleSignInSchema = z.object({
     body: z.object({
-        idToken: z.string().min(1, 'Google ID token is required'),
+        idToken: z.string().min(1, 'OAuth ID token is required'),
         role: z.enum(['rider', 'driver']).optional(),
     })
 });

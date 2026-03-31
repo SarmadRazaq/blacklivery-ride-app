@@ -71,12 +71,16 @@ export const verifyToken = async (req: AuthRequest, res: Response, next: NextFun
         next();
     } catch (error: any) {
         if (error.code === 'auth/id-token-expired') {
-            return res.status(401).json({ error: 'Token expired' });
+            return res.status(401).json({ error: 'Token expired', code: error.code });
         }
         if (error.code === 'auth/id-token-revoked') {
-            return res.status(401).json({ error: 'Token revoked' });
+            return res.status(401).json({ error: 'Token revoked', code: error.code });
         }
-        logger.error({ err: error }, 'Token verification failed');
-        return res.status(403).json({ error: 'Unauthorized: Invalid token' });
+        if (typeof error.code === 'string' && error.code.startsWith('auth/')) {
+            logger.warn({ err: error }, 'Token verification rejected');
+            return res.status(401).json({ error: 'Unauthorized: Invalid token', code: error.code });
+        }
+        logger.error({ err: error }, 'Token verification failed unexpectedly');
+        return res.status(500).json({ error: 'Authentication service unavailable' });
     }
 };

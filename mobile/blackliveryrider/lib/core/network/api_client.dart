@@ -48,7 +48,8 @@ class ApiClient {
           return handler.next(options);
         },
         onError: (DioException e, handler) async {
-          if (e.response?.statusCode == 401 && !_isRefreshing) {
+          final alreadyRetried = e.requestOptions.extra['_authRetried'] == true;
+          if (_isAuthTokenFailure(e) && !_isRefreshing && !alreadyRetried) {
             _isRefreshing = true;
 
             try {
@@ -56,6 +57,7 @@ class ApiClient {
               if (user != null) {
                 final newToken = await user.getIdToken(true);
                 if (newToken != null) {
+                  e.requestOptions.extra['_authRetried'] = true;
                   e.requestOptions.headers['Authorization'] =
                       'Bearer $newToken';
                   final response = await _dio.fetch(e.requestOptions);
@@ -86,6 +88,21 @@ class ApiClient {
   }
 
   Dio get dio => _dio;
+
+  bool _isAuthTokenFailure(DioException e) {
+    final statusCode = e.response?.statusCode;
+    if (statusCode == 401) return true;
+    if (statusCode != 403) return false;
+
+    final data = e.response?.data;
+    final message = data is Map<String, dynamic>
+        ? (data['error'] ?? data['message'] ?? '').toString().toLowerCase()
+        : data?.toString().toLowerCase() ?? '';
+
+    return message.contains('unauthorized') ||
+        message.contains('invalid token') ||
+        message.contains('token');
+  }
 }
 
 /// Interceptor that retries transient failures with exponential backoff.

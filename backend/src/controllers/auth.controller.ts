@@ -1121,6 +1121,7 @@ export const googleSignIn = async (req: Request, res: Response): Promise<void> =
         const role = (requestedRole === 'driver') ? 'driver' : 'rider';
 
         const decoded = await auth.verifyIdToken(idToken);
+        const provider = decoded.firebase?.sign_in_provider === 'apple.com' ? 'apple.com' : 'google.com';
         const userRecord = await auth.getUser(decoded.uid);
 
         const userRef = db.collection('users').doc(decoded.uid);
@@ -1154,7 +1155,7 @@ export const googleSignIn = async (req: Request, res: Response): Promise<void> =
                     displayName: userRecord.displayName ?? oldData.displayName,
                     photoURL: userRecord.photoURL ?? oldData.photoURL,
                     updatedAt: new Date(),
-                    linkedProviders: [...(oldData.linkedProviders || []), 'google.com'],
+                    linkedProviders: Array.from(new Set([...(oldData.linkedProviders || []), provider])),
                 });
 
                 // Delete the orphaned old doc (only if it's a different UID)
@@ -1185,7 +1186,7 @@ export const googleSignIn = async (req: Request, res: Response): Promise<void> =
                     emailLowercase: userRecord.email?.toLowerCase() ?? null,
                     phoneNumberNormalized: normalizePhone(userRecord.phoneNumber),
                     phoneVerified: !!userRecord.phoneNumber,
-                    linkedProviders: ['google.com'],
+                    linkedProviders: [provider],
                 });
             }
         } else {
@@ -1196,7 +1197,7 @@ export const googleSignIn = async (req: Request, res: Response): Promise<void> =
         res.status(200).json({ message: 'Google sign-in successful' });
     } catch (error) {
         logger.error({ err: error }, 'Google sign in failed');
-        res.status(401).json({ error: 'Invalid Google token' });
+        res.status(401).json({ error: 'Invalid OAuth token' });
     }
 };
 

@@ -361,7 +361,7 @@ router.post('/email/verify', validate(emailVerificationSchema), wrap(verifyEmail
  * @swagger
  * /auth/google:
  *   post:
- *     summary: Google Sign-In
+ *     summary: OAuth Sign-In (Google/Apple)
  *     tags: [Auth]
  *     requestBody:
  *       required: true
@@ -374,7 +374,7 @@ router.post('/email/verify', validate(emailVerificationSchema), wrap(verifyEmail
  *                 type: string
  *     responses:
  *       200:
- *         description: User authenticated via Google
+ *         description: User authenticated via OAuth provider
  */
 router.post('/google', wrap(googleSignIn));
 

@@ -8,7 +8,9 @@
       "Bash(flutter analyze:*)",
       "Bash(where flutter:*)",
       "Bash(powershell:*)",
-      "Bash(\"C:/flutter/bin/flutter.bat\" analyze:*)"
+      "Bash(\"C:/flutter/bin/flutter.bat\" analyze:*)",
+      "Bash(find:*)",
+      "Bash(grep:*)"
     ]
   }
 }

@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -64,6 +65,13 @@ class NotificationService {
     // Listen for token refreshes
     _messaging.onTokenRefresh.listen((newToken) {
       _registerTokenWithBackend(newToken);
+    });
+
+    // If auth state changes after startup, retry token registration.
+    FirebaseAuth.instance.authStateChanges().listen((user) {
+      if (user != null && _currentToken != null) {
+        _registerTokenWithBackend(_currentToken!);
+      }
     });
   }
 
@@ -213,6 +221,10 @@ class NotificationService {
   Future<void> _registerTokenWithBackend(String token) async {
     try {
       _currentToken = token;
+      if (FirebaseAuth.instance.currentUser == null) {
+        debugPrint('FCM: Skipping backend token registration (no signed-in user)');
+        return;
+      }
       final api = ApiClient();
       await api.dio.post('/api/v1/auth/fcm-token', data: {'token': token});
       debugPrint('FCM: Token registered with backend');
