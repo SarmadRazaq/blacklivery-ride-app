@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import api from '../api/client';
 import { ADMIN_SUBSCRIPTIONS, adminUserSubscription } from '../api/endpoints';
 import Badge from '../components/ui/Badge';
@@ -88,7 +88,7 @@ const SubscriptionsPage = () => {
         const price = driver.region === 'NG'
             ? `₦${SUBSCRIPTION_PRICE_NGN.toLocaleString()}`
             : `$${SUBSCRIPTION_PRICE_USD.toLocaleString()} USD`;
-        if (!window.confirm(`Grant 30-day subscription to ${driver.name}?\n\nThis will set their commission rate to 15% (from 25%).\nNo charge will be made — manual override.`)) return;
+        if (!window.confirm(`Grant 30-day subscription to ${driver.name}?\n\nPlan value: ${price}\nThis will set their commission rate to 15% (from 25%).\nNo charge will be made — manual override.`)) return;
         setActionLoading(prev => ({ ...prev, [driver.id]: true }));
         try {
             const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();

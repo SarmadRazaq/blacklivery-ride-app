@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -11,13 +12,18 @@ interface LoginFormData {
 
 const LoginPage = () => {
     const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<LoginFormData>();
-    const { login } = useAuth();
+    const { login, user, loading } = useAuth();
     const navigate = useNavigate();
+
+    useEffect(() => {
+        if (!loading && user?.role === 'admin') {
+            navigate('/', { replace: true });
+        }
+    }, [loading, user, navigate]);
 
     const onSubmit = async (data: LoginFormData) => {
         try {
             await login(data.email, data.password);
-            navigate('/');
             toast.success('Welcome back!');
         } catch (error: unknown) {
             console.error(error);

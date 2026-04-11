@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { NavLink, useLocation } from 'react-router-dom';
+import { NavLink } from 'react-router-dom';
 import {
     LayoutDashboard,
     Users,
@@ -27,7 +27,6 @@ import { APP_NAME, APP_SUBTITLE, SIDEBAR_WIDTH_CLASS } from '../config/constants
 const Sidebar = () => {
     const { logout } = useAuth();
     const [mobileOpen, setMobileOpen] = useState(false);
-    const location = useLocation();
 
     // Close sidebar on navigation (mobile)
     const handleNavClick = () => setMobileOpen(false);
